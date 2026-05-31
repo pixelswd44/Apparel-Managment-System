@@ -40,6 +40,13 @@ server/wipe.mjs
 Thumbs.db
 desktop.ini
 
+# Junk / accidental files
+server/Apparel*
+server/C*.json
+*.db
+*.db-shm
+*.db-wal
+
 # Editor
 .vscode/
 .idea/
