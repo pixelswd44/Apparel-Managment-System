@@ -192,7 +192,8 @@
       "Bash(curl -s http://localhost:3001/api/setup/status)",
       "Bash(git init *)",
       "Bash(git config *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }
