@@ -1,0 +1,404 @@
+@import "tailwindcss";
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   iOS-style design tokens — override Tailwind v4 defaults
+   Border radius: 2–4 px (tight, sharp — not the "bubble" style)
+   Shadows:       very shallow & translucent (iOS doesn't use hard drop-shadows)
+   ══════════════════════════════════════════════════════════════════════════════ */
+@theme {
+  /* ── Font sizes — bumped +1 px from Tailwind defaults for consistent readability ── */
+  --text-2xs:  0.6875rem;   /* 11px  — micro: badges, chart ticks, dense form labels */
+  --text-xs:   0.8125rem;   /* 13px  (was 12px) — meta, table headers, small tags */
+  --text-sm:   0.9375rem;   /* 15px  (was 14px) — body, table cells, form inputs */
+  --text-base: 1.0625rem;   /* 17px  (was 16px) — card values, prominent text */
+  --text-lg:   1.1875rem;   /* 19px  (was 18px) — card headings, sub-section titles */
+  --text-xl:   1.3125rem;   /* 21px  (was 20px) — section titles */
+  --text-2xl:  1.5rem;      /* 24px  (unchanged) — page titles */
+
+  /* ── Border radius — iOS tight: 2–5 px, full stays pill ─────────────────── */
+  --radius-xs:   2px;
+  --radius-sm:   2px;
+  --radius:      3px;
+  --radius-md:   3px;
+  --radius-lg:   4px;
+  --radius-xl:   5px;
+  --radius-2xl:  6px;
+  --radius-3xl:  8px;
+  --radius-4xl:  10px;
+  --radius-full: 9999px;
+
+  /* ── Shadows — iOS style: shallow, very translucent, no hard edges ───────── */
+  --shadow-2xs: 0 1px 2px 0 rgb(0 0 0 / 0.04);
+  --shadow-xs:  0 1px 3px 0 rgb(0 0 0 / 0.05);
+  --shadow-sm:  0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.04);
+  --shadow:     0 2px 6px 0 rgb(0 0 0 / 0.07), 0 1px 3px -1px rgb(0 0 0 / 0.05);
+  --shadow-md:  0 3px 10px -1px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.04);
+  --shadow-lg:  0 6px 20px -2px rgb(0 0 0 / 0.09), 0 3px 6px -3px rgb(0 0 0 / 0.04);
+  --shadow-xl:  0 10px 30px -4px rgb(0 0 0 / 0.10), 0 4px 8px -4px rgb(0 0 0 / 0.05);
+  --shadow-2xl: 0 20px 48px -8px rgb(0 0 0 / 0.12), 0 8px 16px -8px rgb(0 0 0 / 0.05);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Base
+   ══════════════════════════════════════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  scroll-behavior: smooth;
+  /* Retina-quality sub-pixel font rendering — critical for iOS look */
+  -webkit-font-smoothing:  antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  margin: 0;
+  /* Genuine iOS system font stack */
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue',
+               'Inter', system-ui, sans-serif;
+  /* iOS system grouped background */
+  background: #f2f2f7;
+  color: #1c1c1e;
+  font-size: 16px;
+  line-height: 1.5;
+  /* Prevent rubber-band overscroll on macOS Safari */
+  overscroll-behavior: none;
+}
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Sidebar nav — staggered entrance + active glow
+   ══════════════════════════════════════════════════════════════════════════════ */
+@keyframes navItemIn {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; }
+}
+
+/* Each nav link animates in with a slight stagger */
+.sidebar-nav a {
+  animation: navItemIn 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.sidebar-nav a:nth-child(1) { animation-delay: 0.04s; }
+.sidebar-nav a:nth-child(2) { animation-delay: 0.08s; }
+.sidebar-nav a:nth-child(3) { animation-delay: 0.12s; }
+.sidebar-nav a:nth-child(4) { animation-delay: 0.16s; }
+.sidebar-nav a:nth-child(5) { animation-delay: 0.20s; }
+.sidebar-nav a:nth-child(6) { animation-delay: 0.24s; }
+.sidebar-nav a:nth-child(7) { animation-delay: 0.28s; }
+.sidebar-nav a:nth-child(8) { animation-delay: 0.32s; }
+
+/* Active item: subtle inner glow on the left edge */
+.sidebar-nav a[aria-current="page"]::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 14px;
+  background: rgba(255,255,255,0.65);
+  border-radius: 0 2px 2px 0;
+  animation: navItemIn 0.18s ease both;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Scrollbar — thin, iOS-inspired
+   ══════════════════════════════════════════════════════════════════════════════ */
+::-webkit-scrollbar          { width: 4px; height: 4px; }
+::-webkit-scrollbar-track    { background: transparent; }
+::-webkit-scrollbar-thumb    { background: rgb(0 0 0 / 0.15); border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: rgb(0 0 0 / 0.25); }
+
+.sidebar-nav::-webkit-scrollbar-thumb       { background: rgb(255 255 255 / 0.12); }
+.sidebar-nav::-webkit-scrollbar-thumb:hover { background: rgb(255 255 255 / 0.22); }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Keyframes
+   ══════════════════════════════════════════════════════════════════════════════ */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(100%); }
+  to   { opacity: 1; }
+}
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.97) translateY(-4px); }
+  to   { opacity: 1; }
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Animation classes
+   ══════════════════════════════════════════════════════════════════════════════ */
+.animate-page      { animation: fadeUp       0.24s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-overlay   { animation: fadeIn       0.18s ease both; }
+.animate-modal     { animation: scaleIn      0.22s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-drawer    { animation: slideInRight 0.28s cubic-bezier(0.32, 0.72, 0, 1) both; }
+.animate-spin-slow { animation: spin 0.8s linear infinite; }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Focus ring — iOS blue, tight offset
+   ══════════════════════════════════════════════════════════════════════════════ */
+:focus-visible {
+  outline: 2px solid #4f46e5;
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Global input / select refinements
+   iOS inputs: very clean, thin separator-style border
+   ══════════════════════════════════════════════════════════════════════════════ */
+input, select, textarea {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Card hover lift — subtle iOS-style lift
+   ══════════════════════════════════════════════════════════════════════════════ */
+.card-hover {
+  transition: box-shadow 0.18s ease, transform 0.18s ease;
+}
+.card-hover:hover {
+  box-shadow: 0 6px 20px -2px rgb(0 0 0 / 0.10), 0 2px 4px rgb(0 0 0 / 0.04);
+  transform: translateY(-1px);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Modal / sheet overlay — iOS uses backdrop blur
+   ══════════════════════════════════════════════════════════════════════════════ */
+.ios-overlay {
+  backdrop-filter: blur(8px) saturate(180%);
+  -webkit-backdrop-filter: blur(8px) saturate(180%);
+  background: rgb(0 0 0 / 0.45);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Table — iOS grouped list feel
+   ══════════════════════════════════════════════════════════════════════════════ */
+.ios-table tbody tr {
+  transition: background-color 0.12s ease;
+}
+.ios-table tbody tr:hover {
+  background-color: rgb(0 0 0 / 0.025);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Print isolation
+   ══════════════════════════════════════════════════════════════════════════════ */
+#__print_doc__ { display: none; }
+
+@media print {
+  @page { margin: 0.5cm; }
+
+  body.__printing__ #root           { display: none !important; }
+  body.__printing__ #__print_doc__  { display: block !important; }
+
+  .print\:hidden { display: none !important; }
+  main { margin-left: 0 !important; }
+}
+
+/* ── Packing List print: hide price columns ───────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════════
+   Document Template layouts — applied via data-layout on the printRef wrapper
+   Primary color flows through --tp CSS variable (set inline by template config)
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Shared: CSS variable shorthand ──────────────────────────────────────────── */
+[data-layout] { --tp: #4f46e5; }
+
+/* ── MODERN layout ─────────────────────────────────────────────────────────── */
+[data-layout="modern"] .doc-header-band {
+  background: var(--tp) !important;
+  color: #fff !important;
+}
+[data-layout="modern"] .doc-header-band .doc-title {
+  color: #fff !important;
+}
+[data-layout="modern"] .doc-header-band .doc-number-chip {
+  background: rgba(255,255,255,0.18) !important;
+  color: #fff !important;
+}
+[data-layout="modern"] .doc-info-right {
+  background: color-mix(in srgb, var(--tp) 10%, transparent) !important;
+  border-color: color-mix(in srgb, var(--tp) 20%, transparent) !important;
+}
+[data-layout="modern"] .doc-table thead tr {
+  background: var(--tp) !important;
+}
+[data-layout="modern"] .doc-table thead th {
+  color: #fff !important;
+  border-bottom: none !important;
+}
+[data-layout="modern"] .doc-total-box {
+  background: var(--tp) !important;
+  color: #fff !important;
+}
+[data-layout="modern"] .doc-total-box * {
+  color: #fff !important;
+}
+
+/* ── MINIMAL layout ─────────────────────────────────────────────────────────── */
+[data-layout="minimal"] .doc-info-left,
+[data-layout="minimal"] .doc-info-right {
+  background: transparent !important;
+  border: none !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  border-radius: 0 !important;
+}
+[data-layout="minimal"] .doc-number-chip {
+  background: transparent !important;
+  color: #0f172a !important;
+  border: 1px solid #0f172a !important;
+}
+[data-layout="minimal"] .doc-title {
+  color: #0f172a !important;
+  letter-spacing: 0.12em !important;
+}
+[data-layout="minimal"] .doc-header-band {
+  border-bottom: 2px solid #0f172a !important;
+}
+[data-layout="minimal"] .doc-table thead tr {
+  border-bottom: 2px solid #0f172a !important;
+}
+[data-layout="minimal"] .doc-table tbody tr {
+  border-bottom: 1px solid #f1f5f9 !important;
+}
+[data-layout="minimal"] .doc-total-box {
+  background: transparent !important;
+  border: 1px solid #0f172a !important;
+}
+[data-layout="minimal"] .doc-total-box .doc-total-label { color: #64748b !important; }
+[data-layout="minimal"] .doc-total-box .doc-total-value { color: #0f172a !important; }
+
+/* ── ELEGANT layout ─────────────────────────────────────────────────────────── */
+[data-layout="elegant"] .doc-accent-bar {
+  display: block !important;
+  height: 4px !important;
+  background: linear-gradient(to right, var(--tp), color-mix(in srgb, var(--tp) 55%, #fff)) !important;
+}
+[data-layout="elegant"] .doc-accent-bar-bottom {
+  display: block !important;
+  height: 3px !important;
+  background: linear-gradient(to right, var(--tp), color-mix(in srgb, var(--tp) 55%, #fff)) !important;
+}
+[data-layout="elegant"] .doc-header-band {
+  justify-content: center !important;
+  text-align: center !important;
+}
+[data-layout="elegant"] .doc-info-right {
+  border-color: color-mix(in srgb, var(--tp) 25%, transparent) !important;
+}
+[data-layout="elegant"] .doc-number-chip {
+  background: color-mix(in srgb, var(--tp) 12%, transparent) !important;
+  color: var(--tp) !important;
+}
+[data-layout="elegant"] .doc-title {
+  color: var(--tp) !important;
+}
+[data-layout="elegant"] .doc-table thead th {
+  color: var(--tp) !important;
+}
+
+/* ── Watermark overlay ─────────────────────────────────────────────────────── */
+.doc-watermark {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 10;
+  overflow: hidden;
+}
+.doc-watermark span {
+  font-size: 4.5rem;
+  font-weight: 900;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(0,0,0,0.045);
+  transform: rotate(-30deg);
+  white-space: nowrap;
+  user-select: none;
+}
+
+@media print {
+  body.print-packing .invoice-prices     { display: none !important; }
+  body.print-packing .invoice-price-col  { display: none !important; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Typography consistency — global rules so the scale is enforced everywhere
+   without requiring class changes in every component.
+   ══════════════════════════════════════════════════════════════════════════════
+
+   Scale reference (all sizes defined in @theme above):
+     text-2xs  = 11px  — micro: badges, chart ticks, dense form labels
+     text-xs   = 13px  — section labels (uppercase), table headers, meta text
+     text-sm   = 15px  — body text, table cells, form inputs, card sub-text
+     text-base = 17px  — card values, modal text
+     text-lg   = 19px  — card headings
+     text-xl   = 21px  — section titles
+     text-2xl  = 24px  — page titles (h1)
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* Page headings — every module h1 is identical */
+.animate-page > div:first-child h1,
+h1.page-title {
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+/* Table header cells — consistent across every table in every module */
+table thead th {
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* Table body cells — consistent body text */
+table tbody td {
+  font-size: var(--text-sm);
+}
+
+/* Uppercase tracking section labels (e.g. "By Category", "Manage Categories") */
+.section-label {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #94a3b8;
+}
+
+/* Form field labels */
+.field-label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: #64748b;
+}
+
+/* Form inputs / selects / textareas — all modules use same base size */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+select,
+textarea {
+  font-size: var(--text-sm);
+}
+
+/* Normalize letter-spacing for uppercase labels */
+.uppercase.tracking-widest { letter-spacing: 0.08em; }
+.uppercase.tracking-wider  { letter-spacing: 0.06em; }
