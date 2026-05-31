@@ -1,7 +1,7 @@
 import { Outlet, useLocation } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import Sidebar from './Sidebar';
-import api from '../../lib/api';
+import api, { apiFetch } from '../../lib/api';
 import { useAuth } from '../../lib/authContext';
 import { Zap, X, Menu, Layers } from 'lucide-react';
 
@@ -49,13 +49,13 @@ export default function Layout() {
   // Load branding for mobile header
   useEffect(() => {
     const token = localStorage.getItem('crm_token');
-    fetch('/api/settings', { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+    apiFetch('/api/settings', { headers: token ? { Authorization: `Bearer ${token}` } : {} })
       .then(r => r.json())
       .then(s => { if (s.app_name) setAppName(s.app_name); setAppLogo(s.app_logo || ''); })
       .catch(() => {});
     const handler = () => {
       const token2 = localStorage.getItem('crm_token');
-      fetch('/api/settings', { headers: token2 ? { Authorization: `Bearer ${token2}` } : {} })
+      apiFetch('/api/settings', { headers: token2 ? { Authorization: `Bearer ${token2}` } : {} })
         .then(r => r.json())
         .then(s => { if (s.app_name) setAppName(s.app_name); setAppLogo(s.app_logo || ''); })
         .catch(() => {});

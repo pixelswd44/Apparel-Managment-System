@@ -5,7 +5,7 @@ import {
   XCircle, DollarSign, Layers, TrendingUp, AlertCircle,
   ChevronDown, Box, Calculator, Save, Copy, Globe,
 } from 'lucide-react';
-import api from '../lib/api';
+import api, { apiFetch } from '../lib/api';
 import Drawer from '../components/Drawer';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -394,7 +394,7 @@ function ProductModal({ product, categories, onCategoriesChange, onClose, onSave
   useEffect(() => {
     if (!product?.id) return;
     setPricesLoading(true);
-    fetch(`/api/products/${product.id}/prices`)
+    apiFetch(`/api/products/${product.id}/prices`)
       .then(r => r.json())
       .then(data => setProductPrices(Array.isArray(data) ? data : []))
       .catch(() => setProductPrices([]))
@@ -404,7 +404,7 @@ function ProductModal({ product, categories, onCategoriesChange, onClose, onSave
 
   const handleDeletePrice = async (currency) => {
     try {
-      await fetch(`/api/products/${product.id}/prices/${currency}`, { method: 'DELETE' });
+      await apiFetch(`/api/products/${product.id}/prices/${currency}`, { method: 'DELETE' });
       setProductPrices(prev => prev.filter(p => p.currency !== currency));
     } catch {}
     setDeletingPrice(null);
@@ -709,9 +709,9 @@ function ProductDrawer({ product, onClose, onEdit, onDelete, onDuplicate, onAppl
     setFabricUnit('KG'); setSelectedId(''); setNewCalcName('');
 
     Promise.all([
-      fetch(`/api/calculator-templates?product_id=${product.id}`).then(r => r.json()),
-      fetch('/api/cost-breakdown-items').then(r => r.json()),
-      fetch('/api/currencies').then(r => r.json()),
+      apiFetch(`/api/calculator-templates?product_id=${product.id}`).then(r => r.json()),
+      apiFetch('/api/cost-breakdown-items').then(r => r.json()),
+      apiFetch('/api/currencies').then(r => r.json()),
     ]).then(([templates, labels, currs]) => {
       const tmpl = Array.isArray(templates) && templates.length > 0 ? templates[0] : null;
       setCalcTemplate(tmpl);
@@ -797,14 +797,14 @@ function ProductDrawer({ product, onClose, onEdit, onDelete, onDuplicate, onAppl
     try {
       let saved;
       if (selectedId) {
-        const r = await fetch(`/api/calculator-templates/${selectedId}`, {
+        const r = await apiFetch(`/api/calculator-templates/${selectedId}`, {
           method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(buildBody(nameToUse)),
         });
         if (!r.ok) throw new Error('Failed');
         saved = await r.json();
         setSavedCalcs(prev => prev.map(c => c.id === saved.id ? saved : c));
       } else {
-        const r = await fetch('/api/calculator-templates', {
+        const r = await apiFetch('/api/calculator-templates', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(buildBody(nameToUse)),
         });
         if (!r.ok) throw new Error('Failed');
@@ -817,7 +817,7 @@ function ProductDrawer({ product, onClose, onEdit, onDelete, onDuplicate, onAppl
   }
 
   async function handleDeleteCalc(id) {
-    await fetch(`/api/calculator-templates/${id}`, { method: 'DELETE' });
+    await apiFetch(`/api/calculator-templates/${id}`, { method: 'DELETE' });
     setSavedCalcs(prev => prev.filter(c => c.id !== id));
     if (selectedId === String(id)) {
       setSelectedId(''); setCosts(emptyCalcCosts(costFields)); setProfitMargin('');
@@ -833,7 +833,7 @@ function ProductDrawer({ product, onClose, onEdit, onDelete, onDuplicate, onAppl
       if (!defCur) { setApplying(false); return; }
 
       // Save default-currency price
-      await fetch(`/api/products/${product.id}/prices`, {
+      await apiFetch(`/api/products/${product.id}/prices`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -850,7 +850,7 @@ function ProductDrawer({ product, onClose, onEdit, onDelete, onDuplicate, onAppl
         const tgtRate = parseFloat(c.rate_to_pkr) || 1;
         const convCost = (unitCostCalc    * defRate) / tgtRate;
         const convSell = (sellingPriceCalc * defRate) / tgtRate;
-        return fetch(`/api/products/${product.id}/prices`, {
+        return apiFetch(`/api/products/${product.id}/prices`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -867,11 +867,11 @@ function ProductDrawer({ product, onClose, onEdit, onDelete, onDuplicate, onAppl
         : (newCalcName.trim() || product.name);
       const body = buildBody(nameToUse);
       if (selectedId) {
-        await fetch(`/api/calculator-templates/${selectedId}`, {
+        await apiFetch(`/api/calculator-templates/${selectedId}`, {
           method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
         });
       } else if (newCalcName.trim()) {
-        const r = await fetch('/api/calculator-templates', {
+        const r = await apiFetch('/api/calculator-templates', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
         });
         if (r.ok) { const saved = await r.json(); setSavedCalcs(prev => [saved, ...prev]); setSelectedId(String(saved.id)); setNewCalcName(''); }

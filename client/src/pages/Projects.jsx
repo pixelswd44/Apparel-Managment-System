@@ -10,7 +10,7 @@ import {
   Store, Phone, Star, CreditCard, Truck, User, Building2,
   ImagePlus, FileImage,
 } from 'lucide-react';
-import api from '../lib/api';
+import api, { apiFetch } from '../lib/api';
 import { printDoc } from '../lib/printDoc';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
@@ -692,7 +692,7 @@ function ProductLine({ pp, catalogProducts, costFields, onSave, onRemove }) {
     if (!form.product_id) return;
     setSyncing(true);
     try {
-      const r = await fetch(`/api/calculator-templates?product_id=${form.product_id}`);
+      const r = await apiFetch(`/api/calculator-templates?product_id=${form.product_id}`);
       const templates = await r.json();
       const tpl = Array.isArray(templates) && templates[0];
       if (!tpl) { alert('No saved calculator found for this product.'); return; }
@@ -3117,7 +3117,7 @@ function PaymentForm({ pvId, projectId, onSaved, onCancel }) {
     try {
       const fd = new FormData();
       fd.append('file', file);
-      const res = await fetch('/api/upload', { method: 'POST', body: fd });
+      const res = await apiFetch('/api/upload', { method: 'POST', body: fd });
       if (res.ok) {
         const data = await res.json();
         set('receipt_url', data.url || '');
@@ -3129,7 +3129,7 @@ function PaymentForm({ pvId, projectId, onSaved, onCancel }) {
     if (!form.amount || parseFloat(form.amount) <= 0) return;
     setSaving(true);
     try {
-      const res = await fetch(`/api/projects/${projectId}/vendors/${pvId}/payments`, {
+      const res = await apiFetch(`/api/projects/${projectId}/vendors/${pvId}/payments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...form, amount: parseFloat(form.amount) }),

@@ -5,7 +5,7 @@ import {
   Building2, Upload, Star, Palette, Layers, Users, KeyRound, Eye, EyeOff,
   ShieldCheck, ShoppingBag, Package,
 } from 'lucide-react';
-import api from '../lib/api';
+import api, { apiFetch } from '../lib/api';
 import { useAuth } from '../lib/authContext';
 
 // ── Shared primitives ─────────────────────────────────────────────────────────
@@ -45,7 +45,7 @@ function CostBreakdownItems() {
   const dragOverIdx = useRef(null);
 
   useEffect(() => {
-    fetch('/api/cost-breakdown-items')
+    apiFetch('/api/cost-breakdown-items')
       .then(r => r.json())
       .then(data => { setItems(Array.isArray(data) ? data : []); setLoading(false); })
       .catch(() => setLoading(false));
@@ -100,7 +100,7 @@ function CostBreakdownItems() {
   async function addItem() {
     if (!addLabel.trim()) return;
     setAdding(true);
-    const r = await fetch('/api/cost-breakdown-items', {
+    const r = await apiFetch('/api/cost-breakdown-items', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ label: addLabel.trim() }),
@@ -113,7 +113,7 @@ function CostBreakdownItems() {
 
   async function saveChanges() {
     setSaving(true);
-    await fetch('/api/cost-breakdown-items/bulk', {
+    await apiFetch('/api/cost-breakdown-items/bulk', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(items.map((it, i) => ({ ...it, sort_order: i }))),
@@ -125,7 +125,7 @@ function CostBreakdownItems() {
 
   async function restoreDefaults() {
     setRestoring(true);
-    const r = await fetch('/api/cost-breakdown-items/restore-defaults', { method: 'POST' });
+    const r = await apiFetch('/api/cost-breakdown-items/restore-defaults', { method: 'POST' });
     const data = await r.json();
     setItems(Array.isArray(data) ? data : []);
     setRestoring(false);
@@ -303,7 +303,7 @@ function ExchangeRate() {
   const [saved, setSaved]   = useState(false);
 
   useEffect(() => {
-    fetch('/api/settings')
+    apiFetch('/api/settings')
       .then(r => r.json())
       .then(s => { setRate(s.pkr_to_usd ?? '0.00358'); setLoading(false); })
       .catch(() => setLoading(false));
@@ -313,7 +313,7 @@ function ExchangeRate() {
     const val = parseFloat(rate);
     if (!val || val <= 0) return;
     setSaving(true);
-    await fetch('/api/settings/pkr_to_usd', {
+    await apiFetch('/api/settings/pkr_to_usd', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ value: val }),
@@ -414,7 +414,7 @@ function Currencies() {
 
   const reload = async () => {
     try {
-      const data = await fetch('/api/currencies').then(r => r.json());
+      const data = await apiFetch('/api/currencies').then(r => r.json());
       setCurrencies(Array.isArray(data) ? data : []);
     } catch {}
   };
@@ -432,7 +432,7 @@ function Currencies() {
     if (!pkrVal || pkrVal <= 0) { setFormErr('Enter how many PKR equals 1 unit of this currency.'); return; }
     setSaving(true); setFormErr('');
     try {
-      const r = await fetch('/api/currencies', {
+      const r = await apiFetch('/api/currencies', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
       });
@@ -456,7 +456,7 @@ function Currencies() {
     if (!pkrVal || pkrVal <= 0) { setEditErr('Enter a valid PKR rate.'); return; }
     setEditSaving(true); setEditErr('');
     try {
-      const r = await fetch(`/api/currencies/${editing.id}`, {
+      const r = await apiFetch(`/api/currencies/${editing.id}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editing),
       });
@@ -471,7 +471,7 @@ function Currencies() {
   async function handleSetDefault(id) {
     setSettingDefault(id);
     try {
-      await fetch(`/api/currencies/${id}/set-default`, { method: 'PUT' });
+      await apiFetch(`/api/currencies/${id}/set-default`, { method: 'PUT' });
       await reload();
     } catch {}
     setSettingDefault(null);
@@ -479,7 +479,7 @@ function Currencies() {
 
   async function handleDelete(id) {
     try {
-      const r = await fetch(`/api/currencies/${id}`, { method: 'DELETE' });
+      const r = await apiFetch(`/api/currencies/${id}`, { method: 'DELETE' });
       if (r.ok) await reload();
     } catch {}
     setDelId(null);
@@ -753,7 +753,7 @@ function CompanyForm({ initial = EMPTY_CO, onSave, onCancel, saving, error }) {
     const fd = new FormData();
     fd.append('file', file);
     try {
-      const r = await fetch('/api/uploads', { method: 'POST', body: fd });
+      const r = await apiFetch('/api/uploads', { method: 'POST', body: fd });
       const d = await r.json();
       if (d.url) set('logo', d.url);
     } catch {} finally { setUploading(false); }
@@ -867,7 +867,7 @@ function Companies() {
   const [delError,  setDelError]  = useState('');
 
   const load = () =>
-    fetch('/api/companies').then(r => r.json())
+    apiFetch('/api/companies').then(r => r.json())
       .then(data => { setCompanies(Array.isArray(data) ? data : []); setLoading(false); })
       .catch(() => setLoading(false));
 
@@ -876,7 +876,7 @@ function Companies() {
   async function handleAdd(form) {
     setSaving(true); setError('');
     try {
-      const r = await fetch('/api/companies', {
+      const r = await apiFetch('/api/companies', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
       });
@@ -890,7 +890,7 @@ function Companies() {
   async function handleEdit(form) {
     setSaving(true); setError('');
     try {
-      const r = await fetch(`/api/companies/${editId}`, {
+      const r = await apiFetch(`/api/companies/${editId}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
       });
@@ -902,13 +902,13 @@ function Companies() {
   }
 
   async function handleSetDefault(id) {
-    await fetch(`/api/companies/${id}/set-default`, { method: 'PUT' });
+    await apiFetch(`/api/companies/${id}/set-default`, { method: 'PUT' });
     load();
   }
 
   async function handleDelete(id) {
     try {
-      const r = await fetch(`/api/companies/${id}`, { method: 'DELETE' });
+      const r = await apiFetch(`/api/companies/${id}`, { method: 'DELETE' });
       const d = await r.json();
       if (!r.ok) { setDelError(d.error ?? 'Cannot delete.'); return; }
       await load();
@@ -1064,7 +1064,7 @@ function AppBranding() {
   const fileRef = useRef(null);
 
   useEffect(() => {
-    fetch('/api/settings')
+    apiFetch('/api/settings')
       .then(r => r.json())
       .then(s => {
         if (s.app_name) setAppName(s.app_name);
@@ -1080,7 +1080,7 @@ function AppBranding() {
     const fd = new FormData();
     fd.append('file', file);
     try {
-      const r = await fetch('/api/uploads', { method: 'POST', body: fd });
+      const r = await apiFetch('/api/uploads', { method: 'POST', body: fd });
       const d = await r.json();
       if (d.url) setAppLogo(d.url);
     } catch {}
@@ -1091,12 +1091,12 @@ function AppBranding() {
     setSaving(true);
     try {
       await Promise.all([
-        fetch('/api/settings/app_name', {
+        apiFetch('/api/settings/app_name', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ value: appName.trim() || 'Apparel CRM' }),
         }),
-        fetch('/api/settings/app_logo', {
+        apiFetch('/api/settings/app_logo', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ value: appLogo }),

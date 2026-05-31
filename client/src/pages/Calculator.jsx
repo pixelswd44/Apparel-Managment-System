@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { apiFetch } from '../lib/api';
 import {
   Calculator as CalcIcon, ChevronDown, ChevronUp, Save, Trash2,
   Package, RefreshCw, Check, X, FileText, AlertTriangle,
@@ -159,9 +160,9 @@ export default function Calculator() {
 
   useEffect(() => {
     Promise.all([
-      fetch('/api/products').then(r => r.json()),
-      fetch('/api/calculator-templates').then(r => r.json()),
-      fetch('/api/cost-breakdown-items').then(r => r.json()),
+      apiFetch('/api/products').then(r => r.json()),
+      apiFetch('/api/calculator-templates').then(r => r.json()),
+      apiFetch('/api/cost-breakdown-items').then(r => r.json()),
     ]).then(([p, t, c]) => {
       setProducts(Array.isArray(p) ? p : []);
       setTemplates(Array.isArray(t) ? t : []);
@@ -228,13 +229,13 @@ export default function Calculator() {
 
     let savedRow;
     if (templateId) {
-      const r = await fetch(`/api/calculator-templates/${templateId}`, {
+      const r = await apiFetch(`/api/calculator-templates/${templateId}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
       });
       savedRow = await r.json();
       setTemplates(prev => prev.map(t => t.id === savedRow.id ? savedRow : t));
     } else {
-      const r = await fetch('/api/calculator-templates', {
+      const r = await apiFetch('/api/calculator-templates', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
       });
       savedRow = await r.json();
@@ -247,7 +248,7 @@ export default function Calculator() {
   }
 
   async function handleDeleteTemplate(id) {
-    await fetch(`/api/calculator-templates/${id}`, { method: 'DELETE' });
+    await apiFetch(`/api/calculator-templates/${id}`, { method: 'DELETE' });
     setTemplates(prev => prev.filter(t => t.id !== id));
     if (templateId === String(id)) resetAll();
     setDelTarget(null);

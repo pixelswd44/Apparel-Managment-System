@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { useDirty } from '../../lib/dirtyContext';
 import { useAuth } from '../../lib/authContext';
-import api from '../../lib/api';
+import api, { apiFetch } from '../../lib/api';
 
 // ── Change Password Modal ─────────────────────────────────────────────────────
 function ChangePasswordModal({ onClose }) {
@@ -138,7 +138,7 @@ export default function Sidebar({ isOpen = false, onClose = () => {} }) {
     async function loadBranding() {
       try {
         const token = localStorage.getItem('crm_token');
-        const s = await fetch('/api/settings', {
+        const s = await apiFetch('/api/settings', {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         }).then(r => r.json());
         if (s.app_name) { setAppName(s.app_name); document.title = s.app_name; }

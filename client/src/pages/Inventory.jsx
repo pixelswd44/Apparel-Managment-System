@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { apiFetch } from '../lib/api';
 import {
   Plus, Pencil, Trash2, X, Save, Archive, Package, AlertTriangle,
   ChevronDown, ChevronUp, TrendingDown, TrendingUp, ArrowDownCircle,
@@ -309,7 +310,7 @@ export default function Inventory() {
   async function load() {
     setLoading(true);
     try {
-      const r = await fetch('/api/inventory');
+      const r = await apiFetch('/api/inventory');
       setItems(await r.json());
     } finally { setLoading(false); }
   }
@@ -317,13 +318,13 @@ export default function Inventory() {
 
   async function handleSave(form) {
     if (editItem) {
-      await fetch(`/api/inventory/${editItem.id}`, {
+      await apiFetch(`/api/inventory/${editItem.id}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
       });
       setEditItem(null);
     } else {
-      await fetch('/api/inventory', {
+      await apiFetch('/api/inventory', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
       });
@@ -333,13 +334,13 @@ export default function Inventory() {
   }
 
   async function confirmDelete() {
-    await fetch(`/api/inventory/${delTarget}`, { method: 'DELETE' });
+    await apiFetch(`/api/inventory/${delTarget}`, { method: 'DELETE' });
     setDelTarget(null);
     load();
   }
 
   async function handleStockIn(item, data) {
-    await fetch(`/api/inventory/${item.id}/stock-in`, {
+    await apiFetch(`/api/inventory/${item.id}/stock-in`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
