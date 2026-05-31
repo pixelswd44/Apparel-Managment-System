@@ -331,12 +331,12 @@ function ExchangeRate() {
   return (
     <div className="max-w-sm space-y-5">
       <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-500">
-        This rate is used when converting PKR costs to USD in the product price calculator.
+        This is the base exchange rate used internally for currency conversions in the product price calculator.
       </div>
 
       <div>
         <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-          1 PKR equals (in USD)
+          Base Currency Rate (PKR → USD)
         </label>
         <div className="flex gap-2">
           <div className="relative flex-1">
@@ -429,7 +429,7 @@ function Currencies() {
   async function handleAdd() {
     if (!form.code.trim() || !form.name.trim()) { setFormErr('Code and name are required.'); return; }
     const pkrVal = parseFloat(form.rate_to_pkr);
-    if (!pkrVal || pkrVal <= 0) { setFormErr('Enter how many PKR equals 1 unit of this currency.'); return; }
+    if (!pkrVal || pkrVal <= 0) { setFormErr('Enter a valid exchange rate (must be greater than 0).'); return; }
     setSaving(true); setFormErr('');
     try {
       const r = await apiFetch('/api/currencies', {
@@ -453,7 +453,7 @@ function Currencies() {
   async function handleSaveEdit() {
     if (!editing.code.trim() || !editing.name.trim()) { setEditErr('Code and name are required.'); return; }
     const pkrVal = parseFloat(editing.rate_to_pkr);
-    if (!pkrVal || pkrVal <= 0) { setEditErr('Enter a valid PKR rate.'); return; }
+    if (!pkrVal || pkrVal <= 0) { setEditErr('Enter a valid exchange rate (must be greater than 0).'); return; }
     setEditSaving(true); setEditErr('');
     try {
       const r = await apiFetch(`/api/currencies/${editing.id}`, {
@@ -500,7 +500,10 @@ function Currencies() {
       <div className="bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3 text-sm text-indigo-700 mb-6 flex items-start gap-2.5">
         <DollarSign size={15} className="text-indigo-500 mt-0.5 flex-shrink-0" />
         <span>
-          Set how many <span className="font-semibold">PKR</span> equals one unit of each currency.
+          Set the exchange rate for each currency relative to your{' '}
+          <span className="font-semibold">
+            {currencies.find(c => c.is_default === 1)?.code || 'base'} ({currencies.find(c => c.is_default === 1)?.name || 'default currency'})
+          </span>.
           All invoice and quotation values are converted using these rates.
           The <span className="font-semibold text-indigo-600">Default</span> currency is pre-selected when creating new quotations and invoices.
         </span>
@@ -539,23 +542,32 @@ function Currencies() {
                 className={inputCls} placeholder="e.g. Euro" />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-                1 {form.code || 'CURRENCY'} = ? PKR <span className="text-rose-400">*</span>
-              </label>
-              <div className="relative">
-                <input type="number" min="0" step="any" value={form.rate_to_pkr} onChange={e => setF('rate_to_pkr', e.target.value)}
-                  className={`${inputCls} pr-14`} placeholder="e.g. 302" />
-                <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-semibold">PKR</span>
-              </div>
+              {(() => {
+                const defCur = currencies.find(c => c.is_default === 1);
+                const baseCode = defCur?.code || 'BASE';
+                const baseSym  = defCur?.symbol || '';
+                return (
+                  <>
+                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                      1 {form.code || 'CURRENCY'} = ? {baseCode} <span className="text-rose-400">*</span>
+                    </label>
+                    <div className="relative">
+                      <input type="number" min="0" step="any" value={form.rate_to_pkr} onChange={e => setF('rate_to_pkr', e.target.value)}
+                        className={`${inputCls} pr-16`} placeholder="e.g. 1.08" />
+                      <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-semibold">{baseCode}</span>
+                    </div>
+                    {form.rate_to_pkr && parseFloat(form.rate_to_pkr) > 0 && (
+                      <p className="text-xs text-slate-400 mt-1.5">
+                        Preview: <span className="font-semibold text-slate-700">1 {form.code || '?'} = {baseSym}{parseFloat(form.rate_to_pkr).toLocaleString('en-US', { maximumFractionDigits: 4 })} {baseCode}</span>
+                        <span className="ml-2">·</span>
+                        <span className="ml-2">1 {baseCode} = {(1 / parseFloat(form.rate_to_pkr)).toFixed(6)} {form.code || '?'}</span>
+                      </p>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </div>
-          {form.rate_to_pkr && parseFloat(form.rate_to_pkr) > 0 && (
-            <p className="text-xs text-slate-400">
-              Preview: <span className="font-semibold text-slate-700">1 {form.code || '?'} = ₨{parseFloat(form.rate_to_pkr).toLocaleString('en-US', { maximumFractionDigits: 2 })} PKR</span>
-              <span className="ml-2">·</span>
-              <span className="ml-2 text-slate-500">1 PKR = {(1 / parseFloat(form.rate_to_pkr)).toFixed(6)} {form.code || '?'}</span>
-            </p>
-          )}
           <div className="flex gap-2 pt-1">
             <button onClick={handleAdd} disabled={saving}
               className="px-5 py-2 text-sm bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl transition-colors font-medium">
@@ -576,16 +588,23 @@ function Currencies() {
             <tr className="bg-slate-50 border-b border-slate-200">
               <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider w-8" />
               <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">Currency</th>
-              <th className="text-center px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">Rate</th>
-              <th className="text-right px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">1 CURRENCY = PKR</th>
-              <th className="text-right px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">1 PKR =</th>
+              <th className="text-center px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">Default</th>
+              <th className="text-right px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                1 UNIT = {currencies.find(c => c.is_default === 1)?.code || 'BASE'}
+              </th>
+              <th className="text-right px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                1 {currencies.find(c => c.is_default === 1)?.code || 'BASE'} =
+              </th>
               <th className="w-36" />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {currencies.map(c => {
               const isEditing  = editing?.id === c.id;
-              const isPKR      = c.code === 'PKR';
+              const isDefault  = c.is_default === 1;
+              const defCur     = currencies.find(x => x.is_default === 1);
+              const baseCode   = defCur?.code || 'BASE';
+              const baseSym    = defCur?.symbol || '';
               const pkrVal     = parseFloat(c.rate_to_pkr) || 1;
 
               if (isEditing) {
@@ -613,15 +632,15 @@ function Currencies() {
                         <input type="number" min="0" step="any"
                           value={editing.rate_to_pkr}
                           onChange={e => setE('rate_to_pkr', e.target.value)}
-                          disabled={isPKR}
-                          className="w-full border border-indigo-300 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 bg-white font-mono pr-14 disabled:bg-slate-100 disabled:text-slate-400"
-                          placeholder="PKR rate"
+                          disabled={isDefault}
+                          className="w-full border border-indigo-300 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 bg-white font-mono pr-16 disabled:bg-slate-100 disabled:text-slate-400"
+                          placeholder="Exchange rate"
                         />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-semibold">PKR</span>
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-semibold">{baseCode}</span>
                       </div>
                       {editing.rate_to_pkr && parseFloat(editing.rate_to_pkr) > 0 && (
                         <p className="text-xs text-indigo-600 mt-1">
-                          1 {editing.code} = ₨{parseFloat(editing.rate_to_pkr).toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                          1 {editing.code} = {baseSym}{parseFloat(editing.rate_to_pkr).toLocaleString('en-US', { maximumFractionDigits: 4 })} {baseCode}
                         </p>
                       )}
                     </td>
@@ -657,13 +676,13 @@ function Currencies() {
                       )}
                     </div>
                   </td>
-                  {/* Rate expression: 1 X = ? PKR */}
+                  {/* Rate: 1 X = ? BASE */}
                   <td className="px-4 py-3 text-center">
                     <span className="text-xs text-slate-400">1 {c.code} =</span>
                   </td>
                   <td className="px-4 py-3 text-right">
                     <span className="font-mono font-bold text-slate-800 text-base">
-                      ₨{pkrVal.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                      {baseSym}{pkrVal.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 4 })} {isDefault ? '(base)' : baseCode}
                     </span>
                   </td>
                   {/* Inverse */}
@@ -690,7 +709,7 @@ function Currencies() {
                         className="p-1.5 text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors ml-1">
                         <Pencil size={13} />
                       </button>
-                      {!isPKR && c.is_default !== 1 && (
+                      {c.is_default !== 1 && (
                         delId === c.id ? (
                           <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 rounded-lg px-2">
                             <span className="text-xs text-rose-600">Delete?</span>
@@ -719,18 +738,29 @@ function Currencies() {
       {/* Live summary */}
       {currencies.length > 0 && (
         <div className="mt-4 bg-slate-50 border border-slate-200 rounded-xl p-4">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Quick Reference · PKR = 1</p>
-          <div className="flex flex-wrap gap-3">
-            {currencies.filter(c => c.code !== 'PKR').map(c => (
-              <div key={c.code} className="bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-center min-w-[100px]">
-                <p className="text-xs text-slate-400 mb-0.5">{c.code}</p>
-                <p className="font-bold text-slate-800 text-sm">
-                  {c.symbol || ''}{(1 / (parseFloat(c.rate_to_pkr) || 1)).toFixed(4)}
+          {(() => {
+            const defCur   = currencies.find(c => c.is_default === 1);
+            const baseCode = defCur?.code || 'BASE';
+            const baseSym  = defCur?.symbol || '';
+            return (
+              <>
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+                  Quick Reference · 1 {baseCode} =
                 </p>
-                <p className="text-2xs text-slate-400 mt-0.5">per PKR</p>
-              </div>
-            ))}
-          </div>
+                <div className="flex flex-wrap gap-3">
+                  {currencies.filter(c => c.code !== baseCode).map(c => (
+                    <div key={c.code} className="bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-center min-w-[100px]">
+                      <p className="text-xs text-slate-400 mb-0.5">{c.code}</p>
+                      <p className="font-bold text-slate-800 text-sm">
+                        {c.symbol || ''}{(1 / (parseFloat(c.rate_to_pkr) || 1)).toFixed(4)}
+                      </p>
+                      <p className="text-2xs text-slate-400 mt-0.5">per {baseCode}</p>
+                    </div>
+                  ))}
+                </div>
+              </>
+            );
+          })()}
         </div>
       )}
     </div>
@@ -1552,7 +1582,7 @@ function UsersManagement() {
 const SECTIONS = [
   { id: 'app-branding',   label: 'App Branding',          icon: Palette,    description: 'Change the application name and logo shown in the sidebar' },
   { id: 'companies',      label: 'Companies',             icon: Building2,  description: 'Manage your companies — each with its own logo and details for quotations & invoices' },
-  { id: 'currencies',     label: 'Currencies & Rates',    icon: Globe,      description: 'Set how many PKR equals each currency — used across all conversions' },
+  { id: 'currencies',     label: 'Currencies & Rates',    icon: Globe,      description: 'Manage currencies and exchange rates. Set your default currency — used across all quotations, invoices and conversions.' },
   { id: 'cost-breakdown', label: 'Cost Breakdown Items',  icon: Calculator, description: 'Customize the cost categories used in the product price calculator' },
   { id: 'users',          label: 'Users',                 icon: Users,      description: 'Manage user accounts, roles and reset passwords' },
 ];
