@@ -182,10 +182,11 @@ function QuotationView({ quotationId, onClose, onEdit, onConverted, embedded = f
   try { items = JSON.parse(quotation.items || '[]'); } catch {}
 
   const subtotal  = items.reduce((s, i) => s + (parseFloat(i.total) || 0), 0);
-  const disc      = parseFloat(quotation.discount) || 0;
+  const disc      = parseFloat(quotation.discount)      || 0;
+  const ship      = parseFloat(quotation.shipping_cost) || 0;
   const taxable   = subtotal - disc;
   const taxAmt    = taxable * ((parseFloat(quotation.tax_rate) || 0) / 100);
-  const total     = taxable + taxAmt;
+  const total     = taxable + taxAmt + ship;
   const itemCount = items.length;
   const totalQty  = items.reduce((s, i) => s + (parseFloat(i.quantity) || 0), 0);
 
@@ -454,6 +455,12 @@ function QuotationView({ quotationId, onClose, onEdit, onConverted, embedded = f
                   <div className="flex justify-between text-xs">
                     <span className="text-slate-500">Tax ({quotation.tax_rate}%)</span>
                     <span className="font-semibold text-slate-700">+ {fmtMoney(taxAmt, sym)}</span>
+                  </div>
+                )}
+                {ship > 0 && (
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-500">Shipping</span>
+                    <span className="font-semibold text-slate-700">+ {fmtMoney(ship, sym)}</span>
                   </div>
                 )}
                 <div className="border-t border-slate-200 pt-2 flex justify-between items-center">

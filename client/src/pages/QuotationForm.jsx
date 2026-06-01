@@ -464,12 +464,13 @@ function LineItems({ items, onChange, products, setProducts, sym, currencies, do
 
 // ── Totals panel ──────────────────────────────────────────────────────────────
 
-function TotalsPanel({ items, taxRate, discount, sym }) {
+function TotalsPanel({ items, taxRate, discount, shippingCost, sym }) {
   const subtotal = items.reduce((s, i) => s + (parseFloat(i.total) || 0), 0);
-  const disc     = parseFloat(discount) || 0;
+  const disc     = parseFloat(discount)     || 0;
+  const ship     = parseFloat(shippingCost) || 0;
   const taxable  = subtotal - disc;
   const taxAmt   = taxable * ((parseFloat(taxRate) || 0) / 100);
-  const total    = taxable + taxAmt;
+  const total    = taxable + taxAmt + ship;
 
   return (
     <div className="bg-indigo-50/60 border border-indigo-100 rounded-xl p-5 min-w-[260px] space-y-2.5">
@@ -487,6 +488,12 @@ function TotalsPanel({ items, taxRate, discount, sym }) {
         <div className="flex justify-between text-sm">
           <span className="text-slate-500">Tax ({taxRate}%)</span>
           <span className="font-semibold text-slate-700">+ {fmtMoney(taxAmt, sym)}</span>
+        </div>
+      )}
+      {ship > 0 && (
+        <div className="flex justify-between text-sm">
+          <span className="text-slate-500">Shipping</span>
+          <span className="font-semibold text-slate-700">+ {fmtMoney(ship, sym)}</span>
         </div>
       )}
       <div className="border-t border-indigo-200 pt-2.5 flex justify-between items-center">
@@ -529,6 +536,7 @@ export default function QuotationForm() {
     status:           'draft',
     tax_rate:         '',
     discount:         '',
+    shipping_cost:    '',
     notes:            '',
     valid_until:      addDays(today(), 20),
     currency:         'USD',
@@ -585,6 +593,7 @@ export default function QuotationForm() {
             status:           q.status           || 'draft',
             tax_rate:         q.tax_rate         || '',
             discount:         q.discount         || '',
+            shipping_cost:    q.shipping_cost    || '',
             notes:            q.notes            || '',
             valid_until:      q.valid_until      || addDays(today(), 20),
             currency:         q.currency         || baseCurrCode,
@@ -1043,7 +1052,7 @@ export default function QuotationForm() {
         {/* ── 3. Pricing ── */}
         <SectionCard id="sec-pricing" icon={FileCheck} title="Pricing Summary" iconColor="text-emerald-600" iconBg="bg-emerald-50">
           <div className="flex gap-8 items-start justify-between flex-wrap">
-            <div className="grid grid-cols-2 gap-4 flex-1 min-w-[220px] max-w-xs">
+            <div className="grid grid-cols-3 gap-4 flex-1 min-w-[280px] max-w-md">
               <Field label={`Discount (${sym})`}>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none">{sym}</span>
@@ -1060,8 +1069,16 @@ export default function QuotationForm() {
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none">%</span>
                 </div>
               </Field>
+              <Field label={`Shipping (${sym})`}>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none">{sym}</span>
+                  <input type="number" min="0" step="any" value={form.shipping_cost}
+                    onChange={e => set('shipping_cost', e.target.value)}
+                    className={`${inputCls} pl-6`} placeholder="0.00" />
+                </div>
+              </Field>
             </div>
-            <TotalsPanel items={items} taxRate={form.tax_rate} discount={form.discount} sym={sym} />
+            <TotalsPanel items={items} taxRate={form.tax_rate} discount={form.discount} shippingCost={form.shipping_cost} sym={sym} />
           </div>
         </SectionCard>
 

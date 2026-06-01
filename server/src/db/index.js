@@ -545,6 +545,9 @@ const migrations = [
   `ALTER TABLE users ADD COLUMN reset_token_expires TEXT`,
   // Company logo size for printed documents (in px height)
   `ALTER TABLE companies ADD COLUMN logo_size INTEGER DEFAULT 40`,
+  // Shipping cost on quotations & invoices (added to subtotal before tax)
+  `ALTER TABLE quotations ADD COLUMN shipping_cost REAL DEFAULT 0`,
+  `ALTER TABLE invoices   ADD COLUMN shipping_cost REAL DEFAULT 0`,
 ];
 
 for (const sql of migrations) {

@@ -684,6 +684,12 @@ function InvoiceView({ invoiceId, onClose, onConverted, embedded = false }) {
                       <span className="font-semibold text-slate-700">+ {fmtMoney(invoice.tax_amount, sym)}</span>
                     </div>
                   )}
+                  {parseFloat(invoice.shipping_cost) > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Shipping</span>
+                      <span className="font-semibold text-slate-700">+ {fmtMoney(invoice.shipping_cost, sym)}</span>
+                    </div>
+                  )}
                   <div className="border-t border-slate-200 pt-1.5 flex justify-between items-baseline">
                     <span className="font-bold text-slate-800 text-sm">Total</span>
                     <span className="font-bold text-slate-900 text-base">{fmtMoney(invoice.total, sym)}</span>
