@@ -1066,10 +1066,21 @@ export default function Products() {
 
   const handleDelete = async () => {
     const { type, item } = delTarget;
-    if (type === 'product') { await api.delete(`/products/${item.id}`); if (drawer?.id === item.id) setDrawer(null); }
-    else await api.delete(`/categories/${item.id}`);
-    setDelTarget(null);
-    await loadAll();
+    try {
+      if (type === 'product') {
+        await api.delete(`/products/${item.id}`);
+        if (drawer?.id === item.id) setDrawer(null);
+      } else {
+        await api.delete(`/categories/${item.id}`);
+      }
+      setDelTarget(null);
+      await loadAll();
+    } catch (err) {
+      // Backend returns 409 with a friendly message when product is in use
+      const msg = err?.response?.data?.error
+        || 'Could not delete. The item may be in use elsewhere.';
+      setDelTarget(prev => prev ? { ...prev, error: msg } : null);
+    }
   };
 
   const handleDuplicateProduct = async (product) => {
@@ -1145,19 +1156,31 @@ export default function Products() {
 
       {/* Inline delete confirmation */}
       {delTarget && (
-        <div className="flex items-center gap-3 px-4 py-3 mb-1 bg-rose-50 border border-rose-200 rounded-xl text-sm flex-shrink-0">
-          <AlertTriangle size={15} className="text-rose-500 flex-shrink-0" />
-          <span className="flex-1 text-rose-700 font-medium">
-            Delete <strong>{delTarget.item.name}</strong>? This cannot be undone.
+        <div className={`flex items-center gap-3 px-4 py-3 mb-1 border rounded-xl text-sm flex-shrink-0 ${
+          delTarget.error
+            ? 'bg-amber-50 border-amber-200'
+            : 'bg-rose-50 border-rose-200'
+        }`}>
+          <AlertTriangle size={15} className={`flex-shrink-0 ${delTarget.error ? 'text-amber-600' : 'text-rose-500'}`} />
+          <span className={`flex-1 font-medium ${delTarget.error ? 'text-amber-800' : 'text-rose-700'}`}>
+            {delTarget.error
+              ? delTarget.error
+              : <>Delete <strong>{delTarget.item.name}</strong>? This cannot be undone.</>}
           </span>
           <button onClick={() => setDelTarget(null)}
-            className="px-3 py-1.5 text-xs border border-rose-200 rounded-lg text-rose-600 hover:bg-rose-100 transition-colors">
-            Cancel
+            className={`px-3 py-1.5 text-xs border rounded-lg transition-colors ${
+              delTarget.error
+                ? 'border-amber-200 text-amber-700 hover:bg-amber-100'
+                : 'border-rose-200 text-rose-600 hover:bg-rose-100'
+            }`}>
+            {delTarget.error ? 'Close' : 'Cancel'}
           </button>
-          <button onClick={handleDelete}
-            className="px-3 py-1.5 text-xs bg-rose-600 text-white rounded-lg hover:bg-rose-700 transition-colors font-medium">
-            Delete
-          </button>
+          {!delTarget.error && (
+            <button onClick={handleDelete}
+              className="px-3 py-1.5 text-xs bg-rose-600 text-white rounded-lg hover:bg-rose-700 transition-colors font-medium">
+              Delete
+            </button>
+          )}
         </div>
       )}
 

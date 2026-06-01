@@ -97,9 +97,72 @@ router.post('/:id/duplicate', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Check whether a product is referenced anywhere — used by the UI to decide
+// whether to enable/disable the delete button before the user clicks.
+router.get('/:id/usage', (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const quotRefs = db.prepare(`
+      SELECT DISTINCT q.id, q.number
+      FROM quotations q, json_each(q.items) AS li
+      WHERE CAST(json_extract(li.value, '$.product_id') AS INTEGER) = ?
+    `).all(id);
+    const invRefs = db.prepare(`
+      SELECT DISTINCT i.id, i.number
+      FROM invoices i, json_each(i.items) AS li
+      WHERE CAST(json_extract(li.value, '$.product_id') AS INTEGER) = ?
+    `).all(id);
+    res.json({
+      quotation_count: quotRefs.length,
+      invoice_count:   invRefs.length,
+      can_delete:      quotRefs.length === 0 && invRefs.length === 0,
+      quotations:      quotRefs.slice(0, 10),
+      invoices:        invRefs.slice(0, 10),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.delete('/:id', (req, res) => {
   try {
-    db.prepare('DELETE FROM products WHERE id = ?').run(req.params.id);
+    const id = parseInt(req.params.id, 10);
+
+    // Check if product is referenced in any quotation line items (stored as JSON)
+    const quotRefs = db.prepare(`
+      SELECT q.number
+      FROM quotations q, json_each(q.items) AS li
+      WHERE CAST(json_extract(li.value, '$.product_id') AS INTEGER) = ?
+      LIMIT 5
+    `).all(id);
+
+    // Check if product is referenced in any invoice line items
+    const invRefs = db.prepare(`
+      SELECT i.number
+      FROM invoices i, json_each(i.items) AS li
+      WHERE CAST(json_extract(li.value, '$.product_id') AS INTEGER) = ?
+      LIMIT 5
+    `).all(id);
+
+    const quotCount = new Set(quotRefs.map(r => r.number)).size;
+    const invCount  = new Set(invRefs.map(r => r.number)).size;
+
+    if (quotCount > 0 || invCount > 0) {
+      const parts = [];
+      if (quotCount > 0) parts.push(`${quotCount} quotation${quotCount === 1 ? '' : 's'}`);
+      if (invCount  > 0) parts.push(`${invCount} invoice${invCount === 1 ? '' : 's'}`);
+      return res.status(409).json({
+        error: `Cannot delete — this product is used in ${parts.join(' and ')}. Remove or replace it in those documents first, or set the product to Inactive instead.`,
+        details: {
+          quotation_count: quotCount,
+          invoice_count:   invCount,
+          example_quotations: [...new Set(quotRefs.map(r => r.number))].slice(0, 3),
+          example_invoices:   [...new Set(invRefs.map(r => r.number))].slice(0, 3),
+        },
+      });
+    }
+
+    db.prepare('DELETE FROM products WHERE id = ?').run(id);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
