@@ -169,11 +169,36 @@ router.post('/:id/duplicate', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Pre-flight: check whether a quotation can be deleted (used to disable UI buttons)
+router.get('/:id/usage', (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const invRefs = db.prepare(
+      'SELECT id, number, status FROM invoices WHERE quotation_id = ? ORDER BY created_at DESC'
+    ).all(id);
+    res.json({
+      invoice_count: invRefs.length,
+      can_delete:    invRefs.length === 0,
+      invoices:      invRefs.slice(0, 10),
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.delete('/:id', (req, res) => {
   try {
-    const invCount = db.prepare('SELECT COUNT(*) as n FROM invoices WHERE quotation_id = ?').get(req.params.id).n;
-    if (invCount > 0)
-      return res.status(400).json({ error: 'This quotation has been converted to an invoice. Delete the invoice first.' });
+    const invRefs = db.prepare(
+      'SELECT number FROM invoices WHERE quotation_id = ? LIMIT 5'
+    ).all(req.params.id);
+
+    if (invRefs.length > 0) {
+      return res.status(409).json({
+        error: 'This quote cannot be deleted as retainer invoice or invoices have been created for it. Delete the related invoice(s) first, or set the quotation to Rejected/Expired instead.',
+        details: {
+          invoice_count:      invRefs.length,
+          example_invoices:   invRefs.map(r => r.number),
+        },
+      });
+    }
     db.prepare('DELETE FROM quotations WHERE id = ?').run(req.params.id);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
