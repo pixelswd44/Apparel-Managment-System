@@ -36,12 +36,11 @@ function Spinner() {
 }
 
 // Guard: redirect to login if not authenticated, or / if wrong role
-function ProtectedRoute({ children, path }) {
+function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
   const location = useLocation();
   if (loading) return <Spinner />;
   if (!user) return <Navigate to="/login" state={{ from: location }} replace />;
-  if (path && !canAccess(user, path)) return <Navigate to="/" replace />;
   return children;
 }
 

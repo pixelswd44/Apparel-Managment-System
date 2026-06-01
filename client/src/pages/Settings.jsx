@@ -1584,7 +1584,6 @@ const SECTIONS = [
   { id: 'companies',      label: 'Companies',             icon: Building2,  description: 'Manage your companies — each with its own logo and details for quotations & invoices' },
   { id: 'currencies',     label: 'Currencies & Rates',    icon: Globe,      description: 'Manage currencies and exchange rates. Set your default currency — used across all quotations, invoices and conversions.' },
   { id: 'cost-breakdown', label: 'Cost Breakdown Items',  icon: Calculator, description: 'Customize the cost categories used in the product price calculator' },
-  { id: 'users',          label: 'Users',                 icon: Users,      description: 'Manage user accounts, roles and reset passwords' },
 ];
 
 // ── Main Settings page ────────────────────────────────────────────────────────
@@ -1635,7 +1634,6 @@ export default function Settings() {
           {activeSection === 'companies'      && <Companies />}
           {activeSection === 'currencies'     && <Currencies />}
           {activeSection === 'cost-breakdown' && <CostBreakdownItems />}
-          {activeSection === 'users'          && <UsersManagement />}
         </div>
       </div>
     </div>

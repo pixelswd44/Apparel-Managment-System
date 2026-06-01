@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import api, { apiFetch } from '../lib/api';
 import { printDoc } from '../lib/printDoc';
+import SidePanel from '../components/SidePanel';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -242,20 +243,24 @@ function ProjectModal({ project, clients, invoices, onClose, onSave }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 animate-overlay">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col animate-modal max-h-[92vh]">
-
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-          <div>
-            <h2 className="font-semibold text-slate-900">{project ? 'Edit Project' : 'New Production Project'}</h2>
-            <p className="text-xs text-slate-400 mt-0.5">Fill in the basic details to get started</p>
-          </div>
-          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl"><X size={18} /></button>
+    <SidePanel
+      open={true}
+      onClose={onClose}
+      title={project ? 'Edit Project' : 'New Production Project'}
+      subtitle="Fill in the basic details to get started"
+      footer={
+        <div className="flex gap-3">
+          <button onClick={onClose} className="flex-1 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-600 hover:bg-slate-50 font-medium">Cancel</button>
+          <button onClick={handleSubmit} disabled={saving}
+            className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 disabled:opacity-60 transition-colors">
+            {saving ? 'Saving…' : project ? 'Save Changes' : 'Create Project'}
+          </button>
         </div>
+      }
+    >
+        {error && <div className="mb-4 bg-rose-50 border border-rose-200 text-rose-700 text-sm px-4 py-3 rounded-xl">{error}</div>}
 
-        {error && <div className="mx-6 mt-4 bg-rose-50 border border-rose-200 text-rose-700 text-sm px-4 py-3 rounded-xl">{error}</div>}
-
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+        <div className="space-y-4">
           <Field label="Project Title" required>
             <input value={form.title} onChange={e => set('title', e.target.value)}
               className={inputCls} placeholder="e.g. Spring Collection 2026 — XYZ Fashion" autoFocus />
@@ -336,16 +341,7 @@ function ProjectModal({ project, clients, invoices, onClose, onSave }) {
               className={`${inputCls} resize-none`} placeholder="Any special instructions or notes…" />
           </Field>
         </div>
-
-        <div className="px-6 py-4 border-t border-slate-200 flex gap-3">
-          <button onClick={onClose} className="flex-1 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-600 hover:bg-slate-50 font-medium">Cancel</button>
-          <button onClick={handleSubmit} disabled={saving}
-            className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 disabled:opacity-60 transition-colors">
-            {saving ? 'Saving…' : project ? 'Save Changes' : 'Create Project'}
-          </button>
-        </div>
-      </div>
-    </div>
+    </SidePanel>
   );
 }
 

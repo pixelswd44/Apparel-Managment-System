@@ -101,26 +101,20 @@ function ChangePasswordModal({ onClose }) {
 }
 
 const ALL_NAV = [
-  { to: '/',           icon: LayoutDashboard, label: 'Overview',   roles: ['super_admin','sales','inventory'] },
-  { to: '/quotations', icon: FileText,        label: 'Quotations', roles: ['super_admin','sales'] },
-  { to: '/invoices',   icon: Receipt,         label: 'Invoices',   roles: ['super_admin','sales'] },
-  { to: '/products',   icon: Box,             label: 'Products',   roles: ['super_admin','inventory'] },
-  { to: '/projects',   icon: Flame,           label: 'Projects',   roles: ['super_admin'] },
-  { to: '/vendors',    icon: Store,           label: 'Vendors',    roles: ['super_admin'] },
-  { to: '/inventory',  icon: Archive,         label: 'Inventory',  roles: ['super_admin','inventory'] },
-  { to: '/payroll',    icon: UserCheck,       label: 'Employees',  roles: ['super_admin'] },
-  { to: '/expenses',   icon: Wallet,          label: 'Expenses',   roles: ['super_admin'] },
-  { to: '/financials', icon: TrendingUp,      label: 'Financials', roles: ['super_admin'] },
-  { to: '/clients',    icon: Users,           label: 'Clients',    roles: ['super_admin','sales'] },
-  { to: '/templates',  icon: LayoutTemplate,  label: 'Templates',  roles: ['super_admin'] },
-  { to: '/settings',   icon: Settings,        label: 'Settings',   roles: ['super_admin'] },
+  { to: '/',           icon: LayoutDashboard, label: 'Overview'   },
+  { to: '/quotations', icon: FileText,        label: 'Quotations' },
+  { to: '/invoices',   icon: Receipt,         label: 'Invoices'   },
+  { to: '/products',   icon: Box,             label: 'Products'   },
+  { to: '/projects',   icon: Flame,           label: 'Projects'   },
+  { to: '/vendors',    icon: Store,           label: 'Vendors'    },
+  { to: '/inventory',  icon: Archive,         label: 'Inventory'  },
+  { to: '/payroll',    icon: UserCheck,       label: 'Employees'  },
+  { to: '/expenses',   icon: Wallet,          label: 'Expenses'   },
+  { to: '/financials', icon: TrendingUp,      label: 'Financials' },
+  { to: '/clients',    icon: Users,           label: 'Clients'    },
+  { to: '/templates',  icon: LayoutTemplate,  label: 'Templates'  },
+  { to: '/settings',   icon: Settings,        label: 'Settings'   },
 ];
-
-const ROLE_LABELS = {
-  super_admin: { label: 'Super Admin', color: 'text-violet-400 bg-violet-500/15' },
-  sales:       { label: 'Sales',       color: 'text-sky-400 bg-sky-500/15' },
-  inventory:   { label: 'Inventory',   color: 'text-emerald-400 bg-emerald-500/15' },
-};
 
 export default function Sidebar({ isOpen = false, onClose = () => {} }) {
   const { isDirty, setDirty } = useDirty();
@@ -150,8 +144,8 @@ export default function Sidebar({ isOpen = false, onClose = () => {} }) {
     return () => window.removeEventListener('branding-updated', loadBranding);
   }, []);
 
-  // Filter nav by role
-  const nav = ALL_NAV.filter(item => !user || item.roles.includes(user.role));
+  // Single-admin mode: show all nav items
+  const nav = ALL_NAV;
 
   function handleNavClick(e, to) {
     setUserMenuOpen(false);
@@ -165,7 +159,6 @@ export default function Sidebar({ isOpen = false, onClose = () => {} }) {
     navigate(dest);
   }
 
-  const roleInfo = user ? (ROLE_LABELS[user.role] || { label: user.role, color: 'text-slate-400 bg-slate-500/15' }) : null;
 
   return (
     <aside className={`fixed left-0 top-0 h-screen w-72 lg:w-60 bg-[#1c1c1e] flex flex-col z-40 border-r border-white/[0.06] print:hidden
@@ -239,11 +232,7 @@ export default function Sidebar({ isOpen = false, onClose = () => {} }) {
             </div>
             <div className="flex-1 min-w-0 text-left">
               <p className="text-white/80 text-xs font-semibold truncate leading-tight">{user?.name}</p>
-              {roleInfo && (
-                <span className={`text-2xs font-semibold px-1.5 py-px rounded-full ${roleInfo.color}`}>
-                  {roleInfo.label}
-                </span>
-              )}
+              <p className="text-white/30 text-2xs truncate mt-0.5">{user?.email}</p>
             </div>
             <ChevronDown size={12} className={`text-white/30 flex-shrink-0 transition-transform duration-150 ${userMenuOpen ? 'rotate-180' : ''}`} />
           </button>
