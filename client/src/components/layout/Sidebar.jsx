@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, FileText, Receipt,
@@ -263,13 +264,16 @@ export default function Sidebar({ isOpen = false, onClose = () => {} }) {
         <p className="text-white/15 text-2xs px-2 mt-1">© 2026 {appName}</p>
       </div>
 
-      {/* Change Password Modal */}
-      {changePwdOpen && <ChangePasswordModal onClose={() => setChangePwdOpen(false)} />}
+      {/* Change Password Modal — portal so it escapes sidebar's transform context */}
+      {changePwdOpen && createPortal(
+        <ChangePasswordModal onClose={() => setChangePwdOpen(false)} />,
+        document.body
+      )}
 
-      {/* Unsaved-changes confirmation */}
-      {pendingTo && (
+      {/* Unsaved-changes confirmation — portal for true viewport-centered modal */}
+      {pendingTo && createPortal(
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-          <div className="bg-white rounded-lg shadow-2xl w-full max-w-sm p-6 animate-modal">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-modal">
             <div className="flex items-center gap-3 mb-3">
               <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center flex-shrink-0">
                 <AlertTriangle size={18} className="text-amber-600" />
@@ -279,8 +283,8 @@ export default function Sidebar({ isOpen = false, onClose = () => {} }) {
                 <p className="text-xs text-slate-400 mt-0.5">Your work will be lost</p>
               </div>
             </div>
-            <p className="text-sm text-slate-600 mb-5">
-              You have unsaved changes. If you leave now everything you've added will be lost.
+            <p className="text-sm text-slate-600 mb-5 leading-relaxed">
+              You have unsaved changes. If you leave now, everything you've added will be lost.
             </p>
             <div className="flex gap-3">
               <button onClick={() => setPendingTo(null)}
@@ -293,7 +297,8 @@ export default function Sidebar({ isOpen = false, onClose = () => {} }) {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </aside>
   );
