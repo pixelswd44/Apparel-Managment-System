@@ -292,6 +292,8 @@ export default function ProductForm() {
   const [priceSaving, setPriceSaving] = useState(false);
   const [priceError, setPriceError]   = useState('');
   const [editingPriceCurrency, setEditingPriceCurrency] = useState(null);
+  const [autoConvert, setAutoConvert] = useState(true);   // auto-fill other currencies using exchange rates
+  const [lastSavedCount, setLastSavedCount] = useState(0);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -405,11 +407,15 @@ export default function ProductForm() {
 
   const handleSavePrice = async () => {
     setPriceError('');
+    setLastSavedCount(0);
     if (!priceForm.currency) { setPriceError('Pick a currency.'); return; }
     const cost = parseFloat(priceForm.unit_cost) || 0;
     const sell = parseFloat(priceForm.selling_price) || 0;
     if (sell <= 0) { setPriceError('Enter a selling price greater than 0.'); return; }
     if (!isEdit) { setPriceError('Save the product first to add prices.'); return; }
+
+    // Auto-convert is only meaningful when adding (not editing) and there are multiple currencies
+    const shouldAutoConvert = autoConvert && !editingPriceCurrency && currencies.length > 1;
 
     setPriceSaving(true);
     try {
@@ -417,12 +423,23 @@ export default function ProductForm() {
         currency:      priceForm.currency,
         unit_cost:     cost,
         selling_price: sell,
+        auto_convert:  shouldAutoConvert,
       });
-      setProductPrices(prev => {
-        const without = prev.filter(p => p.currency !== priceForm.currency);
-        return [...without, data].sort((a, b) => a.currency.localeCompare(b.currency));
-      });
+      // New API returns { saved: [...codes], prices: [...rows] }
+      if (Array.isArray(data?.prices)) {
+        setProductPrices(data.prices);
+        setLastSavedCount(Array.isArray(data?.saved) ? data.saved.length : 1);
+      } else {
+        // Legacy single-price response (just in case)
+        setProductPrices(prev => {
+          const without = prev.filter(p => p.currency !== priceForm.currency);
+          return [...without, data].sort((a, b) => a.currency.localeCompare(b.currency));
+        });
+        setLastSavedCount(1);
+      }
       cancelEditPrice();
+      // Hide "saved N currencies" message after 4 seconds
+      setTimeout(() => setLastSavedCount(0), 4000);
     } catch (err) {
       setPriceError(err?.response?.data?.error || 'Failed to save price.');
     } finally {
@@ -812,6 +829,25 @@ export default function ProductForm() {
                       </div>
                     )}
 
+                    {/* Auto-convert toggle (only when adding new and have multiple currencies) */}
+                    {!editingPriceCurrency && currencies.length > 1 && (
+                      <label className="flex items-start gap-2 p-3 bg-indigo-50/50 border border-indigo-100 rounded-xl cursor-pointer hover:bg-indigo-50 transition-colors">
+                        <input type="checkbox" checked={autoConvert}
+                          onChange={e => setAutoConvert(e.target.checked)}
+                          className="mt-0.5 w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-2 focus:ring-indigo-200" />
+                        <div className="flex-1">
+                          <p className="text-xs font-semibold text-slate-700 leading-tight">
+                            Auto-fill all other currencies
+                          </p>
+                          <p className="text-2xs text-slate-500 mt-0.5 leading-snug">
+                            Uses exchange rates from Settings → Currencies to calculate{' '}
+                            {currencies.filter(c => c.code !== priceForm.currency).slice(0, 3).map(c => c.code).join(', ')}
+                            {currencies.length > 4 && ` +${currencies.length - 4} more`} automatically.
+                          </p>
+                        </div>
+                      </label>
+                    )}
+
                     <div className="flex items-center gap-2 pt-1">
                       <button type="button" onClick={handleSavePrice} disabled={priceSaving}
                         className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2 text-sm bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-colors font-medium disabled:opacity-60">
@@ -821,6 +857,14 @@ export default function ProductForm() {
                         {priceSaving ? 'Saving…' : editingPriceCurrency ? 'Update Price' : 'Add Price'}
                       </button>
                     </div>
+
+                    {/* Success notice after auto-fill */}
+                    {lastSavedCount > 1 && (
+                      <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 text-xs text-emerald-700">
+                        <Check size={13} className="flex-shrink-0" />
+                        <span><strong>{lastSavedCount} prices</strong> saved using exchange rates. Edit any one above to override.</span>
+                      </div>
+                    )}
 
                     <p className="text-2xs text-slate-400 leading-relaxed">
                       Tip: Enter <strong>Cost</strong> + <strong>Margin %</strong> and Selling price calculates automatically (or vice versa).

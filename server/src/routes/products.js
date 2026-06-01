@@ -116,10 +116,19 @@ router.get('/:id/prices', (req, res) => {
 });
 
 // Upsert: creates or updates price for a currency
+// If `auto_convert: true` is passed, also creates/updates prices for ALL other
+// active currencies using their exchange rates (rate_to_pkr field).
 router.post('/:id/prices', (req, res) => {
   try {
-    const { currency, unit_cost, selling_price } = req.body;
+    const { currency, unit_cost, selling_price, auto_convert } = req.body;
     if (!currency) return res.status(400).json({ error: 'currency is required' });
+
+    const code   = currency.toUpperCase();
+    const cost   = parseFloat(unit_cost)     || 0;
+    const sell   = parseFloat(selling_price) || 0;
+    const productId = req.params.id;
+
+    // Always upsert the entered currency
     db.prepare(`
       INSERT INTO product_prices (product_id, currency, unit_cost, selling_price)
       VALUES (?, ?, ?, ?)
@@ -127,9 +136,44 @@ router.post('/:id/prices', (req, res) => {
         unit_cost     = excluded.unit_cost,
         selling_price = excluded.selling_price,
         updated_at    = datetime('now')
-    `).run(req.params.id, currency.toUpperCase(), parseFloat(unit_cost) || 0, parseFloat(selling_price) || 0);
-    const row = db.prepare('SELECT * FROM product_prices WHERE product_id = ? AND currency = ?').get(req.params.id, currency.toUpperCase());
-    res.json(row);
+    `).run(productId, code, cost, sell);
+
+    let createdCurrencies = [code];
+
+    // If auto-convert requested, populate prices for other currencies
+    if (auto_convert) {
+      // Get rate of the entered currency (rate_to_pkr = how many units of default currency per 1 unit of this currency)
+      const sourceRate = db.prepare('SELECT rate_to_pkr FROM currencies WHERE code = ?').get(code);
+      const sourceR    = parseFloat(sourceRate?.rate_to_pkr) || 1;
+
+      // Convert to "base default currency" units first
+      const baseCost = cost * sourceR;
+      const baseSell = sell * sourceR;
+
+      // Fetch all OTHER active currencies
+      const others = db.prepare("SELECT code, rate_to_pkr FROM currencies WHERE code != ?").all(code);
+
+      const stmt = db.prepare(`
+        INSERT INTO product_prices (product_id, currency, unit_cost, selling_price)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(product_id, currency) DO UPDATE SET
+          unit_cost     = excluded.unit_cost,
+          selling_price = excluded.selling_price,
+          updated_at    = datetime('now')
+      `);
+
+      for (const oc of others) {
+        const ocRate = parseFloat(oc.rate_to_pkr) || 1;
+        if (ocRate <= 0) continue;
+        const ocCost = baseCost / ocRate;
+        const ocSell = baseSell / ocRate;
+        stmt.run(productId, oc.code, +ocCost.toFixed(4), +ocSell.toFixed(4));
+        createdCurrencies.push(oc.code);
+      }
+    }
+
+    const rows = db.prepare('SELECT * FROM product_prices WHERE product_id = ? ORDER BY currency ASC').all(productId);
+    res.json({ saved: createdCurrencies, prices: rows });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
