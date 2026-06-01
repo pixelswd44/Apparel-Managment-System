@@ -196,6 +196,7 @@ function QuotationView({ quotationId, onClose, onEdit, onConverted, embedded = f
   const co = selectedCo ? {
     name:         selectedCo.name         || '',
     logo:         selectedCo.logo         || '',
+    logo_size:    selectedCo.logo_size    || 40,
     address:      selectedCo.address      || '',
     city:         selectedCo.city         || '',
     country:      selectedCo.country      || '',
@@ -207,6 +208,7 @@ function QuotationView({ quotationId, onClose, onEdit, onConverted, embedded = f
   } : {
     name:    settings.company_name    || '',
     logo:    settings.company_logo    || '',
+    logo_size: 40,
     address: settings.company_address || '',
     city:    settings.company_city    || '',
     country: settings.company_country || '',
