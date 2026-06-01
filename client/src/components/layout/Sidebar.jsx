@@ -103,16 +103,16 @@ function ChangePasswordModal({ onClose }) {
 
 const ALL_NAV = [
   { to: '/',           icon: LayoutDashboard, label: 'Overview'   },
+  { to: '/financials', icon: TrendingUp,      label: 'Financials' },
+  { to: '/clients',    icon: Users,           label: 'Clients'    },
   { to: '/quotations', icon: FileText,        label: 'Quotations' },
   { to: '/invoices',   icon: Receipt,         label: 'Invoices'   },
   { to: '/products',   icon: Box,             label: 'Products'   },
   { to: '/projects',   icon: Flame,           label: 'Projects'   },
-  { to: '/vendors',    icon: Store,           label: 'Vendors'    },
   { to: '/inventory',  icon: Archive,         label: 'Inventory'  },
-  { to: '/payroll',    icon: UserCheck,       label: 'Employees'  },
   { to: '/expenses',   icon: Wallet,          label: 'Expenses'   },
-  { to: '/financials', icon: TrendingUp,      label: 'Financials' },
-  { to: '/clients',    icon: Users,           label: 'Clients'    },
+  { to: '/vendors',    icon: Store,           label: 'Vendors'    },
+  { to: '/payroll',    icon: UserCheck,       label: 'Employees'  },
   { to: '/templates',  icon: LayoutTemplate,  label: 'Templates'  },
   { to: '/settings',   icon: Settings,        label: 'Settings'   },
 ];
