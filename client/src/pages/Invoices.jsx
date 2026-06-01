@@ -171,7 +171,7 @@ function ReceiptVoucher({ invoice, payment, settings, onClose, templates = [], a
   const tplColor  = tplCfg.primaryColor || '#4f46e5';
   const mLabel = methodLabel(payment.method);
 
-  // Use the invoice's issuing company (which has its own logo + logo_size)
+  // Use the invoice's issuing company (which has its own logo + logo_size + name + address)
   // Falls back to app-level branding from settings
   const companies = settings?._companies || [];
   const issuingCo = (invoice.company_id && companies.find(c => c.id === invoice.company_id))
@@ -179,6 +179,13 @@ function ReceiptVoucher({ invoice, payment, settings, onClose, templates = [], a
     || null;
   const receiptLogo     = issuingCo?.logo     || settings?.company_logo || '';
   const receiptLogoSize = issuingCo?.logo_size || 36;
+  const receiptCoName   = issuingCo?.name     || settings?.company_name    || '';
+  const receiptCoAddr   = issuingCo?.address  || settings?.company_address || '';
+  const receiptCoCity   = issuingCo?.city     || settings?.company_city    || '';
+  const receiptCoCountry= issuingCo?.country  || settings?.company_country || '';
+  const receiptCoPhone  = issuingCo?.phone    || settings?.company_phone   || '';
+  const receiptCoEmail  = issuingCo?.email    || settings?.company_email   || '';
+  const receiptCoLocation = [receiptCoCity, receiptCoCountry].filter(Boolean).join(', ');
   const balance = parseFloat(invoice.balance_due ?? invoice.total) || 0;
   const paid    = parseFloat(payment.amount) || 0;
   const remaining = Math.max(0, balance - paid);
@@ -242,15 +249,23 @@ function ReceiptVoucher({ invoice, payment, settings, onClose, templates = [], a
             <div className="flex items-start justify-between mb-4 pb-4 border-b border-slate-100">
               {/* Logo / company */}
               <div className="flex-1 min-w-0 pr-4">
-                {receiptLogo
-                  ? <img src={receiptLogo} alt="logo"
-                      className="w-auto object-contain mb-1"
-                      style={{ height: `${receiptLogoSize}px` }} />
-                  : <p className="font-bold text-slate-900 text-base leading-tight">{issuingCo?.name || settings?.company_name || ''}</p>
-                }
-                {(issuingCo?.city || issuingCo?.country || settings?.company_city || settings?.company_country) && (
-                  <p className="text-2xs text-slate-400 mt-0.5">
-                    {[issuingCo?.city || settings?.company_city, issuingCo?.country || settings?.company_country].filter(Boolean).join(', ')}
+                {receiptLogo && (
+                  <img src={receiptLogo} alt="logo"
+                    className="w-auto object-contain mb-1.5"
+                    style={{ height: `${receiptLogoSize}px` }} />
+                )}
+                {receiptCoName && (
+                  <p className="font-bold text-slate-900 text-sm leading-tight">{receiptCoName}</p>
+                )}
+                {receiptCoAddr && (
+                  <p className="text-2xs text-slate-500 mt-0.5 leading-snug">{receiptCoAddr}</p>
+                )}
+                {receiptCoLocation && (
+                  <p className="text-2xs text-slate-500 leading-snug">{receiptCoLocation}</p>
+                )}
+                {(receiptCoPhone || receiptCoEmail) && (
+                  <p className="text-2xs text-slate-400 mt-0.5 leading-snug">
+                    {[receiptCoPhone, receiptCoEmail].filter(Boolean).join(' · ')}
                   </p>
                 )}
               </div>
