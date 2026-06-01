@@ -323,14 +323,6 @@ function QuotationView({ quotationId, onClose, onEdit, onConverted, embedded = f
                 <div className="doc-number-chip inline-flex items-center gap-2 bg-indigo-50 px-3 py-1 rounded-lg mt-1">
                   <span className="font-mono font-bold text-indigo-700 text-sm">{quotation.number}</span>
                 </div>
-                <div className="mt-1 flex items-center gap-2 justify-end flex-wrap">
-                  <StatusBadge status={quotation.status} />
-                  {!!quotation.is_sampling && (
-                    <span className="inline-flex items-center text-xs bg-violet-100 text-violet-700 px-2.5 py-1 rounded-full font-bold border border-violet-200">
-                      SAMPLING 2×
-                    </span>
-                  )}
-                </div>
               </div>
             </div>
 

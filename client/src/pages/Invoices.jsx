@@ -584,7 +584,6 @@ function InvoiceView({ invoiceId, onClose, onConverted, embedded = false }) {
                   </span>
                 )}
                 <span>Currency: <span className="font-semibold text-slate-700">{invoice.currency}</span></span>
-                <StatusBadge status={invoice.status} />
               </div>
 
               {/* ── Bill To (left)  |  From / Our Company (right) ── */}
