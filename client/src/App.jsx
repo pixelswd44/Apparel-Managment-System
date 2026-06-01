@@ -20,6 +20,7 @@ import Payroll from './pages/Payroll';
 import MockupGenerator from './pages/MockupGenerator';
 import Settings from './pages/Settings';
 import Products from './pages/Products';
+import ProductForm from './pages/ProductForm';
 import Projects from './pages/Projects';
 import Vendors from './pages/Vendors';
 import Templates from './pages/Templates';
@@ -83,6 +84,8 @@ function AppRoutes({ needsWizard, onWizardComplete }) {
           <Route path="/purchases"          element={<ProtectedRoute path="/invoices"><Purchases /></ProtectedRoute>} />
           <Route path="/inventory"          element={<ProtectedRoute path="/inventory"><Inventory /></ProtectedRoute>} />
           <Route path="/products"           element={<ProtectedRoute path="/products"><Products /></ProtectedRoute>} />
+          <Route path="/products/new"       element={<ProtectedRoute path="/products"><ProductForm /></ProtectedRoute>} />
+          <Route path="/products/:id/edit"  element={<ProtectedRoute path="/products"><ProductForm /></ProtectedRoute>} />
           <Route path="/projects"           element={<ProtectedRoute path="/projects"><Projects /></ProtectedRoute>} />
           <Route path="/vendors"            element={<ProtectedRoute path="/vendors"><Vendors /></ProtectedRoute>} />
           <Route path="/expenses"           element={<ProtectedRoute path="/expenses"><Expenses /></ProtectedRoute>} />

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Plus, Search, Pencil, Trash2, X, Package, Tag,
   ChevronRight, AlertTriangle, Check, Upload, Image,
@@ -7,7 +8,6 @@ import {
 } from 'lucide-react';
 import api, { apiFetch } from '../lib/api';
 import Drawer from '../components/Drawer';
-import SidePanel from '../components/SidePanel';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -373,264 +373,6 @@ function CategorySelect({ value, categories, onChange, onCategoriesChange }) {
         </div>
       )}
     </div>
-  );
-}
-
-// ─── Product Modal ────────────────────────────────────────────────────────────
-
-function ProductModal({ product, categories, onCategoriesChange, onClose, onSave }) {
-  const [form, setForm]     = useState(product ?? EMPTY_PRODUCT);
-  const [saving, setSaving] = useState(false);
-  const [error, setError]   = useState('');
-  const [images, setImages] = useState(() => {
-    try { return JSON.parse(product?.images ?? '[]'); } catch { return []; }
-  });
-
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
-
-  const [productPrices, setProductPrices] = useState([]);
-  const [pricesLoading, setPricesLoading] = useState(false);
-  const [deletingPrice, setDeletingPrice] = useState(null);
-
-  useEffect(() => {
-    if (!product?.id) return;
-    setPricesLoading(true);
-    apiFetch(`/api/products/${product.id}/prices`)
-      .then(r => r.json())
-      .then(data => setProductPrices(Array.isArray(data) ? data : []))
-      .catch(() => setProductPrices([]))
-      .finally(() => setPricesLoading(false));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [product?.id]);
-
-  const handleDeletePrice = async (currency) => {
-    try {
-      await apiFetch(`/api/products/${product.id}/prices/${currency}`, { method: 'DELETE' });
-      setProductPrices(prev => prev.filter(p => p.currency !== currency));
-    } catch {}
-    setDeletingPrice(null);
-  };
-
-  const handleSubmit = async () => {
-    if (!form.name.trim()) { setError('Product name is required.'); return; }
-    setSaving(true); setError('');
-    try {
-      await onSave({ ...form, images: JSON.stringify(images) });
-      onClose();
-    } catch (err) {
-      setError(err?.response?.data?.error ?? 'Failed to save. Check your connection.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <SidePanel
-      open={true}
-      onClose={onClose}
-      title={product ? 'Edit Product' : 'New Product'}
-      subtitle={product ? `ID #${product.id}` : 'Fill in the details below'}
-      width="lg"
-      footer={
-        <div className="flex gap-3 justify-end">
-          <button type="button" onClick={onClose}
-            className="px-4 py-2 text-sm text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-100 transition-colors">
-            Cancel
-          </button>
-          <button type="button" onClick={handleSubmit} disabled={saving}
-            className="px-6 py-2 text-sm bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-60 transition-colors font-medium shadow-sm">
-            {saving ? 'Saving…' : product ? 'Update Product' : 'Save Product'}
-          </button>
-        </div>
-      }
-    >
-      <div className="space-y-5">
-
-          {error && (
-            <div className="bg-rose-50 border border-rose-200 text-rose-700 text-sm px-4 py-3 rounded-xl">{error}</div>
-          )}
-
-          {/* Basic info */}
-          <Field label="Product Name" required>
-            <input value={form.name} onChange={e => set('name', e.target.value)}
-              className={inputCls} placeholder="e.g. Classic Polo Shirt" autoFocus />
-          </Field>
-
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Article Number">
-              <input value={form.article_number} onChange={e => set('article_number', e.target.value)}
-                className={inputCls} placeholder="e.g. ART-2024-001" />
-            </Field>
-            <Field label="SKU">
-              <input value={form.sku} onChange={e => set('sku', e.target.value)}
-                className={inputCls} placeholder="e.g. PLO-001-S-RED" />
-            </Field>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Category">
-              <CategorySelect
-                value={form.category_id}
-                categories={categories}
-                onChange={v => set('category_id', v)}
-                onCategoriesChange={onCategoriesChange}
-              />
-            </Field>
-            <Field label="Unit">
-              <select value={form.unit} onChange={e => set('unit', e.target.value)} className={selectCls}>
-                {UNITS.map(u => <option key={u}>{u}</option>)}
-              </select>
-            </Field>
-          </div>
-
-          <Field label="Status">
-            <div className="flex gap-2">
-              {['active', 'inactive'].map(s => (
-                <button key={s} type="button" onClick={() => set('status', s)}
-                  className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-all duration-150 capitalize ${
-                    form.status === s
-                      ? 'bg-indigo-600 border-indigo-600 text-white'
-                      : 'border-slate-200 text-slate-600 hover:border-indigo-300 hover:bg-indigo-50'
-                  }`}>
-                  {form.status === s && <Check size={11} className="inline mr-1" />}{s}
-                </button>
-              ))}
-            </div>
-          </Field>
-
-          <Field label="Product Type">
-            <div className="flex gap-2">
-              {[['physical', '📦 Physical Product'], ['service', '⚙️ Service']].map(([val, label]) => (
-                <button key={val} type="button" onClick={() => set('product_type', val)}
-                  className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-all duration-150 ${
-                    form.product_type === val
-                      ? val === 'service'
-                        ? 'bg-violet-600 border-violet-600 text-white'
-                        : 'bg-indigo-600 border-indigo-600 text-white'
-                      : 'border-slate-200 text-slate-600 hover:border-indigo-300 hover:bg-indigo-50'
-                  }`}>
-                  {form.product_type === val && <Check size={11} className="inline mr-1" />}{label}
-                </button>
-              ))}
-            </div>
-            {form.product_type === 'service' && (
-              <p className="text-xs text-violet-600 mt-1.5">
-                <span className="opacity-70">Stock tracking and price calculator are hidden for services.</span>
-              </p>
-            )}
-          </Field>
-
-          <div className="border-t border-slate-100 pt-5">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4">Pricing</p>
-            {!product?.id ? (
-              <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-5 text-center">
-                <Calculator size={20} className="text-slate-300 mx-auto mb-2" />
-                <p className="text-sm text-slate-500 font-medium">No prices yet</p>
-                <p className="text-xs text-slate-400 mt-1">
-                  Save this product first, then use the <strong>Calculate Price</strong> tab to add prices in different currencies.
-                </p>
-              </div>
-            ) : pricesLoading ? (
-              <div className="flex items-center justify-center py-6">
-                <div className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
-              </div>
-            ) : productPrices.length === 0 ? (
-              <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-5 text-center">
-                <p className="text-sm text-slate-500 font-medium">No prices saved yet</p>
-                <p className="text-xs text-slate-400 mt-1">
-                  Use the <strong>Calculate Price</strong> tab in the product panel to add prices in different currencies.
-                </p>
-              </div>
-            ) : (
-              <div className="border border-slate-200 rounded-xl overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50 border-b border-slate-200">
-                    <tr>
-                      <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-400">Currency</th>
-                      <th className="text-right px-4 py-2.5 text-xs font-semibold text-slate-400">Unit Cost</th>
-                      <th className="text-right px-4 py-2.5 text-xs font-semibold text-slate-400">Selling Price</th>
-                      <th className="text-right px-4 py-2.5 text-xs font-semibold text-slate-400">Margin</th>
-                      <th className="px-2 py-2.5" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {productPrices.map(pr => {
-                      const pm = margin(pr.unit_cost, pr.selling_price);
-                      return (
-                        <tr key={pr.currency} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-4 py-3">
-                            <span className="font-bold text-indigo-600 text-xs tracking-wider">{pr.currency}</span>
-                          </td>
-                          <td className="px-4 py-3 text-right text-xs text-slate-600 font-mono">{fmtPrice(pr.unit_cost)}</td>
-                          <td className="px-4 py-3 text-right text-xs font-bold text-slate-900 font-mono">{fmtPrice(pr.selling_price)}</td>
-                          <td className="px-4 py-3 text-right">
-                            {pm !== null && (
-                              <span className={`text-xs font-semibold ${parseFloat(pm) >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>{pm}%</span>
-                            )}
-                          </td>
-                          <td className="px-2 py-3 text-right">
-                            {deletingPrice === pr.currency ? (
-                              <div className="flex items-center gap-1 justify-end">
-                                <button type="button" onClick={() => handleDeletePrice(pr.currency)}
-                                  className="text-xs text-rose-600 font-semibold hover:underline">Del</button>
-                                <button type="button" onClick={() => setDeletingPrice(null)}
-                                  className="text-xs text-slate-400 hover:underline">No</button>
-                              </div>
-                            ) : (
-                              <button type="button" onClick={() => setDeletingPrice(pr.currency)}
-                                className="p-1 text-slate-300 hover:text-rose-500 rounded transition-colors">
-                                <Trash2 size={11} />
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {form.product_type !== 'service' && (
-            <div className="border-t border-slate-100 pt-5">
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4">Stock</p>
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="Stock Quantity">
-                  <input type="number" min="0" value={form.stock_quantity} onChange={e => set('stock_quantity', e.target.value)}
-                    className={inputCls} placeholder="0" />
-                </Field>
-                <Field label="Reorder Level">
-                  <input type="number" min="0" value={form.reorder_level} onChange={e => set('reorder_level', e.target.value)}
-                    className={inputCls} placeholder="Alert when below…" />
-                </Field>
-              </div>
-              {parseFloat(form.stock_quantity) <= parseFloat(form.reorder_level) && parseFloat(form.reorder_level) > 0 && (
-                <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 px-4 py-3 rounded-xl mt-3">
-                  <AlertCircle size={14} /> Stock is at or below the reorder level.
-                </div>
-              )}
-            </div>
-          )}
-
-          <div className="border-t border-slate-100 pt-5 space-y-4">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Additional</p>
-            <Field label="Description">
-              <textarea rows={3} value={form.description} onChange={e => set('description', e.target.value)}
-                className={`${inputCls} resize-none`} placeholder="Product description…" />
-            </Field>
-            <Field label="Notes">
-              <textarea rows={2} value={form.notes} onChange={e => set('notes', e.target.value)}
-                className={`${inputCls} resize-none`} placeholder="Internal notes…" />
-            </Field>
-            <Field label="Images">
-              <p className="text-xs text-slate-400 mb-2">Upload up to 5 images</p>
-              <ImageUploader images={images} onChange={setImages} />
-            </Field>
-          </div>
-
-      </div>
-    </SidePanel>
   );
 }
 
@@ -1628,6 +1370,7 @@ function ProductDrawer({ product, onClose, onEdit, onDelete, onDuplicate, onAppl
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function Products() {
+  const navigate = useNavigate();
   const [products, setProducts]     = useState([]);
   const [categories, setCategories] = useState([]);
   const [currencies, setCurrencies] = useState([]);
@@ -1636,7 +1379,6 @@ export default function Products() {
   const [search, setSearch]         = useState('');
   const [catFilter, setCatFilter]   = useState('');
   const [statusFilter, setStatus]   = useState('all');
-  const [modal, setModal]           = useState(null);
   const [catModal, setCatModal]     = useState(null);
   const [drawer, setDrawer]         = useState(null);
   const [delTarget, setDelTarget]   = useState(null);
@@ -1654,12 +1396,6 @@ export default function Products() {
   };
 
   useEffect(() => { loadAll(); }, []);
-
-  const handleSaveProduct = async (form) => {
-    if (modal?.id) await api.put(`/products/${modal.id}`, form);
-    else await api.post('/products', form);
-    await loadAll();
-  };
 
   const handleSaveCategory = async (form) => {
     if (catModal?.id) await api.put(`/categories/${catModal.id}`, form);
@@ -1748,7 +1484,7 @@ export default function Products() {
             <Plus size={15} /> New Category
           </button>
         ) : (
-          <button onClick={() => setModal('new')}
+          <button onClick={() => navigate('/products/new')}
             className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-indigo-700 transition-colors shadow-sm flex-shrink-0">
             <Plus size={15} /> New Product
           </button>
@@ -1902,7 +1638,7 @@ export default function Products() {
                         </div>
                         {/* Hover actions */}
                         <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 self-center">
-                          <button onClick={e => { e.stopPropagation(); setModal(p); }} title="Edit"
+                          <button onClick={e => { e.stopPropagation(); navigate(`/products/${p.id}/edit`); }} title="Edit"
                             className="p-1 text-slate-300 hover:text-indigo-600 hover:bg-indigo-100 rounded transition-colors">
                             <Pencil size={11} />
                           </button>
@@ -1930,7 +1666,7 @@ export default function Products() {
                 product={drawer}
                 embedded={true}
                 onClose={() => setDrawer(null)}
-                onEdit={p => setModal(p)}
+                onEdit={p => navigate(`/products/${p.id}/edit`)}
                 onDelete={p => setDelTarget({ type: 'product', item: p })}
                 onDuplicate={handleDuplicateProduct}
                 onApply={handleCalcApply}
@@ -1944,7 +1680,7 @@ export default function Products() {
                 <p className="text-slate-400 text-sm mt-1 max-w-xs">
                   Click any product on the left to view its details, pricing, and order history.
                 </p>
-                <button onClick={() => setModal('new')}
+                <button onClick={() => navigate('/products/new')}
                   className="mt-5 flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm rounded-xl hover:bg-indigo-700 transition-colors font-medium shadow-sm">
                   <Plus size={14} /> New Product
                 </button>
@@ -2010,15 +1746,6 @@ export default function Products() {
       )}
 
       {/* Modals */}
-      {modal !== null && (
-        <ProductModal
-          product={modal === 'new' ? null : modal}
-          categories={categories}
-          onCategoriesChange={setCategories}
-          onClose={() => setModal(null)}
-          onSave={handleSaveProduct}
-        />
-      )}
       {catModal !== null && (
         <CategoryModal
           category={catModal === 'new' ? null : catModal}
