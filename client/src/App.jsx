@@ -23,6 +23,7 @@ import Settings from './pages/Settings';
 import Products from './pages/Products';
 import ProductForm from './pages/ProductForm';
 import Projects from './pages/Projects';
+import ProjectForm from './pages/ProjectForm';
 import Vendors from './pages/Vendors';
 import Templates from './pages/Templates';
 import ResetPassword from './pages/ResetPassword';
@@ -88,6 +89,8 @@ function AppRoutes({ needsWizard, onWizardComplete }) {
           <Route path="/products/new"       element={<ProtectedRoute path="/products"><ProductForm /></ProtectedRoute>} />
           <Route path="/products/:id/edit"  element={<ProtectedRoute path="/products"><ProductForm /></ProtectedRoute>} />
           <Route path="/projects"           element={<ProtectedRoute path="/projects"><Projects /></ProtectedRoute>} />
+          <Route path="/projects/new"       element={<ProtectedRoute path="/projects"><ProjectForm /></ProtectedRoute>} />
+          <Route path="/projects/:id/edit"  element={<ProtectedRoute path="/projects"><ProjectForm /></ProtectedRoute>} />
           <Route path="/vendors"            element={<ProtectedRoute path="/vendors"><Vendors /></ProtectedRoute>} />
           <Route path="/expenses"           element={<ProtectedRoute path="/expenses"><Expenses /></ProtectedRoute>} />
           <Route path="/financials"         element={<ProtectedRoute path="/financials"><Financials /></ProtectedRoute>} />

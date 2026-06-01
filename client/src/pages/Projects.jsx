@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Plus, X, ChevronDown, ChevronUp, Trash2, Pencil, Search,
   Package, Users, FileText, Receipt, Check, AlertTriangle,
@@ -12,7 +13,6 @@ import {
 } from 'lucide-react';
 import api, { apiFetch } from '../lib/api';
 import { printDoc } from '../lib/printDoc';
-import SidePanel from '../components/SidePanel';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -202,148 +202,6 @@ function StageDot({ status }) {
 
 // ─── Project Modal (create / edit) ────────────────────────────────────────────
 
-function ProjectModal({ project, clients, invoices, onClose, onSave }) {
-  const [form, setForm] = useState({
-    title:                project?.title                ?? '',
-    client_id:            project?.client_id            ?? '',
-    invoice_id:           project?.invoice_id           ?? '',
-    currency:             project?.currency             ?? 'PKR',
-    amount_received:      project?.amount_received      ?? '',
-    exchange_rate_actual: project?.exchange_rate_actual ?? '',
-    notes:                project?.notes                ?? '',
-    use_invoice:          !!project?.invoice_id,
-  });
-  const [saving, setSaving] = useState(false);
-  const [error,  setError]  = useState('');
-
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
-
-  // Filter invoices by selected client
-  const clientInvoices = invoices.filter(i =>
-    !form.client_id || String(i.client_id) === String(form.client_id)
-  );
-
-  async function handleSubmit() {
-    if (!form.title.trim()) { setError('Project title is required.'); return; }
-    setSaving(true); setError('');
-    try {
-      await onSave({
-        title:                form.title.trim(),
-        client_id:            form.client_id || null,
-        invoice_id:           form.use_invoice ? (form.invoice_id || null) : null,
-        currency:             form.currency,
-        amount_received:      form.use_invoice ? 0 : (parseFloat(form.amount_received) || 0),
-        exchange_rate_actual: form.use_invoice ? 0 : (parseFloat(form.exchange_rate_actual) || 0),
-        notes:                form.notes,
-      });
-      onClose();
-    } catch (err) {
-      setError(err?.response?.data?.error ?? 'Failed to save.');
-    } finally { setSaving(false); }
-  }
-
-  return (
-    <SidePanel
-      open={true}
-      onClose={onClose}
-      title={project ? 'Edit Project' : 'New Production Project'}
-      subtitle="Fill in the basic details to get started"
-      footer={
-        <div className="flex gap-3">
-          <button onClick={onClose} className="flex-1 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-600 hover:bg-slate-50 font-medium">Cancel</button>
-          <button onClick={handleSubmit} disabled={saving}
-            className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 disabled:opacity-60 transition-colors">
-            {saving ? 'Saving…' : project ? 'Save Changes' : 'Create Project'}
-          </button>
-        </div>
-      }
-    >
-        {error && <div className="mb-4 bg-rose-50 border border-rose-200 text-rose-700 text-sm px-4 py-3 rounded-xl">{error}</div>}
-
-        <div className="space-y-4">
-          <Field label="Project Title" required>
-            <input value={form.title} onChange={e => set('title', e.target.value)}
-              className={inputCls} placeholder="e.g. Spring Collection 2026 — XYZ Fashion" autoFocus />
-          </Field>
-
-          <Field label="Client">
-            <select value={form.client_id} onChange={e => {
-              const cid = e.target.value;
-              const client = clients.find(c => String(c.id) === cid);
-              set('client_id', cid);
-              set('invoice_id', '');
-              if (client?.currency) set('currency', client.currency);
-            }} className={selectCls}>
-              <option value="">— No Client —</option>
-              {clients.map(c => <option key={c.id} value={c.id}>{c.name}{c.company && c.company !== c.name ? ` · ${c.company}` : ''}</option>)}
-            </select>
-          </Field>
-
-          {/* Payment source toggle */}
-          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Payment Source</p>
-            <div className="flex gap-2">
-              {[['false','Manual Entry'],['true','Link Invoice']].map(([v, label]) => (
-                <button key={v} type="button"
-                  onClick={() => { set('use_invoice', v === 'true'); set('invoice_id', ''); set('amount_received', ''); }}
-                  className={`flex-1 py-2 rounded-xl text-sm font-medium border transition-all ${
-                    String(form.use_invoice) === v
-                      ? 'bg-indigo-600 border-indigo-600 text-white'
-                      : 'border-slate-200 text-slate-600 hover:bg-indigo-50'
-                  }`}>
-                  {String(form.use_invoice) === v && <Check size={11} className="inline mr-1" />}{label}
-                </button>
-              ))}
-            </div>
-
-            {form.use_invoice ? (
-              <Field label="Invoice">
-                <select value={form.invoice_id} onChange={e => set('invoice_id', e.target.value)} className={selectCls}>
-                  <option value="">— Select Invoice —</option>
-                  {clientInvoices.map(i => (
-                    <option key={i.id} value={i.id}>{i.number} — {i.currency} {(parseFloat(i.total)||0).toLocaleString()}</option>
-                  ))}
-                </select>
-              </Field>
-            ) : (
-              <div className="space-y-3">
-                <Field label="Currency">
-                  <select value={form.currency} onChange={e => { set('currency', e.target.value); set('exchange_rate_actual', ''); }} className={selectCls}>
-                    {['PKR','USD','EUR','GBP','AED'].map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </Field>
-                <Field label={`Amount Received (${form.currency})`}>
-                  <div className="relative">
-                    {form.currency === 'PKR' && <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₨</span>}
-                    <input type="number" min="0" value={form.amount_received}
-                      onChange={e => set('amount_received', e.target.value)}
-                      className={`${inputCls} ${form.currency === 'PKR' ? 'pl-7' : ''}`} placeholder="0" />
-                  </div>
-                </Field>
-                {form.currency !== 'PKR' && (
-                  <Field label={`Actual Exchange Rate (PKR per 1 ${form.currency})`}>
-                    <input type="number" min="0" step="0.01" value={form.exchange_rate_actual}
-                      onChange={e => set('exchange_rate_actual', e.target.value)}
-                      className={inputCls} placeholder={`e.g. 285 per 1 ${form.currency}`} />
-                    {form.exchange_rate_actual > 0 && (
-                      <p className="text-xs text-slate-400 mt-1">
-                        You got ₨{parseFloat(form.exchange_rate_actual).toLocaleString()} per 1 {form.currency}
-                      </p>
-                    )}
-                  </Field>
-                )}
-              </div>
-            )}
-          </div>
-
-          <Field label="Notes">
-            <textarea rows={3} value={form.notes} onChange={e => set('notes', e.target.value)}
-              className={`${inputCls} resize-none`} placeholder="Any special instructions or notes…" />
-          </Field>
-        </div>
-    </SidePanel>
-  );
-}
 
 // ─── Fabric Inventory Combobox ────────────────────────────────────────────────
 
@@ -1864,10 +1722,10 @@ function ProjectImageUploader({ images, onSave }) {
 const DETAIL_TABS = ['Overview', 'Products', 'Costs', 'Stages', 'Boxes'];
 
 function ProjectDetail({ projectId, onBack, clients, invoices, catalogProducts, costFields, currencies, baseCurrency, onProjectUpdated }) {
+  const navigate = useNavigate();
   const [project, setProject]   = useState(null);
   const [loading, setLoading]   = useState(true);
   const [tab, setTab]           = useState('Overview');
-  const [editModal, setEdit]    = useState(false);
   const [delConf, setDelConf]   = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [printMode, setPrint]   = useState(null); // 'cutting' | 'stitching' | 'packaging'
@@ -2053,7 +1911,7 @@ function ProjectDetail({ projectId, onBack, clients, invoices, catalogProducts, 
             <Package size={12} /> Materials
           </button>
           <div className="w-px h-5 bg-slate-200 mx-1" />
-          <button onClick={() => setEdit(true)}
+          <button onClick={() => navigate(`/projects/${project.id}/edit`)}
             className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors">
             <Pencil size={15} />
           </button>
@@ -2355,16 +2213,6 @@ function ProjectDetail({ projectId, onBack, clients, invoices, catalogProducts, 
         <CostsTab project={project} onReload={load} fmt={fmt} />
       )}
 
-      {/* Edit Modal */}
-      {editModal && (
-        <ProjectModal
-          project={project}
-          clients={clients}
-          invoices={invoices}
-          onClose={() => setEdit(false)}
-          onSave={handleEditProject}
-        />
-      )}
     </div>
   );
 }
@@ -5207,11 +5055,11 @@ function ProjectCard({ project, onClick }) {
 // ─── Main Export ──────────────────────────────────────────────────────────────
 
 export default function Projects() {
+  const navigate = useNavigate();
   const [projects, setProjects]       = useState([]);
   const [loading,  setLoading]        = useState(true);
   const [view,     setView]           = useState('list');  // 'list' | 'detail'
   const [selectedId, setSelectedId]   = useState(null);
-  const [modal,    setModal]          = useState(false);
   const [search,   setSearch]         = useState('');
   const [statusFilter, setStatus]     = useState('all');
   const [clients,  setClients]        = useState([]);
@@ -5296,7 +5144,7 @@ export default function Projects() {
           <h1 className="text-2xl font-bold text-slate-900">Projects</h1>
           <p className="text-slate-500 text-sm mt-0.5">Track production runs from start to shipment</p>
         </div>
-        <button onClick={() => setModal(true)}
+        <button onClick={() => navigate('/projects/new')}
           className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-indigo-700 transition-colors shadow-sm w-full sm:w-auto justify-center sm:justify-start">
           <Plus size={16} /> New Project
         </button>
@@ -5355,15 +5203,6 @@ export default function Projects() {
         </div>
       )}
 
-      {modal && (
-        <ProjectModal
-          project={null}
-          clients={clients}
-          invoices={invoices}
-          onClose={() => setModal(false)}
-          onSave={handleCreateProject}
-        />
-      )}
     </div>
   );
 }
