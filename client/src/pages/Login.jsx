@@ -7,12 +7,14 @@ const inputCls = 'w-full bg-white/[0.06] border border-white/10 rounded-xl px-4 
 
 // ── Forgot Password view ──────────────────────────────────────────────────
 function ForgotPassword({ onBack }) {
-  const [username,  setUsername]  = useState('');
-  const [loading,   setLoading]   = useState(false);
-  const [error,     setError]     = useState('');
-  const [resetLink, setResetLink] = useState('');
-  const [name,      setName]      = useState('');
-  const [copied,    setCopied]    = useState(false);
+  const [username,    setUsername]    = useState('');
+  const [loading,     setLoading]     = useState(false);
+  const [error,       setError]       = useState('');
+  const [resetLink,   setResetLink]   = useState('');
+  const [name,        setName]        = useState('');
+  const [copied,      setCopied]      = useState(false);
+  const [emailSent,   setEmailSent]   = useState(false);
+  const [maskedEmail, setMaskedEmail] = useState('');
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -20,7 +22,12 @@ function ForgotPassword({ onBack }) {
     setLoading(true); setError('');
     try {
       const { data } = await api.post('/auth/forgot-password', { username: username.trim() });
-      if (data.token) {
+      if (data.emailSent) {
+        // SMTP configured — email was sent
+        setEmailSent(true);
+        setMaskedEmail(data.maskedEmail || '');
+      } else if (data.token) {
+        // Fallback: show reset link on-screen
         const link = `${window.location.origin}/reset-password?token=${data.token}`;
         setResetLink(link);
         setName(data.name || '');
@@ -54,12 +61,30 @@ function ForgotPassword({ onBack }) {
         </div>
         <h1 className="text-white text-2xl font-bold tracking-tight">Forgot Password</h1>
         <p className="text-white/40 text-sm mt-1">
-          {resetLink ? 'Your reset link is ready' : 'Enter your username or email'}
+          {emailSent ? 'Check your email' : resetLink ? 'Your reset link is ready' : 'Enter your username or email'}
         </p>
       </div>
 
       <div className="bg-[#1c1c1e] border border-white/[0.08] rounded-2xl p-6 shadow-2xl">
-        {!resetLink ? (
+        {emailSent ? (
+          /* ── Email was sent successfully ── */
+          <div className="text-center py-2">
+            <div className="w-14 h-14 bg-emerald-500/15 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Mail size={26} className="text-emerald-400" />
+            </div>
+            <p className="text-white font-bold text-base mb-2">Email sent!</p>
+            <p className="text-white/60 text-sm leading-relaxed mb-4">
+              We've sent a password reset link to{' '}
+              {maskedEmail && <span className="text-white font-semibold">{maskedEmail}</span>}.
+              The link expires in <span className="font-semibold text-white">1 hour</span>.
+            </p>
+            <div className="bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-3 text-left">
+              <p className="text-white/40 text-xs leading-relaxed">
+                <strong className="text-white/60">Don't see it?</strong> Check your spam folder, or wait a minute and try again. Make sure the email address on your account is correct.
+              </p>
+            </div>
+          </div>
+        ) : !resetLink ? (
           /* ── Step 1: Enter username ── */
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
@@ -85,7 +110,7 @@ function ForgotPassword({ onBack }) {
               {loading
                 ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                 : <Mail size={16} />}
-              {loading ? 'Generating link…' : 'Generate Reset Link'}
+              {loading ? 'Sending…' : 'Send Reset Link'}
             </button>
           </form>
         ) : resetLink === 'not-found' ? (
@@ -96,7 +121,7 @@ function ForgotPassword({ onBack }) {
             </div>
             <p className="text-white font-semibold mb-2">Check with your admin</p>
             <p className="text-white/50 text-sm leading-relaxed">
-              If that account exists, contact your Super Admin and ask them to reset your password from <span className="text-white/70 font-medium">Settings → Users</span>.
+              If that account exists, a reset link has been sent or generated. Check your email or try a different username.
             </p>
           </div>
         ) : (

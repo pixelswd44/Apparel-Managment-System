@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import db from '../db/index.js';
 import { JWT_SECRET, verifyToken, requireRole } from '../middleware/auth.js';
+import { isEmailConfigured, sendPasswordResetEmail } from '../lib/mailer.js';
 
 const router = Router();
 
@@ -150,8 +151,9 @@ router.post('/change-password', verifyToken, (req, res) => {
 });
 
 // ── POST /api/auth/forgot-password (public) ───────────────────────────────
-// Generates a reset token; returns the reset link to show on-screen
-router.post('/forgot-password', (req, res) => {
+// Generates a reset token. If SMTP is configured, sends email; otherwise
+// returns the token so the frontend can show the reset link on-screen.
+router.post('/forgot-password', async (req, res) => {
   try {
     const { username } = req.body;
     if (!username?.trim())
@@ -163,7 +165,13 @@ router.post('/forgot-password', (req, res) => {
 
     // Always respond the same way (don't reveal if user exists)
     if (!user) {
-      return res.json({ success: true, message: 'If that account exists, a reset link has been generated.' });
+      return res.json({
+        success: true,
+        emailSent: isEmailConfigured(),
+        message: isEmailConfigured()
+          ? 'If that account exists, a reset link has been sent to the associated email.'
+          : 'If that account exists, a reset link has been generated.',
+      });
     }
 
     // Generate a secure token, valid for 1 hour
@@ -173,9 +181,39 @@ router.post('/forgot-password', (req, res) => {
     db.prepare("UPDATE users SET reset_token=?, reset_token_expires=?, updated_at=datetime('now') WHERE id=?")
       .run(token, expires, user.id);
 
-    // Return token so the frontend can build the reset link (no email needed)
+    // Build the reset URL from the request origin (or env)
+    const origin   = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+    const resetUrl = `${origin.replace(/\/$/, '')}/reset-password?token=${token}`;
+
+    // Get app name for email subject/body
+    const appNameRow = db.prepare("SELECT value FROM settings WHERE key='app_name'").get();
+    const appName    = appNameRow?.value || 'Apparel CRM';
+
+    // If SMTP is configured, send the email and DO NOT return the token to the client
+    if (isEmailConfigured()) {
+      const result = await sendPasswordResetEmail({
+        to:       user.email,
+        name:     user.name,
+        resetUrl,
+        appName,
+      });
+
+      if (result.sent) {
+        return res.json({
+          success: true,
+          emailSent: true,
+          maskedEmail: maskEmail(user.email),
+          message: 'Reset link sent. Check your inbox.',
+        });
+      }
+      // If email failed, fall through to returning the link (better UX than erroring out)
+      console.error('[auth] Email send failed, falling back to link:', result.reason);
+    }
+
+    // SMTP not configured (or failed) — return token so the frontend can show the link
     res.json({
       success: true,
+      emailSent: false,
       token,
       name: user.name,
       message: 'Reset link generated. Open it in your browser to set a new password.',
@@ -184,6 +222,14 @@ router.post('/forgot-password', (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// Mask "john.smith@example.com" → "j***h@example.com" (privacy)
+function maskEmail(email) {
+  const [local, domain] = email.split('@');
+  if (!local || !domain) return email;
+  if (local.length <= 2) return `${local[0]}***@${domain}`;
+  return `${local[0]}***${local.slice(-1)}@${domain}`;
+}
 
 // ── POST /api/auth/reset-password (public) ────────────────────────────────
 router.post('/reset-password', (req, res) => {
