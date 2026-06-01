@@ -285,6 +285,13 @@ export default function ProductForm() {
   const [productPrices, setProductPrices] = useState([]);
   const [pricesLoading, setPricesLoading] = useState(false);
   const [deletingPrice, setDeletingPrice] = useState(null);
+  const [currencies, setCurrencies]       = useState([]);
+
+  // Inline price editor state
+  const [priceForm, setPriceForm] = useState({ currency: '', unit_cost: '', selling_price: '', margin: '' });
+  const [priceSaving, setPriceSaving] = useState(false);
+  const [priceError, setPriceError]   = useState('');
+  const [editingPriceCurrency, setEditingPriceCurrency] = useState(null);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -293,9 +300,20 @@ export default function ProductForm() {
     let cancelled = false;
     async function init() {
       try {
-        const catRes = await apiFetch('/api/categories');
-        const cats = await catRes.json().catch(() => []);
-        if (!cancelled) setCategories(Array.isArray(cats) ? cats : []);
+        const [catRes, currRes] = await Promise.all([
+          apiFetch('/api/categories'),
+          apiFetch('/api/currencies'),
+        ]);
+        const cats  = await catRes.json().catch(() => []);
+        const currs = await currRes.json().catch(() => []);
+        if (!cancelled) {
+          setCategories(Array.isArray(cats) ? cats : []);
+          const list = Array.isArray(currs) ? currs : [];
+          setCurrencies(list);
+          // Default the price form currency to the system default
+          const def = list.find(c => c.is_default === 1) || list[0];
+          if (def) setPriceForm(p => ({ ...p, currency: def.code }));
+        }
 
         if (isEdit) {
           const pRes = await apiFetch(`/api/products/${id}`);
@@ -332,6 +350,84 @@ export default function ProductForm() {
       setProductPrices(prev => prev.filter(p => p.currency !== currency));
     } catch {}
     setDeletingPrice(null);
+  };
+
+  // ── Price form helpers ───────────────────────────────────────────────────────
+  // When cost or margin changes → recalc selling price
+  // When cost or selling changes → recalc margin
+  const handleCostChange = v => {
+    setPriceForm(p => {
+      const cost   = parseFloat(v) || 0;
+      const sell   = parseFloat(p.selling_price) || 0;
+      const margin = sell > 0 ? (((sell - cost) / sell) * 100).toFixed(2) : p.margin;
+      return { ...p, unit_cost: v, margin: sell > 0 ? margin : p.margin };
+    });
+  };
+
+  const handleSellingChange = v => {
+    setPriceForm(p => {
+      const cost = parseFloat(p.unit_cost) || 0;
+      const sell = parseFloat(v) || 0;
+      const margin = sell > 0 ? (((sell - cost) / sell) * 100).toFixed(2) : '';
+      return { ...p, selling_price: v, margin };
+    });
+  };
+
+  const handleMarginChange = v => {
+    setPriceForm(p => {
+      const cost = parseFloat(p.unit_cost) || 0;
+      const m    = parseFloat(v);
+      if (cost > 0 && !isNaN(m) && m < 100) {
+        const sell = cost / (1 - m / 100);
+        return { ...p, margin: v, selling_price: sell.toFixed(2) };
+      }
+      return { ...p, margin: v };
+    });
+  };
+
+  const startEditPrice = (price) => {
+    setEditingPriceCurrency(price.currency);
+    setPriceForm({
+      currency: price.currency,
+      unit_cost: String(price.unit_cost ?? ''),
+      selling_price: String(price.selling_price ?? ''),
+      margin: margin(price.unit_cost, price.selling_price) ?? '',
+    });
+    setPriceError('');
+  };
+
+  const cancelEditPrice = () => {
+    setEditingPriceCurrency(null);
+    const def = currencies.find(c => c.is_default === 1) || currencies[0];
+    setPriceForm({ currency: def?.code || '', unit_cost: '', selling_price: '', margin: '' });
+    setPriceError('');
+  };
+
+  const handleSavePrice = async () => {
+    setPriceError('');
+    if (!priceForm.currency) { setPriceError('Pick a currency.'); return; }
+    const cost = parseFloat(priceForm.unit_cost) || 0;
+    const sell = parseFloat(priceForm.selling_price) || 0;
+    if (sell <= 0) { setPriceError('Enter a selling price greater than 0.'); return; }
+    if (!isEdit) { setPriceError('Save the product first to add prices.'); return; }
+
+    setPriceSaving(true);
+    try {
+      const { data } = await api.post(`/products/${id}/prices`, {
+        currency:      priceForm.currency,
+        unit_cost:     cost,
+        selling_price: sell,
+      });
+      setProductPrices(prev => {
+        const without = prev.filter(p => p.currency !== priceForm.currency);
+        return [...without, data].sort((a, b) => a.currency.localeCompare(b.currency));
+      });
+      cancelEditPrice();
+    } catch (err) {
+      setPriceError(err?.response?.data?.error || 'Failed to save price.');
+    } finally {
+      setPriceSaving(false);
+    }
   };
 
   // ── Submit ─────────────────────────────────────────────────────────────────
@@ -564,75 +660,173 @@ export default function ProductForm() {
                   <Calculator size={13} className="text-violet-600" />
                 </div>
                 <h2 className="text-sm font-bold text-slate-900">Pricing</h2>
+                <span className="ml-auto text-xs text-slate-400">Cost & selling price per currency</span>
               </div>
 
               {!isEdit ? (
                 <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-6 text-center">
                   <Calculator size={20} className="text-slate-300 mx-auto mb-2" />
-                  <p className="text-sm text-slate-500 font-medium">No prices yet</p>
+                  <p className="text-sm text-slate-500 font-medium">Save product first</p>
                   <p className="text-xs text-slate-400 mt-1">
-                    Save this product first, then use the <strong>Calculate Price</strong> tab to add prices in different currencies.
-                  </p>
-                </div>
-              ) : pricesLoading ? (
-                <div className="flex items-center justify-center py-6">
-                  <div className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
-                </div>
-              ) : productPrices.length === 0 ? (
-                <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-6 text-center">
-                  <p className="text-sm text-slate-500 font-medium">No prices saved yet</p>
-                  <p className="text-xs text-slate-400 mt-1">
-                    Use the <strong>Calculate Price</strong> tab in the product panel to add prices in different currencies.
+                    Pricing controls become available once the product is saved.
                   </p>
                 </div>
               ) : (
-                <div className="border border-slate-200 rounded-xl overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead className="bg-slate-50 border-b border-slate-200">
-                      <tr>
-                        <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-400">Currency</th>
-                        <th className="text-right px-4 py-2.5 text-xs font-semibold text-slate-400">Cost</th>
-                        <th className="text-right px-4 py-2.5 text-xs font-semibold text-slate-400">Selling</th>
-                        <th className="text-right px-4 py-2.5 text-xs font-semibold text-slate-400">Margin</th>
-                        <th className="px-2 py-2.5" />
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {productPrices.map(pr => {
-                        const pm = margin(pr.unit_cost, pr.selling_price);
-                        return (
-                          <tr key={pr.currency} className="hover:bg-slate-50 transition-colors">
-                            <td className="px-4 py-3">
-                              <span className="font-bold text-indigo-600 text-xs tracking-wider">{pr.currency}</span>
-                            </td>
-                            <td className="px-4 py-3 text-right text-xs text-slate-600 font-mono">{fmtPrice(pr.unit_cost)}</td>
-                            <td className="px-4 py-3 text-right text-xs font-bold text-slate-900 font-mono">{fmtPrice(pr.selling_price)}</td>
-                            <td className="px-4 py-3 text-right">
-                              {pm !== null && (
-                                <span className={`text-xs font-semibold ${parseFloat(pm) >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>{pm}%</span>
-                              )}
-                            </td>
-                            <td className="px-2 py-3 text-right">
-                              {deletingPrice === pr.currency ? (
-                                <div className="flex items-center gap-1 justify-end">
-                                  <button type="button" onClick={() => handleDeletePrice(pr.currency)}
-                                    className="text-xs text-rose-600 font-semibold hover:underline">Del</button>
-                                  <button type="button" onClick={() => setDeletingPrice(null)}
-                                    className="text-xs text-slate-400 hover:underline">No</button>
-                                </div>
-                              ) : (
-                                <button type="button" onClick={() => setDeletingPrice(pr.currency)}
-                                  className="p-1 text-slate-300 hover:text-rose-500 rounded transition-colors">
-                                  <Trash2 size={11} />
-                                </button>
-                              )}
-                            </td>
+                <>
+                  {/* Saved prices list */}
+                  {pricesLoading ? (
+                    <div className="flex items-center justify-center py-4 mb-3">
+                      <div className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+                    </div>
+                  ) : productPrices.length > 0 && (
+                    <div className="border border-slate-200 rounded-xl overflow-hidden mb-4">
+                      <table className="w-full text-sm">
+                        <thead className="bg-slate-50 border-b border-slate-200">
+                          <tr>
+                            <th className="text-left px-3 py-2 text-2xs font-semibold text-slate-400 uppercase tracking-wider">Currency</th>
+                            <th className="text-right px-3 py-2 text-2xs font-semibold text-slate-400 uppercase tracking-wider">Cost</th>
+                            <th className="text-right px-3 py-2 text-2xs font-semibold text-slate-400 uppercase tracking-wider">Selling</th>
+                            <th className="text-right px-3 py-2 text-2xs font-semibold text-slate-400 uppercase tracking-wider">Margin</th>
+                            <th className="px-2 py-2" />
                           </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {productPrices.map(pr => {
+                            const pm = margin(pr.unit_cost, pr.selling_price);
+                            const isEditingThis = editingPriceCurrency === pr.currency;
+                            return (
+                              <tr key={pr.currency} className={`transition-colors ${isEditingThis ? 'bg-indigo-50/40' : 'hover:bg-slate-50'}`}>
+                                <td className="px-3 py-2.5">
+                                  <span className="font-bold text-indigo-600 text-xs tracking-wider">{pr.currency}</span>
+                                </td>
+                                <td className="px-3 py-2.5 text-right text-xs text-slate-600 font-mono">{fmtPrice(pr.unit_cost)}</td>
+                                <td className="px-3 py-2.5 text-right text-xs font-bold text-slate-900 font-mono">{fmtPrice(pr.selling_price)}</td>
+                                <td className="px-3 py-2.5 text-right">
+                                  {pm !== null && (
+                                    <span className={`text-xs font-semibold ${parseFloat(pm) >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>{pm}%</span>
+                                  )}
+                                </td>
+                                <td className="px-2 py-2.5 text-right">
+                                  {deletingPrice === pr.currency ? (
+                                    <div className="flex items-center gap-1 justify-end">
+                                      <button type="button" onClick={() => handleDeletePrice(pr.currency)}
+                                        className="text-xs text-rose-600 font-semibold hover:underline">Yes</button>
+                                      <button type="button" onClick={() => setDeletingPrice(null)}
+                                        className="text-xs text-slate-400 hover:underline">No</button>
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center gap-1 justify-end">
+                                      <button type="button" onClick={() => startEditPrice(pr)}
+                                        className="p-1 text-slate-300 hover:text-indigo-600 rounded transition-colors" title="Edit">
+                                        <Pencil size={11} />
+                                      </button>
+                                      <button type="button" onClick={() => setDeletingPrice(pr.currency)}
+                                        className="p-1 text-slate-300 hover:text-rose-500 rounded transition-colors" title="Delete">
+                                        <Trash2 size={11} />
+                                      </button>
+                                    </div>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Add/Edit price form */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                        {editingPriceCurrency ? `Edit ${editingPriceCurrency} Price` : 'Add Price'}
+                      </p>
+                      {editingPriceCurrency && (
+                        <button type="button" onClick={cancelEditPrice}
+                          className="text-xs text-slate-400 hover:text-slate-600 transition-colors">
+                          Cancel
+                        </button>
+                      )}
+                    </div>
+
+                    {priceError && (
+                      <p className="text-xs text-rose-600 bg-rose-50 border border-rose-200 px-3 py-2 rounded-lg">{priceError}</p>
+                    )}
+
+                    {/* Currency */}
+                    <div>
+                      <label className="block text-2xs font-semibold text-slate-400 uppercase tracking-widest mb-1">Currency</label>
+                      <select
+                        value={priceForm.currency}
+                        onChange={e => setPriceForm(p => ({ ...p, currency: e.target.value }))}
+                        disabled={!!editingPriceCurrency}
+                        className={`${selectCls} disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed`}
+                      >
+                        {currencies.map(c => (
+                          <option key={c.code} value={c.code}>
+                            {c.code}{c.name ? ` — ${c.name}` : ''}{c.is_default === 1 ? ' ★' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Cost / Margin / Selling */}
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="block text-2xs font-semibold text-slate-400 uppercase tracking-widest mb-1">Cost</label>
+                        <input type="number" min="0" step="any"
+                          value={priceForm.unit_cost}
+                          onChange={e => handleCostChange(e.target.value)}
+                          placeholder="0.00"
+                          className={`${inputCls} text-sm font-mono`} />
+                      </div>
+                      <div>
+                        <label className="block text-2xs font-semibold text-slate-400 uppercase tracking-widest mb-1">Margin %</label>
+                        <input type="number" min="0" max="99.99" step="any"
+                          value={priceForm.margin}
+                          onChange={e => handleMarginChange(e.target.value)}
+                          placeholder="0"
+                          className={`${inputCls} text-sm font-mono`} />
+                      </div>
+                      <div>
+                        <label className="block text-2xs font-semibold text-slate-400 uppercase tracking-widest mb-1">Selling</label>
+                        <input type="number" min="0" step="any"
+                          value={priceForm.selling_price}
+                          onChange={e => handleSellingChange(e.target.value)}
+                          placeholder="0.00"
+                          className={`${inputCls} text-sm font-mono font-bold text-indigo-700`} />
+                      </div>
+                    </div>
+
+                    {/* Live preview */}
+                    {parseFloat(priceForm.unit_cost) > 0 && parseFloat(priceForm.selling_price) > 0 && (
+                      <div className="flex items-center justify-between bg-white border border-indigo-100 rounded-lg px-3 py-2 text-xs">
+                        <span className="text-slate-500">
+                          Profit per unit: <span className="font-bold text-indigo-700">
+                            {fmtPrice(parseFloat(priceForm.selling_price) - parseFloat(priceForm.unit_cost))} {priceForm.currency}
+                          </span>
+                        </span>
+                        <span className="text-slate-500">
+                          Margin: <span className="font-bold text-emerald-600">{priceForm.margin || '0'}%</span>
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-2 pt-1">
+                      <button type="button" onClick={handleSavePrice} disabled={priceSaving}
+                        className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2 text-sm bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-colors font-medium disabled:opacity-60">
+                        {priceSaving
+                          ? <Loader2 size={13} className="animate-spin" />
+                          : <Plus size={13} />}
+                        {priceSaving ? 'Saving…' : editingPriceCurrency ? 'Update Price' : 'Add Price'}
+                      </button>
+                    </div>
+
+                    <p className="text-2xs text-slate-400 leading-relaxed">
+                      Tip: Enter <strong>Cost</strong> + <strong>Margin %</strong> and Selling price calculates automatically (or vice versa).
+                    </p>
+                  </div>
+                </>
               )}
             </div>
 
