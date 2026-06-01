@@ -305,7 +305,9 @@ function QuotationView({ quotationId, onClose, onEdit, onConverted, embedded = f
               {/* Logo only — clean */}
               <div>
                 {co.logo
-                  ? <img src={co.logo} alt="logo" className="h-10 w-auto object-contain" />
+                  ? <img src={co.logo} alt="logo"
+                      className="w-auto object-contain"
+                      style={{ height: `${co.logo_size || 40}px` }} />
                   : co.name
                     ? <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center">
                         <Building2 size={18} className="text-white" />

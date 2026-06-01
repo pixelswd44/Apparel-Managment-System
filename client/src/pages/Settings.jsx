@@ -769,7 +769,15 @@ function Currencies() {
 
 // ── Company Form (shared between add and edit) ────────────────────────────────
 
-const EMPTY_CO = { name: '', logo: '', address: '', city: '', country: '', phone: '', email: '', website: '', tax_number: '', bank_details: '' };
+const EMPTY_CO = { name: '', logo: '', address: '', city: '', country: '', phone: '', email: '', website: '', tax_number: '', bank_details: '', logo_size: 40 };
+
+// Preset logo sizes — height in px on printed documents
+const LOGO_SIZE_PRESETS = [
+  { label: 'Small',  value: 32 },
+  { label: 'Medium', value: 48 },
+  { label: 'Large',  value: 72 },
+  { label: 'X-Large', value: 100 },
+];
 
 function CompanyForm({ initial = EMPTY_CO, onSave, onCancel, saving, error }) {
   const [form, setForm] = useState(initial);
@@ -818,6 +826,54 @@ function CompanyForm({ initial = EMPTY_CO, onSave, onCancel, saving, error }) {
         </div>
         <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={e => handleLogoUpload(e.target.files?.[0])} />
       </div>
+
+      {/* Logo size — used on printed Quotations, Invoices, Receipts */}
+      {form.logo && (
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              Logo Size on Documents
+            </label>
+            <span className="text-2xs text-slate-400 font-mono">{form.logo_size || 40}px tall</span>
+          </div>
+          <p className="text-2xs text-slate-400 mb-3">
+            Controls how big the logo appears on printed Quotations, Invoices and Receiving Vouchers.
+          </p>
+
+          {/* Preset buttons */}
+          <div className="grid grid-cols-4 gap-2 mb-3">
+            {LOGO_SIZE_PRESETS.map(p => (
+              <button key={p.value} type="button" onClick={() => set('logo_size', p.value)}
+                className={`flex flex-col items-center gap-1.5 py-2.5 rounded-xl border-2 transition-all ${
+                  (form.logo_size || 40) === p.value
+                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-300 hover:bg-slate-50'
+                }`}>
+                <span className="text-xs font-semibold">{p.label}</span>
+                <span className="text-2xs opacity-60 font-mono">{p.value}px</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Custom slider */}
+          <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5">
+            <span className="text-2xs text-slate-400 font-mono w-10 flex-shrink-0">20px</span>
+            <input type="range" min={20} max={200} step={2}
+              value={form.logo_size || 40}
+              onChange={e => set('logo_size', parseInt(e.target.value, 10))}
+              className="flex-1 h-2 bg-slate-200 rounded-full appearance-none cursor-pointer accent-indigo-600" />
+            <span className="text-2xs text-slate-400 font-mono w-10 flex-shrink-0 text-right">200px</span>
+          </div>
+
+          {/* Live preview */}
+          <div className="mt-3 bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-4">
+            <span className="text-2xs font-semibold text-slate-400 uppercase tracking-wider">Preview:</span>
+            <img src={form.logo} alt="logo preview"
+              className="w-auto object-contain"
+              style={{ height: `${form.logo_size || 40}px` }} />
+          </div>
+        </div>
+      )}
 
       {/* Fields */}
       <div className="grid grid-cols-2 gap-3">

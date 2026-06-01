@@ -543,6 +543,8 @@ const migrations = [
   // Password reset tokens on users table
   `ALTER TABLE users ADD COLUMN reset_token TEXT`,
   `ALTER TABLE users ADD COLUMN reset_token_expires TEXT`,
+  // Company logo size for printed documents (in px height)
+  `ALTER TABLE companies ADD COLUMN logo_size INTEGER DEFAULT 40`,
 ];
 
 for (const sql of migrations) {

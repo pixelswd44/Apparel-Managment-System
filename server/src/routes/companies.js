@@ -3,7 +3,14 @@ import db from '../db/index.js';
 
 const router = Router();
 
-const FIELDS = ['name', 'logo', 'address', 'city', 'country', 'phone', 'email', 'website', 'tax_number', 'bank_details'];
+const STR_FIELDS = ['name', 'logo', 'address', 'city', 'country', 'phone', 'email', 'website', 'tax_number', 'bank_details'];
+
+// Clamp logo_size between 20 and 200 px; default to 40
+function parseLogoSize(v) {
+  const n = parseInt(v, 10);
+  if (isNaN(n)) return 40;
+  return Math.max(20, Math.min(200, n));
+}
 
 router.get('/', (req, res) => {
   try {
@@ -23,12 +30,13 @@ router.get('/:id', (req, res) => {
 router.post('/', (req, res) => {
   try {
     if (!req.body.name?.trim()) return res.status(400).json({ error: 'Company name is required.' });
-    const vals = FIELDS.map(f => req.body[f]?.trim() ?? '');
+    const vals = STR_FIELDS.map(f => req.body[f]?.trim() ?? '');
+    const logoSize = parseLogoSize(req.body.logo_size);
     const isFirst = db.prepare('SELECT COUNT(*) as n FROM companies').get().n === 0;
     const result = db.prepare(`
-      INSERT INTO companies (name, logo, address, city, country, phone, email, website, tax_number, bank_details, is_default)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(...vals, isFirst ? 1 : 0);
+      INSERT INTO companies (name, logo, address, city, country, phone, email, website, tax_number, bank_details, logo_size, is_default)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(...vals, logoSize, isFirst ? 1 : 0);
     res.status(201).json(db.prepare('SELECT * FROM companies WHERE id = ?').get(result.lastInsertRowid));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -36,13 +44,14 @@ router.post('/', (req, res) => {
 router.put('/:id', (req, res) => {
   try {
     if (!req.body.name?.trim()) return res.status(400).json({ error: 'Company name is required.' });
-    const vals = FIELDS.map(f => req.body[f]?.trim() ?? '');
+    const vals = STR_FIELDS.map(f => req.body[f]?.trim() ?? '');
+    const logoSize = parseLogoSize(req.body.logo_size);
     db.prepare(`
       UPDATE companies
       SET name=?, logo=?, address=?, city=?, country=?, phone=?, email=?, website=?, tax_number=?, bank_details=?,
-          updated_at=datetime('now')
+          logo_size=?, updated_at=datetime('now')
       WHERE id=?
-    `).run(...vals, req.params.id);
+    `).run(...vals, logoSize, req.params.id);
     const row = db.prepare('SELECT * FROM companies WHERE id = ?').get(req.params.id);
     if (!row) return res.status(404).json({ error: 'Not found' });
     res.json(row);
