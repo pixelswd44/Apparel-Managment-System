@@ -716,8 +716,20 @@ function ClientDetailPanel({ client, stats, statsLoading, onEdit, onDelete }) {
 
               {!statsLoading && (stats?.stats?.pipeline_value ?? 0) > 0 && (
                 <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3">
-                  <p className="text-xs text-indigo-600 font-semibold">Pipeline (Quotations)</p>
-                  <p className="text-lg font-bold text-indigo-700 mt-0.5">{fmtMoney(stats.stats.pipeline_value)}</p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-indigo-600 font-semibold">Pipeline (Quotations)</p>
+                    <span className="text-2xs font-mono text-indigo-500 bg-indigo-100 px-2 py-0.5 rounded-full">
+                      {stats.stats.currency || sym}
+                    </span>
+                  </div>
+                  <p className="text-lg font-bold text-indigo-700 mt-0.5">
+                    {sym} {fmtMoney(stats.stats.pipeline_value)}
+                  </p>
+                  {stats.quotations?.some(q => (q.currency || sym) !== sym) && (
+                    <p className="text-2xs text-indigo-500/70 mt-1">
+                      Includes quotes in other currencies, converted via your exchange rates.
+                    </p>
+                  )}
                 </div>
               )}
 

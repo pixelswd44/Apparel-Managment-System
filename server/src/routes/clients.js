@@ -80,6 +80,29 @@ router.put('/:id', (req, res) => {
 router.get('/:id/stats', (req, res) => {
   try {
     const id = req.params.id;
+
+    // Get client's preferred currency (used for converting sums)
+    const client = db.prepare('SELECT currency FROM clients WHERE id = ?').get(id);
+    const clientCur = (client?.currency || 'USD').toUpperCase();
+
+    // Get all currencies' rate_to_pkr (base = default currency)
+    // rate_to_pkr = how many units of the DEFAULT currency equal 1 unit of this currency
+    const currencyRows = db.prepare('SELECT code, rate_to_pkr FROM currencies').all();
+    const rates = {};
+    for (const r of currencyRows) rates[r.code.toUpperCase()] = parseFloat(r.rate_to_pkr) || 1;
+    // Fallback if a currency is missing
+    const rateOf = code => rates[(code || clientCur).toUpperCase()] || 1;
+    const clientRate = rateOf(clientCur);
+
+    // Convert any amount in `fromCur` to the client's preferred currency
+    // Math: A → base → B  ==>  amount * rateA / rateB
+    const convertTo = (amount, fromCur) => {
+      const amt = parseFloat(amount) || 0;
+      const fr  = rateOf(fromCur);
+      if (clientRate <= 0) return amt;
+      return (amt * fr) / clientRate;
+    };
+
     const quotations = db.prepare(`
       SELECT id, number, status, total, currency, created_at
       FROM quotations WHERE client_id = ? ORDER BY created_at DESC
@@ -96,26 +119,34 @@ router.get('/:id/stats', (req, res) => {
       WHERE p.client_id = ? ORDER BY p.paid_at DESC
     `).all(id);
 
-    const totalRevenue  = payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
-    const outstanding   = invoices.reduce((s, i) => {
-      const bal = parseFloat(i.total) - parseFloat(i.amount_paid || 0);
-      return s + (bal > 0 ? bal : 0);
+    // Sum everything in the client's preferred currency
+    const totalRevenue  = payments.reduce(
+      (s, p) => s + convertTo(p.amount, p.currency),
+      0
+    );
+
+    const outstanding = invoices.reduce((s, i) => {
+      const balOriginal = (parseFloat(i.total) || 0) - (parseFloat(i.amount_paid) || 0);
+      if (balOriginal <= 0) return s;
+      return s + convertTo(balOriginal, i.currency);
     }, 0);
+
     const pipelineValue = quotations
       .filter(q => ['draft', 'sent'].includes(q.status))
-      .reduce((s, q) => s + (parseFloat(q.total) || 0), 0);
+      .reduce((s, q) => s + convertTo(q.total, q.currency), 0);
 
     res.json({
       quotations,
       invoices,
       payments,
       stats: {
-        quotations_count: quotations.length,
-        invoices_count:   invoices.length,
-        payments_count:   payments.length,
-        total_revenue:    totalRevenue,
+        quotations_count:  quotations.length,
+        invoices_count:    invoices.length,
+        payments_count:    payments.length,
+        total_revenue:     totalRevenue,
         outstanding,
-        pipeline_value:   pipelineValue,
+        pipeline_value:    pipelineValue,
+        currency:          clientCur,    // tells frontend which currency these sums are in
       },
     });
   } catch (err) { res.status(500).json({ error: err.message }); }
