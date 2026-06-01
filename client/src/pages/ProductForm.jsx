@@ -420,9 +420,9 @@ export default function ProductForm() {
         </div>
       )}
 
-      {/* ── Form body — two columns ── */}
+      {/* ── Form body — two equal columns ── */}
       <div className="mt-6 max-w-6xl">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
 
           {/* ── LEFT COLUMN — Product Details ── */}
           <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 space-y-5">
@@ -513,24 +513,24 @@ export default function ProductForm() {
             </Field>
           </div>
 
-          {/* ── RIGHT COLUMN — Media, Stock & Pricing ── */}
-          <div className="space-y-5">
+          {/* ── RIGHT COLUMN — Media, Stock & Pricing (unified card) ── */}
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 space-y-6">
 
-            {/* Images card */}
-            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
+            {/* — Images section — */}
+            <div>
               <div className="flex items-center gap-2 pb-2 mb-4 border-b border-slate-100">
                 <div className="w-7 h-7 bg-emerald-50 border border-emerald-100 rounded-lg flex items-center justify-center">
                   <Image size={13} className="text-emerald-600" />
                 </div>
                 <h2 className="text-sm font-bold text-slate-900">Product Images</h2>
-                <span className="text-xs text-slate-400 ml-auto">Upload up to 5</span>
+                <span className="text-xs text-slate-400 ml-auto">Up to 5</span>
               </div>
               <ImageUploader images={images} onChange={setImages} />
             </div>
 
-            {/* Stock card — hidden for services */}
+            {/* — Stock section — hidden for services */}
             {form.product_type !== 'service' && (
-              <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
+              <div>
                 <div className="flex items-center gap-2 pb-2 mb-4 border-b border-slate-100">
                   <div className="w-7 h-7 bg-amber-50 border border-amber-100 rounded-lg flex items-center justify-center">
                     <AlertCircle size={13} className="text-amber-600" />
@@ -557,8 +557,8 @@ export default function ProductForm() {
               </div>
             )}
 
-            {/* Pricing card */}
-            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
+            {/* — Pricing section — */}
+            <div>
               <div className="flex items-center gap-2 pb-2 mb-4 border-b border-slate-100">
                 <div className="w-7 h-7 bg-violet-50 border border-violet-100 rounded-lg flex items-center justify-center">
                   <Calculator size={13} className="text-violet-600" />
