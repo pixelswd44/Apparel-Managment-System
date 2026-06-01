@@ -32,8 +32,22 @@ const fmt = d => {
   if (isNaN(dt.getTime())) return '—';
   return `${String(dt.getDate()).padStart(2,'0')} ${MONTHS[dt.getMonth()]} ${dt.getFullYear()}`;
 };
-const fmtMoney = (v, sym = '$') =>
-  `${sym}${(parseFloat(v) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+// Built-in symbol map for the most common currencies
+const CURRENCY_SYMBOLS = {
+  USD: '$',  EUR: '€',  GBP: '£',  JPY: '¥',
+  AED: 'د.إ ', SAR: 'ر.س ', QAR: 'ر.ق ', OMR: 'ر.ع ', KWD: 'د.ك ', BHD: 'د.ب ',
+  PKR: '₨', INR: '₹', BDT: '৳',
+  CNY: '¥', CAD: 'C$', AUD: 'A$', CHF: 'CHF ', TRY: '₺', RUB: '₽',
+};
+const symFor = code => CURRENCY_SYMBOLS[(code || '').toUpperCase()] || `${code || ''} `;
+
+const fmtMoney = (v, codeOrSym = '$') => {
+  // Accept either a currency code ("USD", "AED") or a literal symbol ("$").
+  // If it looks like a 3-letter currency code, look up its proper symbol.
+  const sym = /^[A-Z]{2,4}$/.test(codeOrSym) ? symFor(codeOrSym) : codeOrSym;
+  const num = (parseFloat(v) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${sym}${num}`;
+};
 const fmtSize = b => b < 1024 * 1024 ? `${(b / 1024).toFixed(0)} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`;
 
 const CURRENCIES    = [
@@ -704,10 +718,10 @@ function ClientDetailPanel({ client, stats, statsLoading, onEdit, onDelete }) {
                     <tr className="text-slate-700">
                       <td className="py-2">{sym}</td>
                       <td className="py-2 text-right font-medium text-rose-600">
-                        {statsLoading ? '…' : fmtMoney(stats?.stats?.outstanding ?? 0)}
+                        {statsLoading ? '…' : fmtMoney(stats?.stats?.outstanding ?? 0, sym)}
                       </td>
                       <td className="py-2 text-right font-medium text-emerald-700">
-                        {statsLoading ? '…' : fmtMoney(stats?.stats?.total_revenue ?? 0)}
+                        {statsLoading ? '…' : fmtMoney(stats?.stats?.total_revenue ?? 0, sym)}
                       </td>
                     </tr>
                   </tbody>
@@ -723,7 +737,7 @@ function ClientDetailPanel({ client, stats, statsLoading, onEdit, onDelete }) {
                     </span>
                   </div>
                   <p className="text-lg font-bold text-indigo-700 mt-0.5">
-                    {sym} {fmtMoney(stats.stats.pipeline_value)}
+                    {fmtMoney(stats.stats.pipeline_value, sym)}
                   </p>
                   {stats.quotations?.some(q => (q.currency || sym) !== sym) && (
                     <p className="text-2xs text-indigo-500/70 mt-1">
@@ -738,7 +752,7 @@ function ClientDetailPanel({ client, stats, statsLoading, onEdit, onDelete }) {
                   { label: 'Quotations', value: statsLoading ? '…' : (stats?.stats?.quotations_count ?? 0) },
                   { label: 'Invoices',   value: statsLoading ? '…' : (stats?.stats?.invoices_count  ?? 0) },
                   { label: 'Payments',   value: statsLoading ? '…' : (stats?.stats?.payments_count  ?? 0) },
-                  { label: 'Revenue',    value: statsLoading ? '…' : fmtMoney(stats?.stats?.total_revenue ?? 0) },
+                  { label: 'Revenue',    value: statsLoading ? '…' : fmtMoney(stats?.stats?.total_revenue ?? 0, sym) },
                 ].map(({ label, value }) => (
                   <div key={label} className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
                     <p className="text-sm font-bold text-slate-800 truncate">{value}</p>
@@ -843,10 +857,10 @@ function TransactionTimeline({ stats, sym }) {
                   </div>
                   <div className="text-right flex-shrink-0">
                     <p className={`font-bold text-xs tabular-nums ${isP ? 'text-emerald-700' : 'text-slate-800'}`}>
-                      {isP ? '+' : ''}{ev.currency || sym} {fmtMoney(ev.amount).replace(/^./, '')}
+                      {isP ? '+' : ''}{fmtMoney(ev.amount, ev.currency || sym)}
                     </p>
                     {isI && parseFloat(ev.amountPaid) > 0 && parseFloat(ev.amountPaid) < parseFloat(ev.amount) && (
-                      <p className="text-xs text-slate-400 mt-0.5">Paid: {fmtMoney(ev.amountPaid)}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">Paid: {fmtMoney(ev.amountPaid, ev.currency || sym)}</p>
                     )}
                   </div>
                 </div>
@@ -870,16 +884,16 @@ function StatementView({ client, stats, sym }) {
     <div className="space-y-5">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="bg-white border border-slate-200 rounded-xl p-4 text-center shadow-sm">
-          <p className="text-xs text-slate-400 mb-1">Total Invoiced</p>
-          <p className="font-bold text-slate-800">{sym} {fmtMoney(stats.stats.total_revenue).replace(/^./, '')}</p>
+          <p className="text-xs text-slate-400 mb-1">Total Invoiced ({sym})</p>
+          <p className="font-bold text-slate-800">{fmtMoney(stats.stats.total_revenue, sym)}</p>
         </div>
         <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 text-center shadow-sm">
-          <p className="text-xs text-slate-400 mb-1">Total Paid</p>
-          <p className="font-bold text-emerald-700">{sym} {fmtMoney(totalPaid).replace(/^./, '')}</p>
+          <p className="text-xs text-slate-400 mb-1">Total Paid ({sym})</p>
+          <p className="font-bold text-emerald-700">{fmtMoney(totalPaid, sym)}</p>
         </div>
         <div className="bg-rose-50 border border-rose-100 rounded-xl p-4 text-center shadow-sm">
-          <p className="text-xs text-slate-400 mb-1">Outstanding</p>
-          <p className="font-bold text-rose-600">{sym} {fmtMoney(stats.stats.outstanding).replace(/^./, '')}</p>
+          <p className="text-xs text-slate-400 mb-1">Outstanding ({sym})</p>
+          <p className="font-bold text-rose-600">{fmtMoney(stats.stats.outstanding, sym)}</p>
         </div>
       </div>
 
@@ -910,10 +924,10 @@ function StatementView({ client, stats, sym }) {
                       {inv.status}
                     </span>
                   </td>
-                  <td className="px-4 py-2.5 text-right font-semibold text-slate-800">{fmtMoney(inv.total)}</td>
-                  <td className="px-4 py-2.5 text-right text-emerald-700 font-semibold">{fmtMoney(inv.amount_paid || 0)}</td>
+                  <td className="px-4 py-2.5 text-right font-semibold text-slate-800">{fmtMoney(inv.total, inv.currency || sym)}</td>
+                  <td className="px-4 py-2.5 text-right text-emerald-700 font-semibold">{fmtMoney(inv.amount_paid || 0, inv.currency || sym)}</td>
                   <td className="px-4 py-2.5 text-right font-bold text-rose-600">
-                    {fmtMoney(Math.max(0, (parseFloat(inv.total) || 0) - (parseFloat(inv.amount_paid) || 0)))}
+                    {fmtMoney(Math.max(0, (parseFloat(inv.total) || 0) - (parseFloat(inv.amount_paid) || 0)), inv.currency || sym)}
                   </td>
                 </tr>
               ))}
@@ -944,7 +958,7 @@ function StatementView({ client, stats, sym }) {
                   <td className="px-4 py-2.5 text-slate-600">{fmt(p.paid_at)}</td>
                   <td className="px-4 py-2.5 font-mono text-indigo-600">{p.invoice_number || '—'}</td>
                   <td className="px-4 py-2.5 text-slate-600 capitalize">{p.method || '—'}</td>
-                  <td className="px-4 py-2.5 text-right font-bold text-emerald-700">{fmtMoney(p.amount)}</td>
+                  <td className="px-4 py-2.5 text-right font-bold text-emerald-700">{fmtMoney(p.amount, p.currency || sym)}</td>
                 </tr>
               ))}
             </tbody>
