@@ -420,195 +420,227 @@ export default function ProductForm() {
         </div>
       )}
 
-      {/* ── Form body ── */}
-      <div className="mt-6 max-w-3xl">
-        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 space-y-5">
+      {/* ── Form body — two columns ── */}
+      <div className="mt-6 max-w-6xl">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
 
-          {/* Basic info */}
-          <Field label="Product Name" required>
-            <input value={form.name} onChange={e => set('name', e.target.value)}
-              className={inputCls} placeholder="e.g. Classic Polo Shirt" autoFocus />
-          </Field>
-
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Article Number">
-              <input value={form.article_number} onChange={e => set('article_number', e.target.value)}
-                className={inputCls} placeholder="e.g. ART-2024-001" />
-            </Field>
-            <Field label="SKU">
-              <input value={form.sku} onChange={e => set('sku', e.target.value)}
-                className={inputCls} placeholder="e.g. PLO-001-S-RED" />
-            </Field>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Category">
-              <CategorySelect
-                value={form.category_id}
-                categories={categories}
-                onChange={v => set('category_id', v)}
-                onCategoriesChange={setCategories}
-              />
-            </Field>
-            <Field label="Unit">
-              <select value={form.unit} onChange={e => set('unit', e.target.value)} className={selectCls}>
-                {UNITS.map(u => <option key={u}>{u}</option>)}
-              </select>
-            </Field>
-          </div>
-
-          <Field label="Status">
-            <div className="flex gap-2">
-              {['active', 'inactive'].map(s => (
-                <button key={s} type="button" onClick={() => set('status', s)}
-                  className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-all duration-150 capitalize ${
-                    form.status === s
-                      ? 'bg-indigo-600 border-indigo-600 text-white'
-                      : 'border-slate-200 text-slate-600 hover:border-indigo-300 hover:bg-indigo-50'
-                  }`}>
-                  {form.status === s && <Check size={11} className="inline mr-1" />}{s}
-                </button>
-              ))}
+          {/* ── LEFT COLUMN — Product Details ── */}
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 space-y-5">
+            <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+              <div className="w-7 h-7 bg-indigo-50 border border-indigo-100 rounded-lg flex items-center justify-center">
+                <Box size={13} className="text-indigo-600" />
+              </div>
+              <h2 className="text-sm font-bold text-slate-900">Product Details</h2>
             </div>
-          </Field>
 
-          <Field label="Product Type">
-            <div className="flex gap-2">
-              {[['physical', '📦 Physical Product'], ['service', '⚙️ Service']].map(([val, label]) => (
-                <button key={val} type="button" onClick={() => set('product_type', val)}
-                  className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-all duration-150 ${
-                    form.product_type === val
-                      ? val === 'service'
-                        ? 'bg-violet-600 border-violet-600 text-white'
-                        : 'bg-indigo-600 border-indigo-600 text-white'
-                      : 'border-slate-200 text-slate-600 hover:border-indigo-300 hover:bg-indigo-50'
-                  }`}>
-                  {form.product_type === val && <Check size={11} className="inline mr-1" />}{label}
-                </button>
-              ))}
+            <Field label="Product Name" required>
+              <input value={form.name} onChange={e => set('name', e.target.value)}
+                className={inputCls} placeholder="e.g. Classic Polo Shirt" autoFocus />
+            </Field>
+
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Article Number">
+                <input value={form.article_number} onChange={e => set('article_number', e.target.value)}
+                  className={inputCls} placeholder="e.g. ART-2024-001" />
+              </Field>
+              <Field label="SKU">
+                <input value={form.sku} onChange={e => set('sku', e.target.value)}
+                  className={inputCls} placeholder="e.g. PLO-001-S-RED" />
+              </Field>
             </div>
-            {form.product_type === 'service' && (
-              <p className="text-xs text-violet-600 mt-1.5">
-                <span className="opacity-70">Stock tracking and price calculator are hidden for services.</span>
-              </p>
-            )}
-          </Field>
 
-          {/* Pricing */}
-          <div className="border-t border-slate-100 pt-5">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4">Pricing</p>
-            {!isEdit ? (
-              <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-5 text-center">
-                <Calculator size={20} className="text-slate-300 mx-auto mb-2" />
-                <p className="text-sm text-slate-500 font-medium">No prices yet</p>
-                <p className="text-xs text-slate-400 mt-1">
-                  Save this product first, then use the <strong>Calculate Price</strong> tab to add prices in different currencies.
-                </p>
-              </div>
-            ) : pricesLoading ? (
-              <div className="flex items-center justify-center py-6">
-                <div className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
-              </div>
-            ) : productPrices.length === 0 ? (
-              <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-5 text-center">
-                <p className="text-sm text-slate-500 font-medium">No prices saved yet</p>
-                <p className="text-xs text-slate-400 mt-1">
-                  Use the <strong>Calculate Price</strong> tab in the product panel to add prices in different currencies.
-                </p>
-              </div>
-            ) : (
-              <div className="border border-slate-200 rounded-xl overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50 border-b border-slate-200">
-                    <tr>
-                      <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-400">Currency</th>
-                      <th className="text-right px-4 py-2.5 text-xs font-semibold text-slate-400">Unit Cost</th>
-                      <th className="text-right px-4 py-2.5 text-xs font-semibold text-slate-400">Selling Price</th>
-                      <th className="text-right px-4 py-2.5 text-xs font-semibold text-slate-400">Margin</th>
-                      <th className="px-2 py-2.5" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {productPrices.map(pr => {
-                      const pm = margin(pr.unit_cost, pr.selling_price);
-                      return (
-                        <tr key={pr.currency} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-4 py-3">
-                            <span className="font-bold text-indigo-600 text-xs tracking-wider">{pr.currency}</span>
-                          </td>
-                          <td className="px-4 py-3 text-right text-xs text-slate-600 font-mono">{fmtPrice(pr.unit_cost)}</td>
-                          <td className="px-4 py-3 text-right text-xs font-bold text-slate-900 font-mono">{fmtPrice(pr.selling_price)}</td>
-                          <td className="px-4 py-3 text-right">
-                            {pm !== null && (
-                              <span className={`text-xs font-semibold ${parseFloat(pm) >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>{pm}%</span>
-                            )}
-                          </td>
-                          <td className="px-2 py-3 text-right">
-                            {deletingPrice === pr.currency ? (
-                              <div className="flex items-center gap-1 justify-end">
-                                <button type="button" onClick={() => handleDeletePrice(pr.currency)}
-                                  className="text-xs text-rose-600 font-semibold hover:underline">Del</button>
-                                <button type="button" onClick={() => setDeletingPrice(null)}
-                                  className="text-xs text-slate-400 hover:underline">No</button>
-                              </div>
-                            ) : (
-                              <button type="button" onClick={() => setDeletingPrice(pr.currency)}
-                                className="p-1 text-slate-300 hover:text-rose-500 rounded transition-colors">
-                                <Trash2 size={11} />
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Category">
+                <CategorySelect
+                  value={form.category_id}
+                  categories={categories}
+                  onChange={v => set('category_id', v)}
+                  onCategoriesChange={setCategories}
+                />
+              </Field>
+              <Field label="Unit">
+                <select value={form.unit} onChange={e => set('unit', e.target.value)} className={selectCls}>
+                  {UNITS.map(u => <option key={u}>{u}</option>)}
+                </select>
+              </Field>
+            </div>
 
-          {/* Stock — hidden for services */}
-          {form.product_type !== 'service' && (
-            <div className="border-t border-slate-100 pt-5">
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4">Stock</p>
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="Stock Quantity">
-                  <input type="number" min="0" value={form.stock_quantity} onChange={e => set('stock_quantity', e.target.value)}
-                    className={inputCls} placeholder="0" />
-                </Field>
-                <Field label="Reorder Level">
-                  <input type="number" min="0" value={form.reorder_level} onChange={e => set('reorder_level', e.target.value)}
-                    className={inputCls} placeholder="Alert when below…" />
-                </Field>
+            <Field label="Status">
+              <div className="flex gap-2">
+                {['active', 'inactive'].map(s => (
+                  <button key={s} type="button" onClick={() => set('status', s)}
+                    className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-all duration-150 capitalize ${
+                      form.status === s
+                        ? 'bg-indigo-600 border-indigo-600 text-white'
+                        : 'border-slate-200 text-slate-600 hover:border-indigo-300 hover:bg-indigo-50'
+                    }`}>
+                    {form.status === s && <Check size={11} className="inline mr-1" />}{s}
+                  </button>
+                ))}
               </div>
-              {parseFloat(form.stock_quantity) <= parseFloat(form.reorder_level) && parseFloat(form.reorder_level) > 0 && (
-                <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 px-4 py-3 rounded-xl mt-3">
-                  <AlertCircle size={14} /> Stock is at or below the reorder level.
-                </div>
+            </Field>
+
+            <Field label="Product Type">
+              <div className="flex gap-2">
+                {[['physical', '📦 Physical Product'], ['service', '⚙️ Service']].map(([val, label]) => (
+                  <button key={val} type="button" onClick={() => set('product_type', val)}
+                    className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-all duration-150 ${
+                      form.product_type === val
+                        ? val === 'service'
+                          ? 'bg-violet-600 border-violet-600 text-white'
+                          : 'bg-indigo-600 border-indigo-600 text-white'
+                        : 'border-slate-200 text-slate-600 hover:border-indigo-300 hover:bg-indigo-50'
+                    }`}>
+                    {form.product_type === val && <Check size={11} className="inline mr-1" />}{label}
+                  </button>
+                ))}
+              </div>
+              {form.product_type === 'service' && (
+                <p className="text-xs text-violet-600 mt-1.5 opacity-70">
+                  Stock tracking and price calculator are hidden for services.
+                </p>
               )}
-            </div>
-          )}
+            </Field>
 
-          <div className="border-t border-slate-100 pt-5 space-y-4">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Additional</p>
             <Field label="Description">
               <textarea rows={3} value={form.description} onChange={e => set('description', e.target.value)}
                 className={`${inputCls} resize-none`} placeholder="Product description…" />
             </Field>
+
             <Field label="Notes">
               <textarea rows={2} value={form.notes} onChange={e => set('notes', e.target.value)}
                 className={`${inputCls} resize-none`} placeholder="Internal notes…" />
             </Field>
-            <Field label="Images">
-              <p className="text-xs text-slate-400 mb-2">Upload up to 5 images</p>
-              <ImageUploader images={images} onChange={setImages} />
-            </Field>
           </div>
 
+          {/* ── RIGHT COLUMN — Media, Stock & Pricing ── */}
+          <div className="space-y-5">
+
+            {/* Images card */}
+            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
+              <div className="flex items-center gap-2 pb-2 mb-4 border-b border-slate-100">
+                <div className="w-7 h-7 bg-emerald-50 border border-emerald-100 rounded-lg flex items-center justify-center">
+                  <Image size={13} className="text-emerald-600" />
+                </div>
+                <h2 className="text-sm font-bold text-slate-900">Product Images</h2>
+                <span className="text-xs text-slate-400 ml-auto">Upload up to 5</span>
+              </div>
+              <ImageUploader images={images} onChange={setImages} />
+            </div>
+
+            {/* Stock card — hidden for services */}
+            {form.product_type !== 'service' && (
+              <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
+                <div className="flex items-center gap-2 pb-2 mb-4 border-b border-slate-100">
+                  <div className="w-7 h-7 bg-amber-50 border border-amber-100 rounded-lg flex items-center justify-center">
+                    <AlertCircle size={13} className="text-amber-600" />
+                  </div>
+                  <h2 className="text-sm font-bold text-slate-900">Stock & Inventory</h2>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="Stock Quantity">
+                    <input type="number" min="0" value={form.stock_quantity} onChange={e => set('stock_quantity', e.target.value)}
+                      className={inputCls} placeholder="0" />
+                  </Field>
+                  <Field label="Reorder Level">
+                    <input type="number" min="0" value={form.reorder_level} onChange={e => set('reorder_level', e.target.value)}
+                      className={inputCls} placeholder="Alert when below…" />
+                  </Field>
+                </div>
+
+                {parseFloat(form.stock_quantity) <= parseFloat(form.reorder_level) && parseFloat(form.reorder_level) > 0 && (
+                  <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 px-4 py-3 rounded-xl mt-3">
+                    <AlertCircle size={14} /> Stock is at or below the reorder level.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Pricing card */}
+            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
+              <div className="flex items-center gap-2 pb-2 mb-4 border-b border-slate-100">
+                <div className="w-7 h-7 bg-violet-50 border border-violet-100 rounded-lg flex items-center justify-center">
+                  <Calculator size={13} className="text-violet-600" />
+                </div>
+                <h2 className="text-sm font-bold text-slate-900">Pricing</h2>
+              </div>
+
+              {!isEdit ? (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-6 text-center">
+                  <Calculator size={20} className="text-slate-300 mx-auto mb-2" />
+                  <p className="text-sm text-slate-500 font-medium">No prices yet</p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Save this product first, then use the <strong>Calculate Price</strong> tab to add prices in different currencies.
+                  </p>
+                </div>
+              ) : pricesLoading ? (
+                <div className="flex items-center justify-center py-6">
+                  <div className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+                </div>
+              ) : productPrices.length === 0 ? (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-6 text-center">
+                  <p className="text-sm text-slate-500 font-medium">No prices saved yet</p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Use the <strong>Calculate Price</strong> tab in the product panel to add prices in different currencies.
+                  </p>
+                </div>
+              ) : (
+                <div className="border border-slate-200 rounded-xl overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50 border-b border-slate-200">
+                      <tr>
+                        <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-400">Currency</th>
+                        <th className="text-right px-4 py-2.5 text-xs font-semibold text-slate-400">Cost</th>
+                        <th className="text-right px-4 py-2.5 text-xs font-semibold text-slate-400">Selling</th>
+                        <th className="text-right px-4 py-2.5 text-xs font-semibold text-slate-400">Margin</th>
+                        <th className="px-2 py-2.5" />
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {productPrices.map(pr => {
+                        const pm = margin(pr.unit_cost, pr.selling_price);
+                        return (
+                          <tr key={pr.currency} className="hover:bg-slate-50 transition-colors">
+                            <td className="px-4 py-3">
+                              <span className="font-bold text-indigo-600 text-xs tracking-wider">{pr.currency}</span>
+                            </td>
+                            <td className="px-4 py-3 text-right text-xs text-slate-600 font-mono">{fmtPrice(pr.unit_cost)}</td>
+                            <td className="px-4 py-3 text-right text-xs font-bold text-slate-900 font-mono">{fmtPrice(pr.selling_price)}</td>
+                            <td className="px-4 py-3 text-right">
+                              {pm !== null && (
+                                <span className={`text-xs font-semibold ${parseFloat(pm) >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>{pm}%</span>
+                              )}
+                            </td>
+                            <td className="px-2 py-3 text-right">
+                              {deletingPrice === pr.currency ? (
+                                <div className="flex items-center gap-1 justify-end">
+                                  <button type="button" onClick={() => handleDeletePrice(pr.currency)}
+                                    className="text-xs text-rose-600 font-semibold hover:underline">Del</button>
+                                  <button type="button" onClick={() => setDeletingPrice(null)}
+                                    className="text-xs text-slate-400 hover:underline">No</button>
+                                </div>
+                              ) : (
+                                <button type="button" onClick={() => setDeletingPrice(pr.currency)}
+                                  className="p-1 text-slate-300 hover:text-rose-500 rounded transition-colors">
+                                  <Trash2 size={11} />
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+          </div>
         </div>
 
         {/* Bottom actions */}
-        <div className="flex justify-between items-center gap-3 py-4">
+        <div className="flex justify-between items-center gap-3 py-6 mt-2">
           <button onClick={handleCancel}
             className="flex items-center gap-2 px-4 py-2.5 text-sm border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition-colors font-medium">
             <ArrowLeft size={14} /> Back to Products
