@@ -400,10 +400,10 @@ function QuotationView({ quotationId, onClose, onEdit, onConverted, embedded = f
                 {items.length > 0 ? items.map((item, i) => (
                   <tr key={i}>
                     <td className="py-2 pr-3 text-slate-400 text-xs align-top">{i + 1}</td>
-                    <td className="py-2 pr-4">
-                      <p className="font-semibold text-slate-800">{item.name || '—'}</p>
+                    <td className="py-2 pr-4 leading-snug">
+                      <span className="font-semibold text-slate-800">{item.name || '—'}</span>
                       {item.description && (
-                        <p className="text-slate-500 mt-0.5 whitespace-pre-line leading-relaxed text-xs">{item.description}</p>
+                        <span className="text-slate-500 whitespace-pre-line"> — {item.description}</span>
                       )}
                     </td>
                     <td className="py-2 text-center text-slate-700 tabular-nums font-medium align-top">{parseFloat(item.quantity) || 0}</td>
