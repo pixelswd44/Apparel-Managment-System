@@ -390,29 +390,26 @@ function QuotationView({ quotationId, onClose, onEdit, onConverted, embedded = f
               <thead>
                 <tr className="border-b border-slate-200">
                   <th className="text-left pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider w-7">#</th>
-                  <th className="text-left pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider">Product / Description</th>
-                  <th className="text-center pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider w-16">Qty</th>
-                  <th className="text-right pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider w-28">Unit Price</th>
-                  <th className="text-right pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider w-28">Total</th>
+                  <th className="text-left pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider w-40">Product</th>
+                  <th className="text-left pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider">Description</th>
+                  <th className="text-center pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider w-12">Qty</th>
+                  <th className="text-right pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider w-24">Unit Price</th>
+                  <th className="text-right pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider w-24">Total</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {items.length > 0 ? items.map((item, i) => (
                   <tr key={i}>
                     <td className="py-2 pr-3 text-slate-400 text-xs align-top">{i + 1}</td>
-                    <td className="py-2 pr-4 leading-snug">
-                      <span className="font-semibold text-slate-800">{item.name || '—'}</span>
-                      {item.description && (
-                        <span className="text-slate-500 whitespace-pre-line"> — {item.description}</span>
-                      )}
-                    </td>
+                    <td className="py-2 pr-3 font-semibold text-slate-800 align-top leading-snug">{item.name || '—'}</td>
+                    <td className="py-2 pr-3 text-slate-500 align-top leading-snug whitespace-pre-line">{item.description || ''}</td>
                     <td className="py-2 text-center text-slate-700 tabular-nums font-medium align-top">{parseFloat(item.quantity) || 0}</td>
                     <td className="py-2 text-right text-slate-700 tabular-nums align-top">{sym}{(parseFloat(item.unit_price) || 0).toFixed(2)}</td>
                     <td className="py-2 text-right font-semibold text-slate-900 tabular-nums align-top">{sym}{(parseFloat(item.total) || 0).toFixed(2)}</td>
                   </tr>
                 )) : (
                   <tr>
-                    <td colSpan={5} className="py-4 text-center text-slate-400 italic text-xs">No line items</td>
+                    <td colSpan={6} className="py-4 text-center text-slate-400 italic text-xs">No line items</td>
                   </tr>
                 )}
               </tbody>
