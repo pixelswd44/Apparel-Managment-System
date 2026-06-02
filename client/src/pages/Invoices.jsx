@@ -1160,10 +1160,10 @@ export default function Invoices() {
 
       {/* ── Invoices tab: Two-panel split ── */}
       {activeTab === 'invoices' && (
-        <div className="flex-1 min-h-0 flex flex-col lg:flex-row rounded-2xl border border-slate-200 shadow-sm overflow-hidden bg-white">
+        <div className="flex-1 min-h-0 flex flex-col lg:flex-row rounded-2xl border border-slate-200 shadow-sm overflow-hidden bg-white print:border-0 print:rounded-none print:shadow-none print:overflow-visible">
 
           {/* LEFT: Invoice list */}
-          <div className="w-full lg:w-80 flex-shrink-0 flex flex-col border-b lg:border-b-0 lg:border-r border-slate-200 bg-white">
+          <div className="w-full lg:w-80 flex-shrink-0 flex flex-col border-b lg:border-b-0 lg:border-r border-slate-200 bg-white print:hidden">
 
             {/* Stats strip */}
             <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-100 bg-slate-50/50">
