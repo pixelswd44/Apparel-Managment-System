@@ -303,8 +303,8 @@ function QuotationView({ quotationId, onClose, onEdit, onConverted, embedded = f
           <div className="doc-accent-bar hidden" />
 
           {/* ── Logo  |  QUOTATION title ── */}
-          <div className="doc-header-band px-5 pt-5 pb-4 border-b border-slate-100">
-            <div className="flex items-start justify-between gap-6 mb-3">
+          <div className="doc-header-band px-7 pt-7 pb-5">
+            <div className="flex items-start justify-between gap-6 mb-7">
               {/* Logo only — clean */}
               <div>
                 {co.logo
@@ -312,85 +312,67 @@ function QuotationView({ quotationId, onClose, onEdit, onConverted, embedded = f
                       className="w-auto object-contain"
                       style={{ height: `${co.logo_size || 40}px` }} />
                   : co.name
-                    ? <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center">
-                        <Building2 size={18} className="text-white" />
-                      </div>
+                    ? <p className="text-xl font-black text-slate-900 tracking-tight uppercase">{co.name}</p>
                     : null
                 }
               </div>
               {/* Title block */}
               <div className="text-right flex-shrink-0">
                 <p className="doc-title text-2xl font-black text-slate-900 tracking-tight uppercase">Quotation</p>
-                <div className="doc-number-chip inline-flex items-center gap-2 bg-indigo-50 px-3 py-1 rounded-lg mt-1">
-                  <span className="font-mono font-bold text-indigo-700 text-sm">{quotation.number}</span>
-                </div>
+                <p className="font-mono font-semibold text-slate-500 text-sm mt-1">{quotation.number}</p>
               </div>
             </div>
 
-            {/* ── Bill To (left)  |  From / Our Company (right) ── */}
-            <div className="grid grid-cols-2 gap-3">
+            {/* ── Bill To (left)  |  From / Our Company (right) ── plain, no backgrounds */}
+            <div className="grid grid-cols-2 gap-8">
               {/* Client */}
-              <div className="doc-info-left bg-slate-50 rounded-lg p-3">
-                <p className="text-2xs font-black text-slate-400 uppercase tracking-widest mb-1.5">Bill To</p>
+              <div className="doc-info-left">
+                <p className="text-2xs font-bold text-slate-400 uppercase tracking-widest mb-1.5">Bill To</p>
                 {quotation.client_name
                   ? <p className="font-bold text-slate-900 text-sm leading-tight">{quotation.client_name}</p>
                   : <p className="text-slate-400 italic text-xs">No client selected</p>
                 }
-                {quotation.client_phone && (
-                  <p className="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
-                    <Phone size={9} className="text-slate-400 flex-shrink-0" />{quotation.client_phone}
+                {(quotation.client_address || quotation.client_city || quotation.client_country) && (
+                  <p className="text-xs text-slate-600 mt-1 leading-snug">
+                    {[quotation.client_address, quotation.client_city, quotation.client_country].filter(Boolean).join(', ')}
                   </p>
+                )}
+                {quotation.client_phone && (
+                  <p className="text-xs text-slate-600 mt-0.5">{quotation.client_phone}</p>
                 )}
                 {quotation.client_email && (
-                  <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5">
-                    <Mail size={9} className="text-slate-400 flex-shrink-0" />{quotation.client_email}
-                  </p>
-                )}
-                {(quotation.client_address || quotation.client_city || quotation.client_country) && (
-                  <p className="text-xs text-slate-500 mt-0.5 flex items-start gap-1.5">
-                    <MapPin size={9} className="text-slate-400 mt-0.5 flex-shrink-0" />
-                    <span>{[quotation.client_address, quotation.client_city, quotation.client_country].filter(Boolean).join(', ')}</span>
-                  </p>
+                  <p className="text-xs text-slate-600 mt-0.5">{quotation.client_email}</p>
                 )}
               </div>
 
               {/* Our company */}
-              <div className="doc-info-right bg-indigo-50/60 rounded-lg p-3 border border-indigo-100/60">
-                <p className="text-2xs font-black text-indigo-400 uppercase tracking-widest mb-1.5">From</p>
+              <div className="doc-info-right text-right">
+                <p className="text-2xs font-bold text-slate-400 uppercase tracking-widest mb-1.5">From</p>
                 {co.name && <p className="font-bold text-slate-900 text-sm leading-tight">{co.name}</p>}
                 {(co.address || co.city || co.country) && (
-                  <p className="text-xs text-slate-500 mt-1 flex items-start gap-1.5">
-                    <MapPin size={9} className="text-slate-400 mt-0.5 flex-shrink-0" />
-                    <span>{[co.address, co.city, co.country].filter(Boolean).join(', ')}</span>
+                  <p className="text-xs text-slate-600 mt-1 leading-snug">
+                    {[co.address, co.city, co.country].filter(Boolean).join(', ')}
                   </p>
                 )}
                 {co.phone && (
-                  <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5">
-                    <Phone size={9} className="text-slate-400 flex-shrink-0" />{co.phone}
-                  </p>
+                  <p className="text-xs text-slate-600 mt-0.5">{co.phone}</p>
                 )}
                 {co.email && (
-                  <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5">
-                    <Mail size={9} className="text-slate-400 flex-shrink-0" />{co.email}
-                  </p>
+                  <p className="text-xs text-slate-600 mt-0.5">{co.email}</p>
                 )}
                 {co.website && (
-                  <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5">
-                    <Globe size={9} className="text-slate-400 flex-shrink-0" />{co.website}
-                  </p>
+                  <p className="text-xs text-slate-600 mt-0.5">{co.website}</p>
                 )}
                 {co.tax_number && (
-                  <p className="text-xs text-slate-500 mt-0.5 font-mono">
-                    TRN/VAT: {co.tax_number}
-                  </p>
+                  <p className="text-xs text-slate-500 mt-0.5 font-mono">TRN/VAT: {co.tax_number}</p>
                 )}
               </div>
             </div>
 
           </div>
 
-          {/* Subject + Dates in one line */}
-          <div className="px-5 py-2 border-b border-slate-100 flex items-center justify-between gap-4 flex-wrap bg-slate-50/60">
+          {/* Subject + Dates — plain row, no background */}
+          <div className="px-7 py-2.5 border-t border-b border-slate-200 flex items-center justify-between gap-4 flex-wrap">
             {quotation.subject && (
               <p className="text-xs font-semibold text-slate-700 flex-1 min-w-0 truncate">{quotation.subject}</p>
             )}
@@ -403,30 +385,30 @@ function QuotationView({ quotationId, onClose, onEdit, onConverted, embedded = f
           </div>
 
           {/* Line items table */}
-          <div className="px-5 py-3">
+          <div className="px-7 py-4">
             <table className="doc-table w-full text-xs">
               <thead>
-                <tr className="border-b-2 border-slate-200">
-                  <th className="text-left pb-1.5 text-2xs font-black text-slate-400 uppercase tracking-widest w-7">#</th>
-                  <th className="text-left pb-1.5 text-2xs font-black text-slate-400 uppercase tracking-widest">Product / Description</th>
-                  <th className="text-center pb-1.5 text-2xs font-black text-slate-400 uppercase tracking-widest w-16">Qty</th>
-                  <th className="text-right pb-1.5 text-2xs font-black text-slate-400 uppercase tracking-widest w-28">Unit Price</th>
-                  <th className="text-right pb-1.5 text-2xs font-black text-slate-400 uppercase tracking-widest w-28">Total</th>
+                <tr className="border-b border-slate-200">
+                  <th className="text-left pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider w-7">#</th>
+                  <th className="text-left pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider">Product / Description</th>
+                  <th className="text-center pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider w-16">Qty</th>
+                  <th className="text-right pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider w-28">Unit Price</th>
+                  <th className="text-right pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider w-28">Total</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {items.length > 0 ? items.map((item, i) => (
                   <tr key={i}>
-                    <td className="py-1.5 pr-3 text-slate-400 text-xs align-top">{i + 1}</td>
-                    <td className="py-1.5 pr-4">
+                    <td className="py-2 pr-3 text-slate-400 text-xs align-top">{i + 1}</td>
+                    <td className="py-2 pr-4">
                       <p className="font-semibold text-slate-800">{item.name || '—'}</p>
                       {item.description && (
-                        <p className="text-slate-400 mt-0.5 whitespace-pre-line leading-relaxed">{item.description}</p>
+                        <p className="text-slate-500 mt-0.5 whitespace-pre-line leading-relaxed text-xs">{item.description}</p>
                       )}
                     </td>
-                    <td className="py-1.5 text-center text-slate-700 tabular-nums font-medium">{parseFloat(item.quantity) || 0}</td>
-                    <td className="py-1.5 text-right text-slate-600 tabular-nums">{sym}{(parseFloat(item.unit_price) || 0).toFixed(2)}</td>
-                    <td className="py-1.5 text-right font-semibold text-slate-800 tabular-nums">{sym}{(parseFloat(item.total) || 0).toFixed(2)}</td>
+                    <td className="py-2 text-center text-slate-700 tabular-nums font-medium align-top">{parseFloat(item.quantity) || 0}</td>
+                    <td className="py-2 text-right text-slate-700 tabular-nums align-top">{sym}{(parseFloat(item.unit_price) || 0).toFixed(2)}</td>
+                    <td className="py-2 text-right font-semibold text-slate-900 tabular-nums align-top">{sym}{(parseFloat(item.total) || 0).toFixed(2)}</td>
                   </tr>
                 )) : (
                   <tr>
@@ -437,37 +419,37 @@ function QuotationView({ quotationId, onClose, onEdit, onConverted, embedded = f
             </table>
           </div>
 
-          {/* Totals */}
-          <div className="px-5 pb-4">
+          {/* Totals — plain rows, no background */}
+          <div className="px-7 pb-5">
             <div className="flex justify-end">
-              <div className="doc-total-box min-w-[220px] bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-1.5">
-                <div className="flex justify-between text-xs">
+              <div className="doc-total-box min-w-[240px]">
+                <div className="flex justify-between py-1.5 border-t border-slate-100 text-xs">
                   <span className="text-slate-500">Subtotal</span>
-                  <span className="font-semibold text-slate-700">{fmtMoney(subtotal, sym)}</span>
+                  <span className="font-medium text-slate-700">{fmtMoney(subtotal, sym)}</span>
                 </div>
                 {disc > 0 && (
-                  <div className="flex justify-between text-xs">
+                  <div className="flex justify-between py-1.5 border-t border-slate-100 text-xs">
                     <span className="text-slate-500">Discount</span>
                     <span className="font-semibold text-rose-600">− {fmtMoney(disc, sym)}</span>
                   </div>
                 )}
                 {parseFloat(quotation.tax_rate) > 0 && (
-                  <div className="flex justify-between text-xs">
+                  <div className="flex justify-between py-1.5 border-t border-slate-100 text-xs">
                     <span className="text-slate-500">Tax ({quotation.tax_rate}%)</span>
-                    <span className="font-semibold text-slate-700">+ {fmtMoney(taxAmt, sym)}</span>
+                    <span className="font-medium text-slate-700">+ {fmtMoney(taxAmt, sym)}</span>
                   </div>
                 )}
                 {ship > 0 && (
-                  <div className="flex justify-between text-xs">
+                  <div className="flex justify-between py-1.5 border-t border-slate-100 text-xs">
                     <span className="text-slate-500">Shipping</span>
-                    <span className="font-semibold text-slate-700">+ {fmtMoney(ship, sym)}</span>
+                    <span className="font-medium text-slate-700">+ {fmtMoney(ship, sym)}</span>
                   </div>
                 )}
-                <div className="border-t border-slate-200 pt-2 flex justify-between items-center">
-                  <span className="font-bold text-slate-800 text-xs">Total</span>
-                  <span className="font-black text-indigo-700 text-base tabular-nums">{fmtMoney(total, sym)}</span>
+                <div className="border-t-2 border-slate-300 mt-1 py-2 flex justify-between items-center">
+                  <span className="font-bold text-slate-900 text-sm">Total</span>
+                  <span className="font-bold text-slate-900 text-base tabular-nums">{fmtMoney(total, sym)}</span>
                 </div>
-                <p className="text-2xs text-slate-400 text-right">
+                <p className="text-2xs text-slate-400 text-right mt-1">
                   {itemCount} {itemCount === 1 ? 'item' : 'items'} · Qty: <span className="font-semibold text-slate-600">{totalQty.toLocaleString()}</span>
                 </p>
               </div>
