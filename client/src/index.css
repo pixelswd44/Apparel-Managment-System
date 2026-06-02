@@ -227,6 +227,43 @@ input, select, textarea {
     margin: 0 auto !important;
   }
 
+  /* ── Page-break behaviour for multi-page documents ────────────────────
+     Without these rules, the Total block often lands alone on the last
+     page (because it's the largest single chunk after the line items).
+     Read this PDF: items run to the bottom of page 1 then Total is
+     stranded on page 2. The fixes below keep things together. */
+
+  /* Repeat the table header row on every printed page so readers
+     always see column labels even on page 2/3. */
+  .doc-table thead { display: table-header-group !important; }
+  .doc-table tfoot { display: table-footer-group !important; }
+
+  /* Never split a line-item row across pages — keep each row whole */
+  .doc-table tr,
+  .doc-table td,
+  .doc-table th {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* Keep the Subtotal/Tax/Shipping/Total block together as one unit —
+     and try to keep it on the same page as the items above when room
+     allows. */
+  .doc-total-box {
+    page-break-inside: avoid !important;
+    break-inside:      avoid !important;
+    page-break-before: avoid !important;
+    break-before:      avoid !important;
+  }
+
+  /* Notes / Bank Details / Terms — also don't split mid-block */
+  .doc-notes-block,
+  .doc-bank-block,
+  .doc-terms-block {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
   /* Preserve background colors, gradients, and accent bars on print
      for the elements that NEED color (badges, AMOUNT PAID box, etc).
      Without these the green RECEIPT badge and gradient accent bars

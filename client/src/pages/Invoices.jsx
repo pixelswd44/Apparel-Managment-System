@@ -742,13 +742,13 @@ function InvoiceView({ invoiceId, onClose, onConverted, embedded = false }) {
             {(invoice.customer_notes || ((invoice.bank_details || co.bank_details) && tplCfg.showBankDetails !== false) || (invoice.terms_conditions && tplCfg.showTerms !== false)) && (
               <div className="border-t border-slate-100 px-5 py-3 space-y-3">
                 {invoice.customer_notes && (
-                  <div>
+                  <div className="doc-notes-block">
                     <p className="text-2xs font-black text-slate-400 uppercase tracking-widest mb-1">Notes</p>
                     <p className="text-xs text-slate-600 whitespace-pre-line leading-relaxed">{invoice.customer_notes}</p>
                   </div>
                 )}
                 {(invoice.bank_details || co.bank_details) && tplCfg.showBankDetails !== false && (
-                  <div>
+                  <div className="doc-bank-block">
                     <p className="text-2xs font-black text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1.5">
                       <Landmark size={10} /> Bank Details
                     </p>
@@ -758,7 +758,7 @@ function InvoiceView({ invoiceId, onClose, onConverted, embedded = false }) {
                   </div>
                 )}
                 {invoice.terms_conditions && tplCfg.showTerms !== false && (
-                  <div>
+                  <div className="doc-terms-block">
                     <p className="text-2xs font-black text-slate-400 uppercase tracking-widest mb-1">Terms & Conditions</p>
                     <p className="text-xs text-slate-500 whitespace-pre-line leading-relaxed">{invoice.terms_conditions}</p>
                   </div>

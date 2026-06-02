@@ -457,7 +457,7 @@ function QuotationView({ quotationId, onClose, onEdit, onConverted, embedded = f
           {(quotation.customer_notes || ((quotation.bank_details || co.bank_details) && tplCfg.showBankDetails !== false) || (quotation.terms_conditions && tplCfg.showTerms !== false)) && (
             <div className="border-t border-slate-100 px-5 py-3 space-y-3">
               {quotation.customer_notes && (
-                <div>
+                <div className="doc-notes-block">
                   <p className="text-2xs font-black text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1.5">
                     <MessageSquare size={10} /> Notes
                   </p>
@@ -465,7 +465,7 @@ function QuotationView({ quotationId, onClose, onEdit, onConverted, embedded = f
                 </div>
               )}
               {(quotation.bank_details || co.bank_details) && tplCfg.showBankDetails !== false && (
-                <div>
+                <div className="doc-bank-block">
                   <p className="text-2xs font-black text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1.5">
                     <Landmark size={10} /> Bank Details
                   </p>
@@ -475,7 +475,7 @@ function QuotationView({ quotationId, onClose, onEdit, onConverted, embedded = f
                 </div>
               )}
               {quotation.terms_conditions && tplCfg.showTerms !== false && (
-                <div>
+                <div className="doc-terms-block">
                   <p className="text-2xs font-black text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1.5">
                     <FileCheck size={10} /> Terms & Conditions
                   </p>
