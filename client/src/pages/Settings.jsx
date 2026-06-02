@@ -1633,13 +1633,226 @@ function UsersManagement() {
   );
 }
 
+// ── Backup & Restore ──────────────────────────────────────────────────────────
+
+function BackupRestore() {
+  const [exporting,   setExporting]   = useState(false);
+  const [importing,   setImporting]   = useState(false);
+  const [importFile,  setImportFile]  = useState(null);
+  const [importResult, setImportResult] = useState(null);
+  const [error,       setError]       = useState('');
+  const fileRef = useRef(null);
+
+  async function handleExport() {
+    setExporting(true); setError('');
+    try {
+      // Use fetch directly so we can stream/download as blob
+      const token = localStorage.getItem('crm_token');
+      const r = await fetch('/api/backup/export', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!r.ok) throw new Error(`Export failed (${r.status})`);
+      const blob = await r.blob();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      const stamp = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `apparel-crm-backup-${stamp}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e.message || 'Export failed.');
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function handleImport() {
+    if (!importFile) return;
+    setImporting(true); setError(''); setImportResult(null);
+    try {
+      const text = await importFile.text();
+      let backup;
+      try { backup = JSON.parse(text); }
+      catch { throw new Error('That file is not valid JSON.'); }
+      if (backup.app !== 'apparel-crm') throw new Error('Not an Apparel CRM backup file.');
+
+      const token = localStorage.getItem('crm_token');
+      const r = await fetch('/api/backup/import', {
+        method: 'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: text,
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || `Import failed (${r.status})`);
+      setImportResult(data);
+      setImportFile(null);
+    } catch (e) {
+      setError(e.message || 'Import failed.');
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  function pickFile(e) {
+    const f = e.target.files?.[0];
+    if (f) { setImportFile(f); setImportResult(null); setError(''); }
+    e.target.value = '';
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* ── Export ── */}
+      <div className="bg-emerald-50/40 border border-emerald-100 rounded-xl p-5">
+        <div className="flex items-start gap-4">
+          <div className="w-10 h-10 bg-emerald-100 border border-emerald-200 rounded-xl flex items-center justify-center flex-shrink-0">
+            <Save size={18} className="text-emerald-700" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-slate-900 text-sm">Download a Full Backup</h3>
+            <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+              Creates a single JSON file containing every client, product, quotation, invoice,
+              payment, project, expense — and every uploaded logo or image. Keep it somewhere
+              safe (cloud drive, email to yourself). You can restore it later on a fresh install
+              or a different machine.
+            </p>
+            <button onClick={handleExport} disabled={exporting}
+              className="mt-3 flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors">
+              {exporting
+                ? <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                : <Save size={13} />}
+              {exporting ? 'Preparing backup…' : 'Download Backup'}
+            </button>
+            <p className="text-2xs text-slate-400 mt-2">
+              Tip: do this every week, or after any major round of data entry.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Import ── */}
+      <div className="bg-rose-50/40 border border-rose-100 rounded-xl p-5">
+        <div className="flex items-start gap-4">
+          <div className="w-10 h-10 bg-rose-100 border border-rose-200 rounded-xl flex items-center justify-center flex-shrink-0">
+            <Upload size={18} className="text-rose-700" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-slate-900 text-sm">Restore From Backup</h3>
+            <div className="mt-2 mb-3 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800 flex items-start gap-2">
+              <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+              <span>
+                <strong>This wipes ALL current data</strong> and replaces it with the backup.
+                There is no undo. Make sure you have a download of the current data first if
+                anything is unsaved.
+              </span>
+            </div>
+
+            <input ref={fileRef} type="file" accept=".json,application/json"
+              onChange={pickFile} className="hidden" />
+
+            {!importFile && !importResult && (
+              <button onClick={() => fileRef.current?.click()}
+                className="flex items-center gap-2 border border-slate-200 hover:border-rose-300 hover:bg-rose-50 text-slate-700 px-4 py-2 rounded-xl text-sm font-medium transition-colors">
+                <Upload size={13} /> Choose backup file…
+              </button>
+            )}
+
+            {importFile && !importResult && (
+              <div className="border border-rose-200 bg-white rounded-xl p-3 space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-rose-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <Upload size={14} className="text-rose-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-800 truncate">{importFile.name}</p>
+                    <p className="text-xs text-slate-400">{(importFile.size / 1024 / 1024).toFixed(2)} MB</p>
+                  </div>
+                  <button onClick={() => setImportFile(null)}
+                    className="text-xs text-slate-400 hover:text-slate-700 transition-colors">
+                    Remove
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={handleImport} disabled={importing}
+                    className="flex-1 flex items-center justify-center gap-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white py-2 rounded-xl text-sm font-medium transition-colors">
+                    {importing
+                      ? <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                      : <Check size={13} />}
+                    {importing ? 'Restoring…' : 'Yes — Replace All Data'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {importResult && (
+              <div className="border border-emerald-200 bg-emerald-50/50 rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Check size={16} className="text-emerald-700" />
+                  <p className="text-sm font-semibold text-emerald-900">Restore complete</p>
+                </div>
+                <p className="text-xs text-slate-600 mb-2">
+                  Backup from <span className="font-mono">{importResult.exported_at?.slice(0, 19).replace('T', ' ') ?? '—'}</span>.
+                  Imported {Object.values(importResult.stats?.tables || {}).reduce((s, v) => s + (v > 0 ? v : 0), 0)} rows
+                  and {importResult.stats?.files ?? 0} files.
+                </p>
+                <p className="text-xs text-slate-500 italic mb-3">
+                  Reload the app for everything to take effect.
+                </p>
+                <button onClick={() => window.location.reload()}
+                  className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors">
+                  <RefreshCw size={13} /> Reload Now
+                </button>
+              </div>
+            )}
+
+            {error && (
+              <div className="mt-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs px-3 py-2 rounded-xl flex items-start gap-2">
+                <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+                {error}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── What's included ── */}
+      <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Backup Includes</p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-xs text-slate-600">
+          <span>✓ Clients</span>
+          <span>✓ Products &amp; Prices</span>
+          <span>✓ Categories</span>
+          <span>✓ Quotations</span>
+          <span>✓ Invoices &amp; Payments</span>
+          <span>✓ Projects &amp; Stages</span>
+          <span>✓ Vendors</span>
+          <span>✓ Inventory</span>
+          <span>✓ Expenses</span>
+          <span>✓ Employees</span>
+          <span>✓ Companies &amp; Logos</span>
+          <span>✓ Currencies &amp; Rates</span>
+          <span>✓ Settings &amp; Branding</span>
+          <span>✓ Uploaded Images</span>
+          <span>✓ Users</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Settings sections nav ─────────────────────────────────────────────────────
 
 const SECTIONS = [
-  { id: 'app-branding',   label: 'App Branding',          icon: Palette,    description: 'Change the application name and logo shown in the sidebar' },
-  { id: 'companies',      label: 'Companies',             icon: Building2,  description: 'Manage your companies — each with its own logo and details for quotations & invoices' },
-  { id: 'currencies',     label: 'Currencies & Rates',    icon: Globe,      description: 'Manage currencies and exchange rates. Set your default currency — used across all quotations, invoices and conversions.' },
-  { id: 'cost-breakdown', label: 'Cost Breakdown Items',  icon: Calculator, description: 'Customize the cost categories used in the product price calculator' },
+  { id: 'app-branding',     label: 'App Branding',          icon: Palette,    description: 'Change the application name and logo shown in the sidebar' },
+  { id: 'companies',        label: 'Companies',             icon: Building2,  description: 'Manage your companies — each with its own logo and details for quotations & invoices' },
+  { id: 'currencies',       label: 'Currencies & Rates',    icon: Globe,      description: 'Manage currencies and exchange rates. Set your default currency — used across all quotations, invoices and conversions.' },
+  { id: 'cost-breakdown',   label: 'Cost Breakdown Items',  icon: Calculator, description: 'Customize the cost categories used in the product price calculator' },
+  { id: 'backup-restore',   label: 'Backup & Restore',      icon: Save,       description: 'Download a backup of all your data, or restore from a previous backup file' },
 ];
 
 // ── Main Settings page ────────────────────────────────────────────────────────
@@ -1690,6 +1903,7 @@ export default function Settings() {
           {activeSection === 'companies'      && <Companies />}
           {activeSection === 'currencies'     && <Currencies />}
           {activeSection === 'cost-breakdown' && <CostBreakdownItems />}
+          {activeSection === 'backup-restore' && <BackupRestore />}
         </div>
       </div>
     </div>

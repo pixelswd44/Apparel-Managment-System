@@ -27,6 +27,7 @@ import employeesRouter from './routes/employees.js';
 import expensesRouter from './routes/expenses.js';
 import financialsRouter from './routes/financials.js';
 import documentTemplatesRouter from './routes/document-templates.js';
+import backupRouter from './routes/backup.js';
 
 dotenv.config();
 
@@ -35,7 +36,9 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(cors());
-app.use(express.json());
+// Lift JSON body limit so big backups can be imported.
+// (Default is ~100kb; backups with images can be 50MB+.)
+app.use(express.json({ limit: '200mb' }));
 
 // Serve uploaded files statically
 app.use('/uploads', express.static(join(__dirname, '../uploads')));
@@ -69,5 +72,6 @@ app.use('/api/employees',          employeesRouter);
 app.use('/api/expenses',           expensesRouter);
 app.use('/api/financials',         financialsRouter);
 app.use('/api/document-templates', documentTemplatesRouter);
+app.use('/api/backup',             backupRouter);
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
