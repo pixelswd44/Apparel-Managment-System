@@ -231,9 +231,9 @@ function ReceiptVoucher({ invoice, payment, settings, onClose, templates = [], a
       </div>
 
       {/* Voucher document — compact, A5-like */}
-      <div className="flex-1 overflow-y-auto bg-slate-100 py-6 px-4 print:py-0 print:bg-white">
+      <div className="flex-1 overflow-y-auto bg-slate-100 py-6 px-4 print:p-0 print:bg-white print:overflow-visible">
         <div ref={voucherRef}
-          className="max-w-[520px] mx-auto bg-white shadow-xl print:shadow-none overflow-hidden relative"
+          className="max-w-[520px] mx-auto bg-white shadow-xl print:shadow-none print:max-w-none overflow-hidden relative"
           data-layout={tplLayout}
           style={{ fontFamily: 'system-ui, sans-serif', '--tp': tplColor }}
         >
@@ -558,7 +558,7 @@ function InvoiceView({ invoiceId, onClose, onConverted, embedded = false }) {
         </div>
 
         {/* ── Scrollable document ── */}
-        <div className="flex-1 overflow-y-auto bg-slate-100 py-6 px-3">
+        <div className="flex-1 overflow-y-auto bg-slate-100 py-6 px-3 print:p-0 print:bg-white print:overflow-visible">
           {(() => {
             const tplCfg = (() => { try { return typeof activeTemplate?.config === 'string' ? JSON.parse(activeTemplate.config) : (activeTemplate?.config || {}); } catch { return {}; } })();
             const tplLayout = activeTemplate?.layout || 'classic';
@@ -755,7 +755,7 @@ function InvoiceView({ invoiceId, onClose, onConverted, embedded = false }) {
                     <p className="text-2xs font-black text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1.5">
                       <Landmark size={10} /> Bank Details
                     </p>
-                    <p className="text-xs text-slate-600 whitespace-pre-line font-mono leading-relaxed bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
+                    <p className="text-xs text-slate-600 whitespace-pre-line font-mono leading-relaxed border-l-2 border-slate-200 pl-3 py-1">
                       {invoice.bank_details || co.bank_details}
                     </p>
                   </div>

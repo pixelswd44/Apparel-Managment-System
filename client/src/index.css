@@ -204,16 +204,34 @@ input, select, textarea {
 @media print {
   @page { margin: 0.5cm; }
 
+  /* Force pure white page background everywhere during print.
+     Without this, the on-screen slate-100 wrapper around the document
+     bleeds into the printed page edges, making the paper look grey. */
+  html, body, #__print_doc__ {
+    background: #ffffff !important;
+  }
+
   body.__printing__ #root           { display: none !important; }
   body.__printing__ #__print_doc__  { display: block !important; }
 
   .print\:hidden { display: none !important; }
   main { margin-left: 0 !important; }
 
-  /* Preserve background colors, gradients, and accent bars on print.
-     Without these the green RECEIPT badge, indigo AMOUNT PAID box,
-     and gradient accent bars get stripped to save ink — the printout
-     no longer matches the on-screen preview. */
+  /* Document wrapper: strip shadows / rounded corners so it sits flat
+     on the page instead of looking like a floating card */
+  #__print_doc__ > div,
+  body.__printing__ [ref] {
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    max-width: none !important;
+    margin: 0 auto !important;
+  }
+
+  /* Preserve background colors, gradients, and accent bars on print
+     for the elements that NEED color (badges, AMOUNT PAID box, etc).
+     Without these the green RECEIPT badge and gradient accent bars
+     get stripped to save ink — the printout no longer matches the
+     on-screen preview. */
   *,
   *::before,
   *::after {

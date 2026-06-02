@@ -472,7 +472,7 @@ function QuotationView({ quotationId, onClose, onEdit, onConverted, embedded = f
                   <p className="text-2xs font-black text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1.5">
                     <Landmark size={10} /> Bank Details
                   </p>
-                  <p className="text-xs text-slate-600 whitespace-pre-line font-mono leading-relaxed bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
+                  <p className="text-xs text-slate-600 whitespace-pre-line font-mono leading-relaxed border-l-2 border-slate-200 pl-3 py-1">
                     {quotation.bank_details || co.bank_details}
                   </p>
                 </div>
