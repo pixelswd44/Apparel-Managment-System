@@ -58,8 +58,13 @@ class Stmt {
     st.step();
     const changes = this._sqlDb.getRowsModified();
     st.free();
-    const r = this._sqlDb.exec('SELECT last_insert_rowid()');
-    const lastInsertRowid = r[0]?.values[0]?.[0] ?? 0;
+    // Use prepare/step (not exec) so we don't risk interfering with an open transaction
+    let lastInsertRowid = 0;
+    try {
+      const idSt = this._sqlDb.prepare('SELECT last_insert_rowid() as id');
+      if (idSt.step()) lastInsertRowid = idSt.getAsObject()['id'] ?? 0;
+      idSt.free();
+    } catch {}
     this._w._save();
     return { changes, lastInsertRowid };
   }

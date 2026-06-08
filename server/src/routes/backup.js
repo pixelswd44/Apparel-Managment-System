@@ -130,12 +130,11 @@ router.post('/import', (req, res) => {
     const startedAt = Date.now();
 
     // ── Wipe + insert ─────────────────────────────────────────────────────
-    // foreign_keys pragma must be set OUTSIDE a transaction (SQLite restriction).
-    // We wrap in a manual BEGIN / COMMIT so a failure rolls everything back.
-    try {
-      db.pragma('foreign_keys = OFF');
-      db.exec('BEGIN');
+    // SQLite restriction: foreign_keys pragma is ignored inside a transaction,
+    // so we set it BEFORE calling db.transaction().
+    db.pragma('foreign_keys = OFF');
 
+    const restore = db.transaction(() => {
       // 1. Wipe in reverse order (children before parents)
       for (const name of [...TABLES_ORDERED].reverse()) {
         try {
@@ -151,7 +150,7 @@ router.post('/import', (req, res) => {
         const cols = Object.keys(rows[0]);
         if (cols.length === 0) { stats.tables[name] = 0; continue; }
 
-        const colList    = cols.map(c => `"${c}"`).join(', ');
+        const colList      = cols.map(c => `"${c}"`).join(', ');
         const placeholders = cols.map(() => '?').join(', ');
         const sql = `INSERT OR IGNORE INTO "${name}" (${colList}) VALUES (${placeholders})`;
 
@@ -160,7 +159,7 @@ router.post('/import', (req, res) => {
           stmt = db.prepare(sql);
         } catch (e) {
           stats.tables[name] = -1;
-          stats.errors.push(`${name}: could not prepare insert — ${e.message}`);
+          stats.errors.push(`${name}: prepare failed — ${e.message}`);
           continue;
         }
 
@@ -177,14 +176,9 @@ router.post('/import', (req, res) => {
         stats.tables[name] = inserted;
         if (skipped > 0) stats.errors.push(`${name}: skipped ${skipped} row(s)`);
       }
+    });
 
-      db.exec('COMMIT');
-    } catch (txErr) {
-      try { db.exec('ROLLBACK'); } catch {}
-      db.pragma('foreign_keys = ON');
-      throw txErr;
-    }
-
+    restore();
     db.pragma('foreign_keys = ON');
 
     // ── Restore uploaded files (outside the DB transaction) ───────────────
