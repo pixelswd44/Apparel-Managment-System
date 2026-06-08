@@ -1635,79 +1635,111 @@ function UsersManagement() {
 
 // ── Backup & Restore ──────────────────────────────────────────────────────────
 
+const BACKUP_INCLUDES = [
+  'Clients', 'Products & Prices', 'Categories',
+  'Quotations', 'Invoices & Payments', 'Projects & Shipping',
+  'Vendors', 'Inventory', 'Expenses',
+  'Employees & Payroll', 'Companies & Logos', 'Currencies & Rates',
+  'Settings & Branding', 'Uploaded Images', 'Users',
+];
+
 function BackupRestore() {
-  const [exporting,   setExporting]   = useState(false);
-  const [importing,   setImporting]   = useState(false);
-  const [importFile,  setImportFile]  = useState(null);
+  const [exporting,    setExporting]    = useState(false);
+  const [exportDone,   setExportDone]   = useState(false);
+  // import steps: 'idle' | 'chosen' | 'confirm' | 'restoring' | 'done' | 'error'
+  const [step,         setStep]         = useState('idle');
+  const [importFile,   setImportFile]   = useState(null);
+  const [importMeta,   setImportMeta]   = useState(null);   // parsed backup header
   const [importResult, setImportResult] = useState(null);
-  const [error,       setError]       = useState('');
+  const [error,        setError]        = useState('');
   const fileRef = useRef(null);
 
+  // ── Export ───────────────────────────────────────────────────────────────
   async function handleExport() {
-    setExporting(true); setError('');
+    setExporting(true); setError(''); setExportDone(false);
     try {
-      // Use fetch directly so we can stream/download as blob
       const token = localStorage.getItem('crm_token');
       const r = await fetch('/api/backup/export', {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
-      if (!r.ok) throw new Error(`Export failed (${r.status})`);
-      const blob = await r.blob();
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement('a');
+      if (!r.ok) throw new Error(`Server returned ${r.status}`);
+      const blob  = await r.blob();
+      const url   = URL.createObjectURL(blob);
+      const a     = document.createElement('a');
       const stamp = new Date().toISOString().slice(0, 10);
-      a.href = url;
-      a.download = `apparel-crm-backup-${stamp}.json`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      a.href = url; a.download = `apparel-crm-backup-${stamp}.json`;
+      document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
+      setExportDone(true);
+      setTimeout(() => setExportDone(false), 4000);
     } catch (e) {
-      setError(e.message || 'Export failed.');
+      setError('Export failed: ' + (e.message || 'Unknown error'));
     } finally {
       setExporting(false);
     }
   }
 
-  async function handleImport() {
-    if (!importFile) return;
-    setImporting(true); setError(''); setImportResult(null);
-    try {
-      const text = await importFile.text();
-      let backup;
-      try { backup = JSON.parse(text); }
-      catch { throw new Error('That file is not valid JSON.'); }
-      if (backup.app !== 'apparel-crm') throw new Error('Not an Apparel CRM backup file.');
+  // ── Pick file ─────────────────────────────────────────────────────────────
+  async function pickFile(e) {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
 
+    setError(''); setImportResult(null);
+    // Parse the file header immediately so we can show a preview
+    try {
+      const text = await f.text();
+      let parsed;
+      try { parsed = JSON.parse(text); }
+      catch { throw new Error('File is not valid JSON.'); }
+      if (parsed.app !== 'apparel-crm') throw new Error('Not an Apparel CRM backup file.');
+      setImportFile(f);
+      setImportMeta(parsed);
+      setStep('chosen');
+    } catch (e) {
+      setError(e.message);
+      setStep('idle');
+    }
+  }
+
+  // ── Restore ──────────────────────────────────────────────────────────────
+  async function handleImport() {
+    if (!importFile || !importMeta) return;
+    setStep('restoring'); setError('');
+    try {
+      const text  = await importFile.text();
       const token = localStorage.getItem('crm_token');
       const r = await fetch('/api/backup/import', {
-        method: 'POST',
+        method:  'POST',
         headers: {
-          'Content-Type':  'application/json',
+          'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: text,
       });
       const data = await r.json();
-      if (!r.ok) throw new Error(data.error || `Import failed (${r.status})`);
+      if (!r.ok) throw new Error(data.error || `Server returned ${r.status}`);
       setImportResult(data);
-      setImportFile(null);
+      setStep('done');
     } catch (e) {
-      setError(e.message || 'Import failed.');
-    } finally {
-      setImporting(false);
+      setError(e.message || 'Restore failed.');
+      setStep('error');
     }
   }
 
-  function pickFile(e) {
-    const f = e.target.files?.[0];
-    if (f) { setImportFile(f); setImportResult(null); setError(''); }
-    e.target.value = '';
+  function reset() {
+    setStep('idle'); setImportFile(null); setImportMeta(null);
+    setImportResult(null); setError('');
   }
+
+  const totalBackupRows = importMeta
+    ? Object.values(importMeta.table_meta || {}).reduce((s, n) => s + n, 0)
+    : 0;
 
   return (
     <div className="space-y-6">
-      {/* ── Export ── */}
+
+      {/* ── Export card ───────────────────────────────────────────────────── */}
       <div className="bg-emerald-50/40 border border-emerald-100 rounded-xl p-5">
         <div className="flex items-start gap-4">
           <div className="w-10 h-10 bg-emerald-100 border border-emerald-200 rounded-xl flex items-center justify-center flex-shrink-0">
@@ -1716,26 +1748,26 @@ function BackupRestore() {
           <div className="flex-1 min-w-0">
             <h3 className="font-semibold text-slate-900 text-sm">Download a Full Backup</h3>
             <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-              Creates a single JSON file containing every client, product, quotation, invoice,
-              payment, project, expense — and every uploaded logo or image. Keep it somewhere
-              safe (cloud drive, email to yourself). You can restore it later on a fresh install
-              or a different machine.
+              Creates one JSON file with every client, product, quotation, invoice, payment,
+              project, shipping record, expense and all uploaded images. Save it to a cloud
+              drive or email it to yourself — you can restore it any time on any machine.
             </p>
             <button onClick={handleExport} disabled={exporting}
-              className="mt-3 flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors">
+              className={`mt-3 flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors text-white
+                ${exportDone ? 'bg-emerald-500' : 'bg-emerald-600 hover:bg-emerald-700'} disabled:opacity-60`}>
               {exporting
                 ? <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                : <Save size={13} />}
-              {exporting ? 'Preparing backup…' : 'Download Backup'}
+                : exportDone ? <Check size={13} /> : <Save size={13} />}
+              {exporting ? 'Preparing…' : exportDone ? 'Downloaded!' : 'Download Backup'}
             </button>
             <p className="text-2xs text-slate-400 mt-2">
-              Tip: do this every week, or after any major round of data entry.
+              Tip: download a fresh backup before restoring, and after every major data-entry session.
             </p>
           </div>
         </div>
       </div>
 
-      {/* ── Import ── */}
+      {/* ── Restore card ──────────────────────────────────────────────────── */}
       <div className="bg-rose-50/40 border border-rose-100 rounded-xl p-5">
         <div className="flex items-start gap-4">
           <div className="w-10 h-10 bg-rose-100 border border-rose-200 rounded-xl flex items-center justify-center flex-shrink-0">
@@ -1743,77 +1775,157 @@ function BackupRestore() {
           </div>
           <div className="flex-1 min-w-0">
             <h3 className="font-semibold text-slate-900 text-sm">Restore From Backup</h3>
-            <div className="mt-2 mb-3 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800 flex items-start gap-2">
-              <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
-              <span>
-                <strong>This wipes ALL current data</strong> and replaces it with the backup.
-                There is no undo. Make sure you have a download of the current data first if
-                anything is unsaved.
-              </span>
-            </div>
+            <p className="text-xs text-slate-500 mt-0.5 mb-3">
+              Replace all current data with a previous backup file.
+            </p>
 
             <input ref={fileRef} type="file" accept=".json,application/json"
               onChange={pickFile} className="hidden" />
 
-            {!importFile && !importResult && (
+            {/* ── Step: idle ── */}
+            {step === 'idle' && (
               <button onClick={() => fileRef.current?.click()}
                 className="flex items-center gap-2 border border-slate-200 hover:border-rose-300 hover:bg-rose-50 text-slate-700 px-4 py-2 rounded-xl text-sm font-medium transition-colors">
                 <Upload size={13} /> Choose backup file…
               </button>
             )}
 
-            {importFile && !importResult && (
-              <div className="border border-rose-200 bg-white rounded-xl p-3 space-y-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-rose-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <Upload size={14} className="text-rose-600" />
+            {/* ── Step: chosen — show file summary ── */}
+            {step === 'chosen' && importMeta && (
+              <div className="border border-slate-200 bg-white rounded-xl overflow-hidden">
+                <div className="flex items-center gap-3 p-3 border-b border-slate-100">
+                  <div className="w-8 h-8 bg-indigo-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <Save size={14} className="text-indigo-600" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-slate-800 truncate">{importFile.name}</p>
-                    <p className="text-xs text-slate-400">{(importFile.size / 1024 / 1024).toFixed(2)} MB</p>
+                    <p className="text-xs text-slate-400">
+                      {(importFile.size / 1024 / 1024).toFixed(2)} MB
+                      · {totalBackupRows.toLocaleString()} rows
+                      · {importMeta.file_count ?? 0} uploaded files
+                    </p>
                   </div>
-                  <button onClick={() => setImportFile(null)}
-                    className="text-xs text-slate-400 hover:text-slate-700 transition-colors">
-                    Remove
+                  <button onClick={reset} className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1 rounded transition-colors">
+                    Change
                   </button>
                 </div>
+                <div className="p-3 space-y-1">
+                  <p className="text-xs text-slate-500">
+                    Backup date: <span className="font-mono font-medium text-slate-700">
+                      {importMeta.exported_at?.slice(0, 19).replace('T', ' ') ?? '—'}
+                    </span>
+                  </p>
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800 flex items-start gap-2 mt-2">
+                    <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+                    <span>
+                      <strong>This will wipe ALL current data</strong> and replace it with the backup.
+                      There is no undo. Download the current data first if needed.
+                    </span>
+                  </div>
+                  <div className="flex gap-2 pt-2">
+                    <button onClick={reset}
+                      className="px-4 py-2 text-sm border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-colors">
+                      Cancel
+                    </button>
+                    <button onClick={() => setStep('confirm')}
+                      className="flex-1 flex items-center justify-center gap-2 bg-rose-600 hover:bg-rose-700 text-white py-2 rounded-xl text-sm font-medium transition-colors">
+                      <AlertTriangle size={13} /> Proceed to Confirm
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── Step: confirm — final warning ── */}
+            {step === 'confirm' && (
+              <div className="border-2 border-rose-300 bg-rose-50 rounded-xl p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle size={16} className="text-rose-600" />
+                  <p className="text-sm font-bold text-rose-800">Last chance — are you sure?</p>
+                </div>
+                <p className="text-xs text-rose-700 leading-relaxed">
+                  You are about to <strong>permanently delete all current data</strong> and
+                  replace it with the backup from{' '}
+                  <span className="font-mono font-semibold">
+                    {importMeta?.exported_at?.slice(0, 10) ?? '—'}
+                  </span>.
+                  This cannot be undone.
+                </p>
                 <div className="flex gap-2">
-                  <button onClick={handleImport} disabled={importing}
-                    className="flex-1 flex items-center justify-center gap-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white py-2 rounded-xl text-sm font-medium transition-colors">
-                    {importing
-                      ? <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                      : <Check size={13} />}
-                    {importing ? 'Restoring…' : 'Yes — Replace All Data'}
+                  <button onClick={() => setStep('chosen')}
+                    className="flex-1 px-4 py-2 text-sm border border-slate-300 rounded-xl text-slate-700 hover:bg-white transition-colors font-medium">
+                    Go Back
+                  </button>
+                  <button onClick={handleImport}
+                    className="flex-1 flex items-center justify-center gap-2 bg-rose-700 hover:bg-rose-800 text-white py-2 rounded-xl text-sm font-bold transition-colors">
+                    <Check size={13} /> Yes, Restore Now
                   </button>
                 </div>
               </div>
             )}
 
-            {importResult && (
-              <div className="border border-emerald-200 bg-emerald-50/50 rounded-xl p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <Check size={16} className="text-emerald-700" />
-                  <p className="text-sm font-semibold text-emerald-900">Restore complete</p>
+            {/* ── Step: restoring ── */}
+            {step === 'restoring' && (
+              <div className="flex items-center gap-3 py-4">
+                <span className="w-5 h-5 border-2 border-rose-300 border-t-rose-600 rounded-full animate-spin" />
+                <div>
+                  <p className="text-sm font-medium text-slate-700">Restoring data…</p>
+                  <p className="text-xs text-slate-400">Do not close this page.</p>
                 </div>
-                <p className="text-xs text-slate-600 mb-2">
-                  Backup from <span className="font-mono">{importResult.exported_at?.slice(0, 19).replace('T', ' ') ?? '—'}</span>.
-                  Imported {Object.values(importResult.stats?.tables || {}).reduce((s, v) => s + (v > 0 ? v : 0), 0)} rows
-                  and {importResult.stats?.files ?? 0} files.
-                </p>
-                <p className="text-xs text-slate-500 italic mb-3">
-                  Reload the app for everything to take effect.
+              </div>
+            )}
+
+            {/* ── Step: done ── */}
+            {step === 'done' && importResult && (
+              <div className="border border-emerald-200 bg-emerald-50/50 rounded-xl p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Check size={16} className="text-emerald-700" />
+                  <p className="text-sm font-bold text-emerald-900">Restore complete!</p>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { label: 'Rows imported', value: importResult.total_rows?.toLocaleString() ?? '—' },
+                    { label: 'Files restored', value: importResult.stats?.files ?? 0 },
+                    { label: 'Time taken', value: `${((importResult.duration_ms ?? 0) / 1000).toFixed(1)}s` },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="bg-white border border-emerald-100 rounded-lg p-2 text-center">
+                      <p className="text-base font-bold text-emerald-700">{value}</p>
+                      <p className="text-2xs text-slate-500">{label}</p>
+                    </div>
+                  ))}
+                </div>
+                {importResult.stats?.errors?.length > 0 && (
+                  <details className="text-xs">
+                    <summary className="text-amber-700 cursor-pointer font-medium">
+                      {importResult.stats.errors.length} warning(s) — click to expand
+                    </summary>
+                    <ul className="mt-1 space-y-0.5 text-slate-500 pl-2">
+                      {importResult.stats.errors.map((e, i) => <li key={i}>· {e}</li>)}
+                    </ul>
+                  </details>
+                )}
+                <p className="text-xs text-slate-500 italic">
+                  Reload the page for all changes to take effect.
                 </p>
                 <button onClick={() => window.location.reload()}
-                  className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors">
-                  <RefreshCw size={13} /> Reload Now
+                  className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors">
+                  <RefreshCw size={13} /> Reload App Now
                 </button>
               </div>
             )}
 
-            {error && (
-              <div className="mt-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs px-3 py-2 rounded-xl flex items-start gap-2">
-                <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
-                {error}
+            {/* ── Error state ── */}
+            {(step === 'error' || error) && (
+              <div className="mt-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs px-3 py-2.5 rounded-xl">
+                <div className="flex items-start gap-2 mb-2">
+                  <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+                  <span className="font-medium">{error}</span>
+                </div>
+                {step === 'error' && (
+                  <button onClick={reset} className="text-rose-600 hover:text-rose-800 underline font-medium">
+                    Try again
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -1824,21 +1936,9 @@ function BackupRestore() {
       <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
         <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Backup Includes</p>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-xs text-slate-600">
-          <span>✓ Clients</span>
-          <span>✓ Products &amp; Prices</span>
-          <span>✓ Categories</span>
-          <span>✓ Quotations</span>
-          <span>✓ Invoices &amp; Payments</span>
-          <span>✓ Projects &amp; Stages</span>
-          <span>✓ Vendors</span>
-          <span>✓ Inventory</span>
-          <span>✓ Expenses</span>
-          <span>✓ Employees</span>
-          <span>✓ Companies &amp; Logos</span>
-          <span>✓ Currencies &amp; Rates</span>
-          <span>✓ Settings &amp; Branding</span>
-          <span>✓ Uploaded Images</span>
-          <span>✓ Users</span>
+          {BACKUP_INCLUDES.map(item => (
+            <span key={item}>✓ {item}</span>
+          ))}
         </div>
       </div>
     </div>
