@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Plus, X, ChevronDown, ChevronUp, Trash2, Pencil, Search,
   Package, Users, FileText, Receipt, Check, AlertTriangle,
-  Printer, Box, TrendingUp, DollarSign, ArrowLeft,
+  Printer, Box, TrendingUp, TrendingDown, DollarSign, ArrowLeft,
   Clock, CheckCircle2, Circle, ChevronRight, Save,
   Tag, AlertCircle, PackageOpen, Scissors, Layers,
   ToggleLeft, ToggleRight, Flame, Shirt, Wand2,
@@ -127,7 +127,11 @@ function calcProject(project, currencies = []) {
   const _ec = Array.isArray(project.extra_costs) ? project.extra_costs
     : (typeof project.extra_costs === 'string' ? (() => { try { return JSON.parse(project.extra_costs); } catch { return []; } })() : []);
   const extraCostTotal = _ec.reduce((s,e)=>s+(parseFloat(e.amount)||0), 0);
-  const totalExpense   = productCost + vendorBilled + workerAgreed + extraCostTotal;
+  // Shipping
+  const shippingTotal  = (project.shipping||[]).reduce((s,r)=>s+(parseFloat(r.amount)||0), 0);
+  const shippingPaid   = (project.shipping||[]).reduce((s,r)=>s+(parseFloat(r.paid_amount)||0), 0);
+  const totalExpense   = productCost + vendorBilled + workerAgreed + extraCostTotal + shippingTotal;
+  const totalExpenseBeforeShipping = productCost + vendorBilled + workerAgreed + extraCostTotal;
 
   // ── What we have actually paid so far ──────────────────────────────────────
   const vendorPaid  = (project.vendors||[]).reduce((s,pv)=>s+Number(pv.total_paid||0), 0);
@@ -141,8 +145,10 @@ function calcProject(project, currencies = []) {
     return s + fp + cp + ep;
   }, 0);
   // Extra costs are treated as already paid
-  const totalPaid = productPaid + vendorPaid + workerPaid + extraCostTotal;
+  const totalPaid = productPaid + vendorPaid + workerPaid + extraCostTotal + shippingPaid;
   const due       = totalExpense - totalPaid;
+  // Production-only due (excludes shipping) — used for "✓ Settled" badge on Costs
+  const productionDue = totalExpenseBeforeShipping - (productPaid + vendorPaid + workerPaid + extraCostTotal);
 
   // ── Revenue ────────────────────────────────────────────────────────────────
   const receivedCurrency = project.invoice_id
@@ -158,14 +164,17 @@ function calcProject(project, currencies = []) {
 
   return {
     // Totals
-    totalExpense, totalPaid, due,
+    totalExpense, totalPaid, due, productionDue,
+    totalExpenseBeforeShipping,
     // By category (expense / paid)
     productCost, productPaid,
     vendorBilled, vendorPaid,
     workerAgreed, workerPaid,
     extraCostTotal,
+    shippingTotal, shippingPaid,
     // Revenue & profit
     received, profit: received - totalExpense,
+    profitBeforeShipping: received - totalExpenseBeforeShipping,
     receivedRaw, receivedCurrency, exchangeRate,
     // Backward-compat alias
     spent: totalExpense,
@@ -573,21 +582,46 @@ function ProductLine({ pp, catalogProducts, costFields, onSave, onRemove }) {
       const saved = await onSave({ ...form, total_quantity: totalQty });
       const ppId = saved?.id || pp.id;
 
-      // Auto-sync inventory deductions for any fabric row linked to an inventory item.
-      // Use inventory_item_id directly (set when item was selected/created) or fall back to name lookup.
+      // Sync inventory for fabrics — two steps:
+      // 1. Stock-in: record purchased qty (auto-creates inventory items if needed)
+      // 2. Stock-out: deduct used qty from inventory
       if (ppId) {
-        const invItems = form.fabrics
-          .filter(fb => parseFloat(fb.qty) > 0 && (fb.inventory_item_id || findInvMatch(fb.name)))
-          .map(fb => {
-            const m = findInvMatch(fb.name);
-            const invId = fb.inventory_item_id || m?.id;
-            return { inventory_item_id: invId, qty: parseFloat(fb.qty), name: fb.name };
+        const fabricsForSync = form.fabrics
+          .filter(fb => parseFloat(fb.qty) > 0 && (fb.name || '').trim());
+
+        // Step 1: stock-in (purchase) — auto-creates items, returns inventory_item_ids
+        let purchaseSynced = [];
+        try {
+          const res = await api.post('/inventory/sync-project-fabric-purchase', {
+            project_product_id: ppId,
+            fabrics: fabricsForSync.map(fb => ({
+              inventory_item_id: fb.inventory_item_id || findInvMatch(fb.name)?.id || null,
+              name: fb.name,
+              unit: fb.unit,
+              qty:  parseFloat(fb.qty),
+              rate: parseFloat(fb.rate) || 0,
+            })),
           });
-        // Always call sync (even with empty items) so removed rows get reversed
+          purchaseSynced = res.data.synced || [];
+        } catch { /* non-fatal */ }
+
+        // Step 2: stock-out (used) — use ids returned from purchase sync to ensure linkage
+        const invItems = fabricsForSync.map(fb => {
+          const matched = purchaseSynced.find(s => s.name.toLowerCase() === fb.name.toLowerCase());
+          const invId   = fb.inventory_item_id || findInvMatch(fb.name)?.id || matched?.inventory_item_id;
+          if (!invId) return null;
+          return { inventory_item_id: invId, qty: parseFloat(fb.qty), name: fb.name };
+        }).filter(Boolean);
+
         await api.post('/inventory/sync-project-product', {
           project_product_id: ppId,
           items: invItems,
-        }).catch(() => {}); // non-fatal — don't block save if inventory sync fails
+        }).catch(() => {});
+
+        // Refresh local inventory list so combobox shows updated stock
+        api.get('/inventory')
+          .then(r => setInventoryItems(Array.isArray(r.data) ? r.data : []))
+          .catch(() => {});
       }
 
       setExpanded(false);
@@ -1719,7 +1753,7 @@ function ProjectImageUploader({ images, onSave }) {
 
 // ─── Project Detail ───────────────────────────────────────────────────────────
 
-const DETAIL_TABS = ['Overview', 'Products', 'Costs', 'Stages', 'Boxes'];
+const DETAIL_TABS = ['Overview', 'Products', 'Costs', 'Stages', 'Boxes', 'Shipping', 'Vendors', 'Workers'];
 
 function ProjectDetail({ projectId, onBack, clients, invoices, catalogProducts, costFields, currencies, baseCurrency, onProjectUpdated }) {
   const navigate = useNavigate();
@@ -1935,10 +1969,12 @@ function ProjectDetail({ projectId, onBack, clients, invoices, catalogProducts, 
       {(() => {
         const prods       = project.products || [];
         const totalQtyAll = prods.reduce((s, pp) => s + (parseFloat(pp.total_quantity)||0), 0);
-        const expPerPc    = totalQtyAll > 0 ? fin.totalExpense / totalQtyAll : 0;
+        const costPcBefore = totalQtyAll > 0 ? fin.totalExpenseBeforeShipping / totalQtyAll : 0;
+        const costPcAfter  = totalQtyAll > 0 ? fin.totalExpense / totalQtyAll : 0;
         const recvPerPc   = totalQtyAll > 0 && fin.received > 0 ? fin.received / totalQtyAll : 0;
         return (
-          <div className="grid grid-cols-3 gap-3 mb-6">
+          <>
+          <div className="grid grid-cols-3 gap-3 mb-3">
 
             {/* Total Expense */}
             <div className="bg-rose-500 rounded-2xl p-4 shadow-sm text-white">
@@ -1949,21 +1985,19 @@ function ProjectDetail({ projectId, onBack, clients, invoices, catalogProducts, 
               <p className="text-2xl font-bold leading-tight">{fmt(fin.totalExpense)}</p>
               <div className="text-2xs text-rose-200 mt-1 space-y-0.5">
                 <p>Materials+Process: {fmt(fin.productCost)}</p>
-                {fin.vendorBilled  > 0 && <p>Vendors: {fmt(fin.vendorBilled)}</p>}
-                {fin.workerAgreed  > 0 && <p>Workers: {fmt(fin.workerAgreed)}</p>}
+                {fin.vendorBilled   > 0 && <p>Vendors: {fmt(fin.vendorBilled)}</p>}
+                {fin.workerAgreed   > 0 && <p>Workers: {fmt(fin.workerAgreed)}</p>}
                 {fin.extraCostTotal > 0 && <p>Extra: {fmt(fin.extraCostTotal)}</p>}
+                {fin.shippingTotal  > 0 && <p>Shipping: {fmt(fin.shippingTotal)}</p>}
               </div>
               <div className="mt-2 pt-1.5 border-t border-rose-400/40 flex items-center justify-between text-2xs">
                 <span className="text-rose-100">Paid: <span className="font-bold">{fmt(fin.totalPaid)}</span></span>
-                {fin.due > 0
-                  ? <span className="text-rose-200">Due: {fmt(fin.due)}</span>
-                  : <span className="text-emerald-300 font-semibold">✓ Settled</span>}
+                {fin.productionDue > 0
+                  ? <span className="text-rose-200">Due: {fmt(fin.productionDue)}{fin.shippingTotal > 0 ? ` (+${fmt(fin.shippingTotal - fin.shippingPaid)} ship)` : ''}</span>
+                  : fin.shippingTotal > 0 && fin.shippingPaid < fin.shippingTotal
+                    ? <span className="text-amber-300 font-semibold">Costs Settled · Ship Due: {fmt(fin.shippingTotal - fin.shippingPaid)}</span>
+                    : <span className="text-emerald-300 font-semibold">✓ Settled</span>}
               </div>
-              {expPerPc > 0 && (
-                <p className="text-xs text-rose-100 mt-1 font-semibold">
-                  {fmt(expPerPc)}/pc
-                </p>
-              )}
             </div>
 
             {/* Amount Received */}
@@ -1978,29 +2012,82 @@ function ProjectDetail({ projectId, onBack, clients, invoices, catalogProducts, 
               </p>
               {recvPerPc > 0 && (
                 <p className="text-xs text-emerald-100 mt-1.5 font-semibold border-t border-emerald-400/40 pt-1.5">
-                  {fmt(recvPerPc)}/pc
+                  {fmt(recvPerPc)}/pc received
                 </p>
               )}
             </div>
 
-            {/* Net Profit */}
-            <div className={`rounded-2xl p-4 shadow-sm text-white ${fin.profit >= 0 ? 'bg-amber-500' : 'bg-rose-700'}`}>
-              <div className="flex items-center gap-2 mb-2">
-                {fin.profit >= 0 ? <CheckCircle2 size={14} className="text-amber-200" /> : <AlertTriangle size={14} className="text-rose-200" />}
-                <p className="text-xs font-bold uppercase tracking-wider text-white/80">{fin.profit >= 0 ? 'Net Profit' : 'Net Loss'}</p>
-              </div>
-              <p className="text-2xl font-bold leading-tight">{fmt(Math.abs(fin.profit))}</p>
-              <p className={`text-2xs mt-1 ${fin.profit >= 0 ? 'text-amber-100' : 'text-rose-200'}`}>
-                {fin.received > 0 ? `Margin: ${((fin.profit/fin.received)*100).toFixed(1)}%` : 'No income yet'}
-              </p>
-              {totalQtyAll > 0 && (
-                <p className="text-xs text-white/70 mt-1.5 font-semibold border-t border-white/20 pt-1.5">
-                  {fmt(Math.abs(fin.profit/totalQtyAll))}/pc {fin.profit < 0 ? '(loss)' : ''}
-                </p>
-              )}
-            </div>
+            {/* Net Profit / Loss — Projected + Out-of-Pocket */}
+            {(() => {
+              const pocketDiff   = fin.totalPaid - fin.received;   // +ve = already paid more than received
+              const pocketLoss   = pocketDiff > 0;
+              const projProfit   = fin.profit >= 0;
+              return (
+                <div className={`rounded-2xl p-4 shadow-sm text-white ${projProfit ? 'bg-amber-500' : 'bg-rose-700'}`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    {projProfit ? <CheckCircle2 size={14} className="text-amber-200" /> : <AlertTriangle size={14} className="text-rose-200" />}
+                    <p className="text-xs font-bold uppercase tracking-wider text-white/80">{projProfit ? 'Net Profit' : 'Net Loss'}</p>
+                  </div>
+
+                  {/* Projected (Exp − Received) */}
+                  <div className="mb-2">
+                    <p className="text-2xs text-white/60 uppercase tracking-wider mb-0.5">Projected</p>
+                    <p className="text-2xl font-bold leading-tight">
+                      {projProfit ? '' : '−'}{fmt(Math.abs(fin.profit))}
+                    </p>
+                    <p className="text-2xs text-white/70 mt-0.5">
+                      {fin.received > 0 ? `Margin: ${((fin.profit / fin.received) * 100).toFixed(1)}%` : 'Exp − Received'}
+                    </p>
+                  </div>
+
+                  {/* Out-of-Pocket (Paid − Received) */}
+                  <div className="border-t border-white/20 pt-2 mt-1">
+                    <p className="text-2xs text-white/60 uppercase tracking-wider mb-0.5">Out of Pocket Now</p>
+                    <p className={`text-lg font-bold ${pocketLoss ? 'text-rose-200' : 'text-emerald-200'}`}>
+                      {pocketLoss ? '−' : '+'}{fmt(Math.abs(pocketDiff))}
+                    </p>
+                    <p className="text-2xs text-white/60 mt-0.5">
+                      {pocketLoss ? 'Cash paid exceeds received' : 'Received covers paid costs'}
+                    </p>
+                  </div>
+
+                  {totalQtyAll > 0 && (
+                    <p className="text-xs text-white/70 mt-1.5 font-semibold border-t border-white/20 pt-1.5">
+                      {fmt(Math.abs(fin.profit / totalQtyAll))}/pc {fin.profit < 0 ? '(loss)' : ''}
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
 
           </div>
+
+          {/* ── Price per piece row ── */}
+          {totalQtyAll > 0 && (costPcBefore > 0 || costPcAfter > 0) && (
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex items-center gap-4">
+                <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center flex-shrink-0">
+                  <Package size={18} className="text-indigo-500" />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Cost / Piece — Before Shipping</p>
+                  <p className="text-xl font-bold text-slate-800 mt-0.5">{fmt(costPcBefore)}</p>
+                  <p className="text-2xs text-slate-400 mt-0.5">{totalQtyAll.toLocaleString()} pcs × production cost only</p>
+                </div>
+              </div>
+              <div className="bg-white border border-indigo-200 rounded-2xl p-4 shadow-sm flex items-center gap-4">
+                <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                  <Truck size={18} className="text-indigo-600" />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-indigo-500 uppercase tracking-wider">Cost / Piece — After Shipping</p>
+                  <p className="text-xl font-bold text-indigo-700 mt-0.5">{fmt(costPcAfter)}</p>
+                  <p className="text-2xs text-slate-400 mt-0.5">+{fmt(fin.shippingTotal)} shipping ({fmt(fin.shippingTotal / totalQtyAll)}/pc)</p>
+                </div>
+              </div>
+            </div>
+          )}
+          </>
         );
       })()}
 
@@ -2038,6 +2125,7 @@ function ProjectDetail({ projectId, onBack, clients, invoices, catalogProducts, 
                       { label: 'Vendors',             val: fin.vendorBilled,   color: 'bg-rose-400'   },
                       { label: 'Workers',             val: fin.workerAgreed,   color: 'bg-amber-400'  },
                       { label: 'Extra Costs',         val: fin.extraCostTotal, color: 'bg-orange-400' },
+                      { label: 'Shipping',            val: fin.shippingTotal,  color: 'bg-sky-400'    },
                     ].filter(x => x.val > 0).map(({ label, val, color }) => (
                       <div key={label}>
                         <div className="flex justify-between text-xs mb-1.5">
@@ -2059,9 +2147,11 @@ function ProjectDetail({ projectId, onBack, clients, invoices, catalogProducts, 
                     </div>
                     <div className="flex justify-between items-center text-xs">
                       <span className="text-emerald-600 font-semibold">Paid: {fmt(fin.totalPaid)}</span>
-                      {fin.due > 0
-                        ? <span className="text-rose-500 font-semibold">Due: {fmt(fin.due)}</span>
-                        : <span className="text-emerald-500 font-semibold">✓ Settled</span>}
+                      {fin.productionDue > 0
+                        ? <span className="text-rose-500 font-semibold">Due: {fmt(fin.productionDue)}{fin.shippingTotal > 0 ? ` (+${fmt(fin.shippingTotal - fin.shippingPaid)} ship)` : ''}</span>
+                        : fin.shippingTotal > 0 && fin.shippingPaid < fin.shippingTotal
+                          ? <span className="text-amber-500 font-semibold">Costs Settled · Ship Due: {fmt(fin.shippingTotal - fin.shippingPaid)}</span>
+                          : <span className="text-emerald-500 font-semibold">✓ Settled</span>}
                     </div>
                   </div>
                 ) : (
@@ -2208,9 +2298,24 @@ function ProjectDetail({ projectId, onBack, clients, invoices, catalogProducts, 
         <BoxesTab project={project} onSave={handleSaveBox} onDelete={handleDeleteBox} onReload={load} onPrint={() => setPrint('packaging')} />
       )}
 
+      {/* ── Shipping Tab ── */}
+      {tab === 'Shipping' && (
+        <ShippingTab project={project} onReload={load} />
+      )}
+
       {/* ── Costs Tab ── */}
       {tab === 'Costs' && (
-        <CostsTab project={project} onReload={load} fmt={fmt} />
+        <CostsTab project={project} onReload={load} fmt={fmt} view="costs" />
+      )}
+
+      {/* ── Vendors Tab ── */}
+      {tab === 'Vendors' && (
+        <CostsTab project={project} onReload={load} fmt={fmt} view="vendors" />
+      )}
+
+      {/* ── Workers Tab ── */}
+      {tab === 'Workers' && (
+        <CostsTab project={project} onReload={load} fmt={fmt} view="workers" />
       )}
 
     </div>
@@ -2484,7 +2589,46 @@ function VendorForm({ pv, allVendors, projectProducts = [], onSave, onCancel }) 
   const [syncing, setSyncing]   = useState(false);
   const set = (k,v) => setForm(f => ({ ...f, [k]: v }));
 
-  // Invoice-level type toggle (shown when no tasks)
+  // ── Product lines (multi-product per vendor) ──────────────────────────────
+  // Each line: { id, product_id, label, qty, rate }
+  const initProductLines = () => {
+    // Hydrate from existing per_piece tasks if editing
+    if (pv?.tasks?.length) {
+      const pp = pv.tasks.filter(t => t.type === 'per_piece');
+      if (pp.length) return pp.map(t => ({
+        id: t.id, product_id: t.product_id || 'all',
+        label: t.label || '', qty: String(t.qty || ''), rate: String(t.agreed || ''),
+      }));
+    }
+    return [{ id: `pl-${Date.now()}`, product_id: 'all', label: '', qty: '', rate: '' }];
+  };
+  const [productLines, setProductLines] = useState(initProductLines);
+
+  const totalProjectQty = projectProducts.reduce((s, pp) => s + (parseFloat(pp.total_quantity) || 0), 0);
+
+  function addProductLine() {
+    setProductLines(prev => [...prev, { id: `pl-${Date.now()}`, product_id: 'all', label: '', qty: '', rate: '' }]);
+  }
+  function removeProductLine(id) {
+    setProductLines(prev => prev.filter(l => l.id !== id));
+  }
+  function setPlField(id, field, val) {
+    setProductLines(prev => prev.map(l => {
+      if (l.id !== id) return l;
+      if (field === 'product_id') {
+        const autoQty = val === 'all'
+          ? String(totalProjectQty || '')
+          : String(projectProducts.find(p => String(p.id) === String(val))?.total_quantity || '');
+        const autoLabel = val === 'all' ? 'All Products' : (projectProducts.find(p => String(p.id) === String(val))?.product_name || '');
+        return { ...l, product_id: val, qty: autoQty, label: l.label || autoLabel };
+      }
+      return { ...l, [field]: val };
+    }));
+  }
+
+  const productLinesTotal = productLines.reduce((s, l) => s + (parseFloat(l.rate) || 0) * (parseFloat(l.qty) || 0), 0);
+
+  // Invoice-level type toggle (shown when no tasks, legacy lump-sum path)
   const [invoiceType, setInvoiceType]   = useState('lump_sum'); // 'lump_sum' | 'per_piece'
   const [invoiceRate, setInvoiceRate]   = useState('');
   const [invoiceProdId, setInvoiceProdId] = useState('all');
@@ -2497,9 +2641,6 @@ function VendorForm({ pv, allVendors, projectProducts = [], onSave, onCancel }) 
   const selectedVendorInfo = vendorMode === 'catalog' && form.vendor_id
     ? allVendors.find(x => String(x.id) === String(form.vendor_id))
     : null;
-
-  // Total project quantity across all products (default for per-piece tasks)
-  const totalProjectQty = projectProducts.reduce((s, pp) => s + (parseFloat(pp.total_quantity) || 0), 0);
 
   // Per-piece invoice calculations (when no tasks are used)
   const invoiceQty = invoiceProdId === 'all'
@@ -2606,11 +2747,26 @@ function VendorForm({ pv, allVendors, projectProducts = [], onSave, onCancel }) 
     if (!form.vendor_name.trim()) return;
     setSaving(true);
     try {
-      let finalAmount;
-      if (hasTaskAmt)                      finalAmount = tasksTotal;
-      else if (invoiceType === 'per_piece') finalAmount = invoicePerPieceTotal;
-      else                                 finalAmount = parseFloat(form.invoice_amount) || 0;
-      await onSave({ ...form, invoice_amount: finalAmount });
+      // Merge product lines into per_piece tasks, then append any manual lump-sum tasks
+      const plTasks = productLines
+        .filter(l => parseFloat(l.rate) > 0)
+        .map(l => ({
+          id:         l.id,
+          label:      l.label || (l.product_id === 'all' ? 'All Products' : (projectProducts.find(p => String(p.id) === String(l.product_id))?.product_name || 'Product')),
+          type:       'per_piece',
+          agreed:     String(l.rate),
+          qty:        String(l.qty),
+          product_id: l.product_id,
+          cost_key:   '',
+        }));
+      // Keep manual lump-sum tasks (those not coming from product lines)
+      const lumpTasks = form.tasks.filter(t => t.type !== 'per_piece');
+      const allTasks  = [...plTasks, ...lumpTasks];
+      const finalAmount = allTasks.reduce((s, t) => {
+        if (t.type === 'per_piece') return s + (parseFloat(t.agreed)||0)*(parseFloat(t.qty)||0);
+        return s + (parseFloat(t.agreed)||0);
+      }, 0) || (parseFloat(form.invoice_amount) || 0);
+      await onSave({ ...form, tasks: allTasks, invoice_amount: finalAmount });
     } finally { setSaving(false); }
   }
 
@@ -2618,31 +2774,24 @@ function VendorForm({ pv, allVendors, projectProducts = [], onSave, onCancel }) 
     <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-4">
 
       {/* ── Vendor selector ── */}
-      <div>
-        <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Vendor</label>
-        <select
-          value={vendorMode === 'manual' ? '__manual__' : (form.vendor_id || '')}
-          onChange={e => pickVendor(e.target.value)}
-          className={selectCls}>
-          <option value="">— Select Vendor —</option>
-          {allVendors.map(v => <option key={v.id} value={v.id}>{v.name} ({v.type})</option>)}
-          <option value="__manual__">✏ Add New (manual)</option>
-        </select>
-      </div>
-
-      {/* Read-only vendor info when catalog vendor selected */}
-      {selectedVendorInfo && (selectedVendorInfo.phone || selectedVendorInfo.bank_details) && (
-        <div className="bg-white border border-slate-100 rounded-xl px-3 py-2 space-y-1">
-          {selectedVendorInfo.phone && (
-            <p className="text-xs text-slate-500 flex items-center gap-1">
-              <Phone size={10} className="text-slate-400" /> {selectedVendorInfo.phone}
-            </p>
-          )}
-          {selectedVendorInfo.bank_details && (
-            <p className="text-xs text-slate-400 whitespace-pre-wrap leading-tight">{selectedVendorInfo.bank_details}</p>
-          )}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Vendor</label>
+          <select
+            value={vendorMode === 'manual' ? '__manual__' : (form.vendor_id || '')}
+            onChange={e => pickVendor(e.target.value)}
+            className={selectCls}>
+            <option value="">— Select Vendor —</option>
+            {allVendors.map(v => <option key={v.id} value={v.id}>{v.name} ({v.type})</option>)}
+            <option value="__manual__">✏ Add New (manual)</option>
+          </select>
         </div>
-      )}
+        <div>
+          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Description</label>
+          <input value={form.service_description} onChange={e => set('service_description', e.target.value)}
+            className={inputCls} placeholder="e.g. Stitching + Cutting" />
+        </div>
+      </div>
 
       {/* Manual name entry */}
       {vendorMode === 'manual' && (
@@ -2653,10 +2802,96 @@ function VendorForm({ pv, allVendors, projectProducts = [], onSave, onCancel }) 
         </div>
       )}
 
-      <div>
-        <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Service / Description</label>
-        <input value={form.service_description} onChange={e => set('service_description', e.target.value)}
-          className={inputCls} placeholder="e.g. Stitching + Cutting for 50 suits" />
+      {/* Read-only vendor info */}
+      {selectedVendorInfo && (selectedVendorInfo.phone || selectedVendorInfo.bank_details) && (
+        <div className="bg-white border border-slate-100 rounded-xl px-3 py-2 space-y-1">
+          {selectedVendorInfo.phone && (
+            <p className="text-xs text-slate-500 flex items-center gap-1"><Phone size={10} className="text-slate-400" /> {selectedVendorInfo.phone}</p>
+          )}
+          {selectedVendorInfo.bank_details && (
+            <p className="text-xs text-slate-400 whitespace-pre-wrap leading-tight">{selectedVendorInfo.bank_details}</p>
+          )}
+        </div>
+      )}
+
+      {/* ── Products Ordered (multi-product per vendor) ── */}
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-100 bg-slate-50">
+          <div className="flex items-center gap-2">
+            <Package size={13} className="text-indigo-500" />
+            <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Products Ordered</span>
+            <span className="text-2xs bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded-full font-semibold">{productLines.length}</span>
+          </div>
+          {productLinesTotal > 0 && (
+            <span className="text-xs font-bold text-indigo-700">Total: ₨{Math.round(productLinesTotal).toLocaleString()}</span>
+          )}
+        </div>
+
+        {/* Header row */}
+        <div className="grid gap-1 px-3 pt-2 pb-1" style={{ gridTemplateColumns: '1fr 72px 88px 80px 28px' }}>
+          <span className="text-2xs font-semibold text-slate-400 uppercase tracking-wider">Product</span>
+          <span className="text-2xs font-semibold text-slate-400 uppercase tracking-wider text-right">Qty</span>
+          <span className="text-2xs font-semibold text-slate-400 uppercase tracking-wider text-right">Rate ₨/pc</span>
+          <span className="text-2xs font-semibold text-slate-400 uppercase tracking-wider text-right">Total</span>
+          <span />
+        </div>
+
+        <div className="divide-y divide-slate-50 px-3 pb-2 space-y-1">
+          {productLines.map(l => {
+            const lineTotal = (parseFloat(l.rate)||0) * (parseFloat(l.qty)||0);
+            return (
+              <div key={l.id} className="grid gap-1 pt-1.5" style={{ gridTemplateColumns: '1fr 72px 88px 80px 28px' }}>
+                <select
+                  value={l.product_id}
+                  onChange={e => setPlField(l.id, 'product_id', e.target.value)}
+                  className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100 bg-white cursor-pointer">
+                  <option value="all">All Products ({totalProjectQty.toLocaleString()} pcs)</option>
+                  {projectProducts.map(pp => (
+                    <option key={pp.id} value={String(pp.id)}>
+                      {pp.product_name} ({(parseFloat(pp.total_quantity)||0).toLocaleString()} pcs)
+                    </option>
+                  ))}
+                  <option value="custom">Custom / Other</option>
+                </select>
+                <input
+                  type="number" min="0"
+                  value={l.qty}
+                  onChange={e => setPlField(l.id, 'qty', e.target.value)}
+                  placeholder="Qty"
+                  className="text-right border border-slate-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100 bg-white"
+                />
+                <input
+                  type="number" min="0"
+                  value={l.rate}
+                  onChange={e => setPlField(l.id, 'rate', e.target.value)}
+                  placeholder="0.00"
+                  className="text-right border border-slate-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100 bg-white"
+                />
+                <span className={`text-xs font-bold self-center text-right ${lineTotal > 0 ? 'text-slate-800' : 'text-slate-300'}`}>
+                  {lineTotal > 0 ? `₨${Math.round(lineTotal).toLocaleString()}` : '—'}
+                </span>
+                <button type="button" onClick={() => removeProductLine(l.id)}
+                  className="self-center text-slate-300 hover:text-rose-500 transition-colors justify-self-center">
+                  <X size={13} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="px-3 pb-3">
+          <button type="button" onClick={addProductLine}
+            className="flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-800 font-semibold transition-colors">
+            <Plus size={12} /> Add Another Product
+          </button>
+        </div>
+
+        {productLinesTotal > 0 && (
+          <div className="flex items-center justify-between px-3 py-2 bg-indigo-50 border-t border-indigo-100">
+            <span className="text-xs text-indigo-600 font-semibold">Products Total</span>
+            <span className="text-sm font-bold text-indigo-700">₨{Math.round(productLinesTotal).toLocaleString()}</span>
+          </div>
+        )}
       </div>
 
       {/* ── Tasks Section ── */}
@@ -2849,92 +3084,12 @@ function VendorForm({ pv, allVendors, projectProducts = [], onSave, onCancel }) 
         </div>
       </div>
 
-      {/* Invoice amount — manual when no tasks, auto-calculated when tasks exist */}
-      {!hasTaskAmt && (
-        <div className="space-y-3">
-          {/* Type toggle */}
-          <div>
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5 block">Invoice Type</label>
-            <div className="flex rounded-xl border border-slate-200 overflow-hidden text-xs font-semibold">
-              <button type="button" onClick={() => setInvoiceType('lump_sum')}
-                className={`flex-1 px-3 py-2 transition-colors ${invoiceType === 'lump_sum' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}>
-                Lump Sum
-              </button>
-              <button type="button" onClick={() => setInvoiceType('per_piece')}
-                className={`flex-1 px-3 py-2 border-l border-slate-200 transition-colors ${invoiceType === 'per_piece' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}>
-                Per Piece
-              </button>
-            </div>
-          </div>
-
-          {invoiceType === 'lump_sum' ? (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Invoice Amount</label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₨</span>
-                  <input type="number" min="0" value={form.invoice_amount} onChange={e => set('invoice_amount', e.target.value)}
-                    className={`${inputCls} pl-7`} placeholder="0" />
-                </div>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Notes</label>
-                <input value={form.notes} onChange={e => set('notes', e.target.value)}
-                  className={inputCls} placeholder="Optional notes" />
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-2.5 bg-indigo-50/60 border border-indigo-100 rounded-xl p-3">
-              {/* Product selector */}
-              {projectProducts.length > 0 && (
-                <div>
-                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Applies To</label>
-                  <select value={invoiceProdId} onChange={e => setInvoiceProdId(e.target.value)} className={selectCls}>
-                    <option value="all">All Products ({totalProjectQty.toLocaleString()} pcs)</option>
-                    {projectProducts.map(pp => (
-                      <option key={pp.id} value={String(pp.id)}>
-                        {pp.product_name} ({(parseFloat(pp.total_quantity)||0).toLocaleString()} pcs)
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              {/* Rate × qty = total */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                  <span className="text-xs text-slate-500 whitespace-nowrap">₨/pc</span>
-                  <input type="number" min="0" value={invoiceRate} onChange={e => setInvoiceRate(e.target.value)}
-                    placeholder="Rate per piece"
-                    className="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 bg-white" />
-                </div>
-                <span className="text-slate-400 text-sm">×</span>
-                <span className="text-sm text-slate-700 font-semibold whitespace-nowrap">{invoiceQty.toLocaleString()} pcs</span>
-                {invoicePerPieceTotal > 0 && (
-                  <>
-                    <span className="text-slate-400 text-sm">=</span>
-                    <span className="text-sm font-bold text-indigo-700 whitespace-nowrap">
-                      ₨{Math.round(invoicePerPieceTotal).toLocaleString()}
-                    </span>
-                  </>
-                )}
-              </div>
-              {/* Notes */}
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Notes</label>
-                <input value={form.notes} onChange={e => set('notes', e.target.value)}
-                  className={inputCls} placeholder="Optional notes" />
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-      {hasTaskAmt && (
-        <div>
-          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Notes</label>
-          <input value={form.notes} onChange={e => set('notes', e.target.value)}
-            className={inputCls} placeholder="Optional notes" />
-        </div>
-      )}
+      {/* Notes */}
+      <div>
+        <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Notes</label>
+        <input value={form.notes} onChange={e => set('notes', e.target.value)}
+          className={inputCls} placeholder="Optional notes" />
+      </div>
 
       <div className="flex gap-2">
         <button onClick={save} disabled={saving || !form.vendor_name.trim()}
@@ -3621,7 +3776,7 @@ function ExtraCostsSection({ project, onReload, fmt = pkr, pid }) {
   );
 }
 
-function CostsTab({ project, onReload, fmt = pkr }) {
+function CostsTab({ project, onReload, fmt = pkr, view = 'all' }) {
   const [allVendors, setAllVendors]   = useState([]);
   const [addingVendor, setAddingV]    = useState(false);
   const [editVendor, setEditV]        = useState(null);
@@ -3643,12 +3798,12 @@ function CostsTab({ project, onReload, fmt = pkr }) {
   const BASE = '/api';
 
   useEffect(() => {
-    fetch(`${BASE}/vendors`).then(r => r.json()).then(setAllVendors).catch(() => {});
+    api.get('/vendors').then(r => setAllVendors(Array.isArray(r.data) ? r.data : [])).catch(() => {});
   }, []);
 
   // Fetch company settings for receipt header
   useEffect(() => {
-    fetch(`${BASE}/settings`).then(r => r.json()).then(s => setCompanySettings(s || {})).catch(() => {});
+    api.get('/settings').then(r => setCompanySettings(r.data || {})).catch(() => {});
   }, []);
 
   // Trigger print once receipt is rendered
@@ -3676,11 +3831,11 @@ function CostsTab({ project, onReload, fmt = pkr }) {
       const costs = {};
       (pp.costs || []).forEach((c, i) => { costs[String(c.key ?? i)] = String(c.amount_paid ?? ''); });
       const external = {};
-      (pp.external_costs || []).forEach((e, i) => { external[String(e.id ?? i)] = String(e.amount_paid ?? ''); });
+      (pp.external_costs || []).forEach((e, i) => { external[String(i)] = String(e.amount_paid ?? ''); });
       init[pp.id] = { fabrics, costs, external };
     });
     setPpPaid(init);
-  }, [project.id]);
+  }, [project]);
 
   async function saveProductPayments(pp) {
     setSavingPP(prev => ({ ...prev, [pp.id]: true }));
@@ -3699,7 +3854,7 @@ function CostsTab({ project, onReload, fmt = pkr }) {
         })),
         external_costs: (pp.external_costs || []).map((e, i) => ({
           ...e,
-          amount_paid: paid.external?.[String(e.id ?? i)] ?? e.amount_paid ?? '',
+          amount_paid: paid.external?.[String(i)] ?? e.amount_paid ?? '',
         })),
       };
       await api.put(`/projects/${pid}/products/${pp.id}`, updatedForm);
@@ -3710,33 +3865,41 @@ function CostsTab({ project, onReload, fmt = pkr }) {
   }
 
   async function saveVendor(form) {
-    const url  = editVendor ? `${BASE}/projects/${pid}/vendors/${editVendor.id}` : `${BASE}/projects/${pid}/vendors`;
-    const meth = editVendor ? 'PUT' : 'POST';
-    const res  = await fetch(url, { method: meth, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
-    if (res.ok) { setAddingV(false); setEditV(null); onReload(); }
+    try {
+      if (editVendor) {
+        await api.put(`/projects/${pid}/vendors/${editVendor.id}`, form);
+      } else {
+        await api.post(`/projects/${pid}/vendors`, form);
+      }
+      setAddingV(false); setEditV(null); onReload();
+    } catch (e) { console.error('saveVendor', e); }
   }
 
   async function deleteVendor(pvId) {
     if (!confirm('Remove this vendor from the project?')) return;
-    await fetch(`${BASE}/projects/${pid}/vendors/${pvId}`, { method: 'DELETE' });
+    try { await api.delete(`/projects/${pid}/vendors/${pvId}`); } catch {}
     onReload();
   }
 
   async function deletePayment(pvId, payId) {
-    await fetch(`${BASE}/projects/${pid}/vendors/${pvId}/payments/${payId}`, { method: 'DELETE' });
+    try { await api.delete(`/projects/${pid}/vendors/${pvId}/payments/${payId}`); } catch {}
     onReload();
   }
 
   async function saveWorker(form) {
-    const url  = editWorker ? `${BASE}/projects/${pid}/workers/${editWorker.id}` : `${BASE}/projects/${pid}/workers`;
-    const meth = editWorker ? 'PUT' : 'POST';
-    const res  = await fetch(url, { method: meth, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
-    if (res.ok) { setAddingW(false); setEditW(null); onReload(); }
+    try {
+      if (editWorker) {
+        await api.put(`/projects/${pid}/workers/${editWorker.id}`, form);
+      } else {
+        await api.post(`/projects/${pid}/workers`, form);
+      }
+      setAddingW(false); setEditW(null); onReload();
+    } catch (e) { console.error('saveWorker', e); }
   }
 
   async function deleteWorker(wId) {
     if (!confirm('Remove this worker from the project?')) return;
-    await fetch(`${BASE}/projects/${pid}/workers/${wId}`, { method: 'DELETE' });
+    try { await api.delete(`/projects/${pid}/workers/${wId}`); } catch {}
     onReload();
   }
 
@@ -3789,7 +3952,7 @@ function CostsTab({ project, onReload, fmt = pkr }) {
     <div className="space-y-8">
 
       {/* ── Product Costs Payment Summary ── */}
-      {products.length > 0 && (
+      {(view === 'all' || view === 'costs') && products.length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
@@ -3826,9 +3989,9 @@ function CostsTab({ project, onReload, fmt = pkr }) {
                       extraCost: eShare } = sharesFor(pp);
               const ppTotal     = fabricTotal + procTotal + extTotal + vBilled + wAgreed + eShare;
 
-              const fabricPaid  = fabs.reduce((s, f, i) => s + (parseFloat(paid.fabrics?.[String(f.id ?? i)])||0), 0);
+              const fabricPaid  = fabs.reduce((s, f, i) => s + (parseFloat(paid.fabrics?.[String(i)])||0), 0);
               const costPaid    = (pp.costs||[]).reduce((s, c, i) => s + (parseFloat(paid.costs?.[String(c.key ?? i)])||0), 0);
-              const extPaid     = (pp.external_costs||[]).reduce((s, e, i) => s + (parseFloat(paid.external?.[String(e.id ?? i)])||0), 0);
+              const extPaid     = (pp.external_costs||[]).reduce((s, e, i) => s + (parseFloat(paid.external?.[String(i)])||0), 0);
               const ppPaidTotal = fabricPaid + costPaid + extPaid + vPaid + wPaid + eShare;
               const ppRemaining = ppTotal - ppPaidTotal;
               const pct         = ppTotal > 0 ? Math.min(100, Math.round((ppPaidTotal / ppTotal) * 100)) : 0;
@@ -3868,6 +4031,25 @@ function CostsTab({ project, onReload, fmt = pkr }) {
                       )}
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
+                      {ppRemaining > 0 && (
+                        <button
+                          onClick={e => {
+                            e.stopPropagation();
+                            // Fill all items with their full amount
+                            const fabs2 = migrateFabrics(pp);
+                            const newFabrics  = {};
+                            fabs2.forEach((f, i) => { newFabrics[String(i)] = String((parseFloat(f.qty)||0)*(parseFloat(f.rate)||0)); });
+                            const newCosts    = {};
+                            (pp.costs||[]).forEach((c, i) => { newCosts[String(c.key??i)] = String((parseFloat(c.cost_per_piece)||0)*(parseFloat(pp.total_quantity)||0)); });
+                            const newExternal = {};
+                            (pp.external_costs||[]).forEach((ex, i) => { newExternal[String(ex.id??i)] = String(parseFloat(ex.total)||0); });
+                            setPpPaid(prev => ({ ...prev, [pp.id]: { fabrics: newFabrics, costs: newCosts, external: newExternal } }));
+                          }}
+                          className="flex items-center gap-1 px-3 py-1.5 text-xs bg-amber-500 text-white rounded-lg hover:bg-amber-600 font-medium transition-colors"
+                        >
+                          <CheckCircle2 size={11} /> Pay All
+                        </button>
+                      )}
                       <button
                         onClick={e => { e.stopPropagation(); saveProductPayments(pp); }}
                         disabled={saving}
@@ -3888,7 +4070,7 @@ function CostsTab({ project, onReload, fmt = pkr }) {
                     <div className="border-t border-slate-100 px-5 py-4 space-y-4">
                       {/* Column headers */}
                       <div className="grid text-2xs text-slate-400 font-semibold uppercase tracking-wider gap-3"
-                           style={{ gridTemplateColumns: '1fr 88px 108px 88px' }}>
+                           style={{ gridTemplateColumns: '1fr 88px 136px 88px' }}>
                         <span>Item</span>
                         <span className="text-right">Total</span>
                         <span className="text-right">Paid (₨)</span>
@@ -3900,42 +4082,37 @@ function CostsTab({ project, onReload, fmt = pkr }) {
                         <div className="space-y-2">
                           <p className="text-2xs text-blue-500 font-bold uppercase tracking-wider">Fabrics</p>
                           {fabs.map((f, i) => {
-                            // Always use index i as key — legacy fabrics have id:Date.now()
-                            // which changes every render and breaks controlled input binding
                             const fabKey   = String(i);
                             const rowTotal = (parseFloat(f.qty)||0) * (parseFloat(f.rate)||0);
                             const rowPaid  = parseFloat(paid.fabrics?.[fabKey]) || 0;
                             const rowDiff  = rowTotal - rowPaid;
                             return (
                               <div key={i} className="grid items-center gap-3"
-                                   style={{ gridTemplateColumns: '1fr 88px 108px 88px' }}>
+                                   style={{ gridTemplateColumns: '1fr 88px 136px 88px' }}>
                                 <span className="text-sm text-slate-700 truncate">
                                   {f.name || 'Fabric'}
                                   <span className="text-slate-400 text-xs ml-1">({f.qty} {f.unit})</span>
                                 </span>
                                 <span className="text-sm text-right text-slate-800 font-medium">{fmt(rowTotal)}</span>
-                                <div className="flex justify-end">
+                                <div className="flex items-center justify-end gap-1">
+                                  {rowDiff > 0 && (
+                                    <button type="button"
+                                      onClick={() => setPpPaid(prev => ({ ...prev, [pp.id]: { ...(prev[pp.id]||{}), fabrics: { ...(prev[pp.id]?.fabrics||{}), [fabKey]: String(rowTotal) } } }))}
+                                      className="text-2xs font-bold px-1.5 py-1 bg-emerald-100 text-emerald-700 rounded hover:bg-emerald-200 transition-colors whitespace-nowrap">Full</button>
+                                  )}
                                   <input
-                                    type="text"
-                                    inputMode="decimal"
+                                    type="text" inputMode="decimal"
                                     value={paid.fabrics?.[fabKey] ?? ''}
-                                    onChange={ev => setPpPaid(prev => ({
-                                      ...prev,
-                                      [pp.id]: {
-                                        ...(prev[pp.id] || {}),
-                                        fabrics: { ...(prev[pp.id]?.fabrics || {}), [fabKey]: ev.target.value },
-                                      },
-                                    }))}
+                                    onChange={ev => setPpPaid(prev => ({ ...prev, [pp.id]: { ...(prev[pp.id]||{}), fabrics: { ...(prev[pp.id]?.fabrics||{}), [fabKey]: ev.target.value } } }))}
                                     placeholder="0"
-                                    className="w-24 text-right border border-slate-200 rounded-lg px-2 py-1 text-sm outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-100"
+                                    className="w-20 text-right border border-slate-200 rounded-lg px-2 py-1 text-sm outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-100"
                                   />
                                 </div>
                                 {rowDiff > 0
                                   ? <span className="text-sm text-right font-semibold text-rose-500">{fmt(rowDiff)}</span>
                                   : rowDiff < 0
                                     ? <span className="text-sm text-right font-semibold text-emerald-600">+{fmt(-rowDiff)} cr.</span>
-                                    : <span className="text-sm text-right font-semibold text-emerald-600">✓</span>
-                                }
+                                    : <span className="text-sm text-right font-semibold text-emerald-600">✓</span>}
                               </div>
                             );
                           })}
@@ -3947,36 +4124,34 @@ function CostsTab({ project, onReload, fmt = pkr }) {
                         <div className="space-y-2">
                           <p className="text-2xs text-violet-500 font-bold uppercase tracking-wider">Process Costs</p>
                           {(pp.costs||[]).map((c, i) => {
+                            const ck       = String(c.key ?? i);
                             const rowTotal = (parseFloat(c.cost_per_piece)||0) * qty;
-                            const rowPaid  = parseFloat(paid.costs?.[String(c.key ?? i)]) || 0;
+                            const rowPaid  = parseFloat(paid.costs?.[ck]) || 0;
                             const rowDiff  = rowTotal - rowPaid;
                             return (
                               <div key={c.key ?? i} className="grid items-center gap-3"
-                                   style={{ gridTemplateColumns: '1fr 88px 108px 88px' }}>
+                                   style={{ gridTemplateColumns: '1fr 88px 136px 88px' }}>
                                 <span className="text-sm text-slate-700 truncate">{c.label}</span>
                                 <span className="text-sm text-right text-slate-800 font-medium">{fmt(rowTotal)}</span>
-                                <div className="flex justify-end">
+                                <div className="flex items-center justify-end gap-1">
+                                  {rowDiff > 0 && (
+                                    <button type="button"
+                                      onClick={() => setPpPaid(prev => ({ ...prev, [pp.id]: { ...(prev[pp.id]||{}), costs: { ...(prev[pp.id]?.costs||{}), [ck]: String(rowTotal) } } }))}
+                                      className="text-2xs font-bold px-1.5 py-1 bg-emerald-100 text-emerald-700 rounded hover:bg-emerald-200 transition-colors whitespace-nowrap">Full</button>
+                                  )}
                                   <input
-                                    type="text"
-                                    inputMode="decimal"
-                                    value={paid.costs?.[String(c.key ?? i)] ?? ''}
-                                    onChange={ev => setPpPaid(prev => ({
-                                      ...prev,
-                                      [pp.id]: {
-                                        ...(prev[pp.id] || {}),
-                                        costs: { ...(prev[pp.id]?.costs || {}), [String(c.key ?? i)]: ev.target.value },
-                                      },
-                                    }))}
+                                    type="text" inputMode="decimal"
+                                    value={paid.costs?.[ck] ?? ''}
+                                    onChange={ev => setPpPaid(prev => ({ ...prev, [pp.id]: { ...(prev[pp.id]||{}), costs: { ...(prev[pp.id]?.costs||{}), [ck]: ev.target.value } } }))}
                                     placeholder="0"
-                                    className="w-24 text-right border border-slate-200 rounded-lg px-2 py-1 text-sm outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-100"
+                                    className="w-20 text-right border border-slate-200 rounded-lg px-2 py-1 text-sm outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-100"
                                   />
                                 </div>
                                 {rowDiff > 0
                                   ? <span className="text-sm text-right font-semibold text-rose-500">{fmt(rowDiff)}</span>
                                   : rowDiff < 0
                                     ? <span className="text-sm text-right font-semibold text-emerald-600">+{fmt(-rowDiff)} cr.</span>
-                                    : <span className="text-sm text-right font-semibold text-emerald-600">✓</span>
-                                }
+                                    : <span className="text-sm text-right font-semibold text-emerald-600">✓</span>}
                               </div>
                             );
                           })}
@@ -3988,36 +4163,34 @@ function CostsTab({ project, onReload, fmt = pkr }) {
                         <div className="space-y-2">
                           <p className="text-2xs text-amber-500 font-bold uppercase tracking-wider">External Costs</p>
                           {(pp.external_costs||[]).map((e, i) => {
+                            const ek       = String(e.id ?? i);
                             const rowTotal = parseFloat(e.total) || 0;
-                            const rowPaid  = parseFloat(paid.external?.[String(e.id ?? i)]) || 0;
+                            const rowPaid  = parseFloat(paid.external?.[ek]) || 0;
                             const rowDiff  = rowTotal - rowPaid;
                             return (
                               <div key={e.id ?? i} className="grid items-center gap-3"
-                                   style={{ gridTemplateColumns: '1fr 88px 108px 88px' }}>
+                                   style={{ gridTemplateColumns: '1fr 88px 136px 88px' }}>
                                 <span className="text-sm text-slate-700 truncate">{e.label}</span>
                                 <span className="text-sm text-right text-slate-800 font-medium">{fmt(rowTotal)}</span>
-                                <div className="flex justify-end">
+                                <div className="flex items-center justify-end gap-1">
+                                  {rowDiff > 0 && (
+                                    <button type="button"
+                                      onClick={() => setPpPaid(prev => ({ ...prev, [pp.id]: { ...(prev[pp.id]||{}), external: { ...(prev[pp.id]?.external||{}), [ek]: String(rowTotal) } } }))}
+                                      className="text-2xs font-bold px-1.5 py-1 bg-emerald-100 text-emerald-700 rounded hover:bg-emerald-200 transition-colors whitespace-nowrap">Full</button>
+                                  )}
                                   <input
-                                    type="text"
-                                    inputMode="decimal"
-                                    value={paid.external?.[String(e.id ?? i)] ?? ''}
-                                    onChange={ev => setPpPaid(prev => ({
-                                      ...prev,
-                                      [pp.id]: {
-                                        ...(prev[pp.id] || {}),
-                                        external: { ...(prev[pp.id]?.external || {}), [String(e.id ?? i)]: ev.target.value },
-                                      },
-                                    }))}
+                                    type="text" inputMode="decimal"
+                                    value={paid.external?.[ek] ?? ''}
+                                    onChange={ev => setPpPaid(prev => ({ ...prev, [pp.id]: { ...(prev[pp.id]||{}), external: { ...(prev[pp.id]?.external||{}), [ek]: ev.target.value } } }))}
                                     placeholder="0"
-                                    className="w-24 text-right border border-slate-200 rounded-lg px-2 py-1 text-sm outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-100"
+                                    className="w-20 text-right border border-slate-200 rounded-lg px-2 py-1 text-sm outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-100"
                                   />
                                 </div>
                                 {rowDiff > 0
                                   ? <span className="text-sm text-right font-semibold text-rose-500">{fmt(rowDiff)}</span>
                                   : rowDiff < 0
                                     ? <span className="text-sm text-right font-semibold text-emerald-600">+{fmt(-rowDiff)} cr.</span>
-                                    : <span className="text-sm text-right font-semibold text-emerald-600">✓</span>
-                                }
+                                    : <span className="text-sm text-right font-semibold text-emerald-600">✓</span>}
                               </div>
                             );
                           })}
@@ -4134,7 +4307,7 @@ function CostsTab({ project, onReload, fmt = pkr }) {
       )}
 
       {/* ── Summary bar ── */}
-      <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-2xl p-5 text-white">
+      {(view === 'all' || view === 'costs') && <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-2xl p-5 text-white">
         <p className="text-2xs font-bold uppercase tracking-widest text-slate-400 mb-4">Project Cost Breakdown</p>
         <div className="grid grid-cols-5 gap-4 mb-4">
           {[
@@ -4173,10 +4346,10 @@ function CostsTab({ project, onReload, fmt = pkr }) {
             </div>
           </div>
         )}
-      </div>
+      </div>}
 
       {/* ── Vendors section ── */}
-      <div>
+      {(view === 'all' || view === 'vendors') && <div>
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Store size={16} className="text-slate-500" />
@@ -4204,7 +4377,7 @@ function CostsTab({ project, onReload, fmt = pkr }) {
             <p className="text-slate-400 text-sm">No vendors linked. Add vendors to track material & service costs.</p>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
             {vendors.map(pv => {
               const billed = pvBilled(pv);   // computed from tasks if tasks exist
               const paid   = Number(pv.total_paid || 0);
@@ -4213,6 +4386,14 @@ function CostsTab({ project, onReload, fmt = pkr }) {
               const typeInfo = VENDOR_TYPES[pv.vendor_type] ?? VENDOR_TYPES.process;
               const TypeIcon = typeInfo.icon;
               const isEditing = editVendor?.id === pv.id;
+
+              // Count distinct products ordered — per_piece tasks OR fall back to invoice_amount
+              const productTasks = Array.isArray(pv.tasks) ? pv.tasks.filter(t => t.type === 'per_piece') : [];
+              const lumpTasks    = Array.isArray(pv.tasks) ? pv.tasks.filter(t => t.type !== 'per_piece') : [];
+              const distinctProducts = productTasks.length > 0
+                ? new Set(productTasks.map(t => t.product_id || 'all')).size
+                : null;
+              const totalPieces = productTasks.reduce((s, t) => s + (parseFloat(t.qty)||0), 0);
 
               return (
                 <div key={pv.id} className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
@@ -4223,6 +4404,32 @@ function CostsTab({ project, onReload, fmt = pkr }) {
                     </div>
                   ) : (
                     <>
+                      {/* ── Stats header bar ── */}
+                      <div className="grid grid-cols-4 divide-x divide-slate-100 border-b border-slate-100 bg-slate-50/70">
+                        <div className="px-3 py-2.5 text-center">
+                          <p className="text-2xs text-slate-400 font-medium mb-0.5">Products</p>
+                          <p className="text-sm font-bold text-slate-700">
+                            {distinctProducts != null ? distinctProducts : (lumpTasks.length > 0 ? lumpTasks.length : (billed > 0 ? '1' : '—'))}
+                          </p>
+                        </div>
+                        <div className="px-3 py-2.5 text-center">
+                          <p className="text-2xs text-slate-400 font-medium mb-0.5">Total Pcs</p>
+                          <p className="text-sm font-bold text-slate-700">
+                            {totalPieces > 0 ? totalPieces.toLocaleString() : '—'}
+                          </p>
+                        </div>
+                        <div className="px-3 py-2.5 text-center">
+                          <p className="text-2xs text-slate-400 font-medium mb-0.5">Total Amount</p>
+                          <p className="text-sm font-bold text-indigo-700">{billed > 0 ? fmt(billed) : '—'}</p>
+                        </div>
+                        <div className="px-3 py-2.5 text-center">
+                          <p className="text-2xs text-slate-400 font-medium mb-0.5">{bal > 0 ? 'Due' : 'Status'}</p>
+                          <p className={`text-sm font-bold ${bal > 0 ? 'text-rose-500' : 'text-emerald-600'}`}>
+                            {bal > 0 ? fmt(bal) : '✓ Paid'}
+                          </p>
+                        </div>
+                      </div>
+
                       <div className="flex items-start gap-3 px-5 py-4">
                         <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${typeInfo.color}`}>
                           <TypeIcon size={15} />
@@ -4245,7 +4452,7 @@ function CostsTab({ project, onReload, fmt = pkr }) {
                           {Array.isArray(pv.tasks) && pv.tasks.length > 0 && (
                             <div className="mt-3 bg-slate-50 rounded-xl border border-slate-100 overflow-hidden">
                               <p className="text-2xs text-slate-400 font-bold uppercase tracking-wider px-3 pt-2.5 pb-1.5 flex items-center gap-1 border-b border-slate-100">
-                                <Tag size={9} /> Tasks
+                                <Package size={9} /> Products / Tasks
                               </p>
                               {pv.tasks.map(t => {
                                 const isPerPiece = t.type === 'per_piece';
@@ -4358,12 +4565,6 @@ function CostsTab({ project, onReload, fmt = pkr }) {
                         </div>
 
                         <div className="flex items-center gap-1 flex-shrink-0">
-                          {payingFor !== pv.id && (
-                            <button onClick={() => { setPayingFor(pv.id); setEditV(null); }}
-                              className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 font-medium transition-colors">
-                              <Banknote size={11} /> Pay
-                            </button>
-                          )}
                           <button onClick={() => { setEditV(pv); setAddingV(false); setPayingFor(null); }}
                             className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors">
                             <Pencil size={13} />
@@ -4381,10 +4582,10 @@ function CostsTab({ project, onReload, fmt = pkr }) {
             })}
           </div>
         )}
-      </div>
+      </div>}
 
       {/* ── Workers section ── */}
-      <div>
+      {(view === 'all' || view === 'workers') && <div>
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <User size={16} className="text-slate-500" />
@@ -4471,10 +4672,10 @@ function CostsTab({ project, onReload, fmt = pkr }) {
             })}
           </div>
         )}
-      </div>
+      </div>}
 
       {/* ── Extra Costs section ── */}
-      <ExtraCostsSection project={project} onReload={onReload} fmt={fmt} pid={pid} />
+      {(view === 'all' || view === 'costs') && <ExtraCostsSection project={project} onReload={onReload} fmt={fmt} pid={pid} />}
 
       {/* ── Hidden receipt for print ── */}
       {printPayment && (
@@ -5019,34 +5220,355 @@ function ProjectCard({ project, onClick }) {
   const doneStages    = (project.stages_done  ?? 0);
   const pct           = enabledStages > 0 ? Math.round((doneStages / enabledStages) * 100) : 0;
 
+  const pkr = n => `₨${Number(n || 0).toLocaleString()}`;
+  const received    = project.fin_received      ?? 0;
+  const totalExp    = project.fin_total_expense ?? 0;
+  const paid        = project.fin_paid          ?? 0;
+  const net         = project.fin_net           ?? 0;
+  const outstanding = project.fin_outstanding   ?? 0;
+  const isProfit    = net >= 0;
+  const hasFinData  = received > 0 || totalExp > 0;
+
   return (
     <div onClick={onClick}
-      className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-indigo-200 transition-all duration-150 cursor-pointer group">
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div className="min-w-0">
-          <p className="font-bold text-slate-900 group-hover:text-indigo-700 transition-colors truncate">{project.title}</p>
-          <p className="text-xs text-slate-400 mt-0.5 truncate">
-            {project.client_name ?? 'No client'}
-            {project.client_company ? ` · ${project.client_company}` : ''}
-          </p>
-        </div>
-        <StatusBadge status={project.status} />
-      </div>
+      className="bg-white border border-slate-200 rounded-2xl shadow-sm hover:shadow-md hover:border-indigo-200 transition-all duration-150 cursor-pointer group overflow-hidden">
 
-      <div className="flex items-center gap-4 text-xs text-slate-500 mb-4">
-        <span className="flex items-center gap-1"><Package size={11} /> {project.product_count} product{project.product_count !== 1 ? 's' : ''}</span>
-        {project.invoice_number && <span className="flex items-center gap-1"><Receipt size={11} /> {project.invoice_number}</span>}
-        <span className="ml-auto text-slate-400">{fmtDate(project.created_at)}</span>
-      </div>
-
-      {enabledStages > 0 && (
-        <>
-          <div className="w-full bg-slate-100 rounded-full h-1.5 mb-1.5">
-            <div className={`h-1.5 rounded-full transition-all ${pct === 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`}
-              style={{ width: `${pct}%` }} />
+      {/* Card body */}
+      <div className="p-5">
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="min-w-0">
+            <p className="font-bold text-slate-900 group-hover:text-indigo-700 transition-colors truncate">{project.title}</p>
+            <p className="text-xs text-slate-400 mt-0.5 truncate">
+              {project.client_name ?? 'No client'}
+              {project.client_company ? ` · ${project.client_company}` : ''}
+            </p>
           </div>
-          <p className="text-2xs text-slate-400">{doneStages}/{enabledStages} stages complete · {pct}%</p>
-        </>
+          <StatusBadge status={project.status} />
+        </div>
+
+        <div className="flex items-center gap-4 text-xs text-slate-500 mb-4">
+          <span className="flex items-center gap-1"><Package size={11} /> {project.product_count} product{project.product_count !== 1 ? 's' : ''}</span>
+          {project.invoice_number && <span className="flex items-center gap-1"><Receipt size={11} /> {project.invoice_number}</span>}
+          <span className="ml-auto text-slate-400">{fmtDate(project.created_at)}</span>
+        </div>
+
+        {enabledStages > 0 && (
+          <>
+            <div className="w-full bg-slate-100 rounded-full h-1.5 mb-1.5">
+              <div className={`h-1.5 rounded-full transition-all ${pct === 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`}
+                style={{ width: `${pct}%` }} />
+            </div>
+            <p className="text-2xs text-slate-400">{doneStages}/{enabledStages} stages complete · {pct}%</p>
+          </>
+        )}
+      </div>
+
+      {/* Financial compact row */}
+      <div className="border-t border-slate-100 px-5 py-2.5 flex items-center gap-3 text-xs text-slate-500 flex-wrap">
+        <span><span className="text-slate-400">Exp </span><span className="font-semibold text-slate-700">{pkr(totalExp)}</span></span>
+        <span className="text-slate-200">|</span>
+        <span><span className="text-slate-400">Paid </span><span className="font-semibold text-slate-700">{pkr(paid)}</span></span>
+      </div>
+    </div>
+  );
+}
+
+// ─── Shipping Tab ─────────────────────────────────────────────────────────────
+
+const pkrFmt = n => `₨${Number(n || 0).toLocaleString()}`;
+const fmtDateShort = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+const inputShipCls = 'w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400';
+
+const BLANK_SHIP = { carrier: '', tracking_number: '', shipping_date: '', amount: '', notes: '', vendor_id: '' };
+
+function ShippingTab({ project, onReload }) {
+  const [records, setRecords]       = useState(project.shipping || []);
+  const [showForm, setShowForm]     = useState(false);
+  const [editTarget, setEditTarget] = useState(null);
+  const [form, setForm]             = useState(BLANK_SHIP);
+  const [saving, setSaving]         = useState(false);
+  const [delTarget, setDelTarget]   = useState(null);
+  const [shippers, setShippers]     = useState([]);
+
+  useEffect(() => { setRecords(project.shipping || []); }, [project.shipping]);
+
+  useEffect(() => {
+    api.get('/vendors').then(r => {
+      setShippers((r.data || []).filter(v => v.type === 'freight' || v.type === 'shipping'));
+    }).catch(() => {});
+  }, []);
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  function openNew() {
+    setForm({ ...BLANK_SHIP, shipping_date: new Date().toISOString().split('T')[0] });
+    setEditTarget(null);
+    setShowForm(true);
+  }
+
+  function openEdit(r) {
+    setForm({
+      carrier: r.carrier||'', tracking_number: r.tracking_number||'',
+      shipping_date: r.shipping_date||'', amount: r.amount||'',
+      notes: r.notes||'', vendor_id: r.vendor_id ? String(r.vendor_id) : '',
+    });
+    setEditTarget(r);
+    setShowForm(true);
+  }
+
+  async function handleSave() {
+    if (!form.vendor_id && shippers.length > 0) {
+      alert('Please select a shipping company.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const payload = { ...form, amount: parseFloat(form.amount)||0 };
+      if (editTarget) {
+        const { data } = await api.put(`/projects/${project.id}/shipping/${editTarget.id}`, payload);
+        setRecords(prev => prev.map(r => r.id === editTarget.id ? data : r));
+      } else {
+        const { data } = await api.post(`/projects/${project.id}/shipping`, payload);
+        setRecords(prev => [data, ...prev]);
+      }
+      setShowForm(false);
+      setEditTarget(null);
+      onReload();
+    } catch (e) { alert(e?.response?.data?.error || 'Failed to save'); }
+    finally { setSaving(false); }
+  }
+
+  async function handleDelete(id) {
+    try {
+      await api.delete(`/projects/${project.id}/shipping/${id}`);
+      setRecords(prev => prev.filter(r => r.id !== id));
+      setDelTarget(null);
+      onReload();
+    } catch (e) { alert('Failed to delete'); }
+  }
+
+  const totalCost = records.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+
+  const selectedShipper = shippers.find(s => String(s.id) === String(form.vendor_id));
+
+  return (
+    <div className="space-y-5">
+
+      {/* ── Summary card ── */}
+      <div className="grid grid-cols-1 gap-4 max-w-xs">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Total Shipping Cost</p>
+          <p className="text-2xl font-bold text-slate-800">{pkrFmt(totalCost)}</p>
+          <p className="text-xs text-slate-400 mt-1">Track payments via the Vendor module</p>
+        </div>
+      </div>
+
+      {/* ── Shipper cards + Add button ── */}
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1">
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Your Shipping Companies</p>
+          {shippers.length === 0 ? (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-700">
+              No shipping companies added yet.{' '}
+              <a href="/vendors" className="underline font-semibold">Go to Vendors</a> → Add Vendor → type "Freight / Logistics" to add DHL, UPS, TCS etc.
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-3">
+              {shippers.map(v => (
+                <div key={v.id} className="bg-white border border-slate-200 rounded-2xl px-4 py-3 shadow-sm min-w-[180px]">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="w-8 h-8 rounded-xl bg-sky-100 flex items-center justify-center flex-shrink-0">
+                      <Truck size={14} className="text-sky-600" />
+                    </div>
+                    <p className="font-bold text-slate-800 text-sm">{v.name}</p>
+                  </div>
+                  {v.contact_name && <p className="text-xs text-slate-500 mt-1">👤 {v.contact_name}</p>}
+                  {v.phone        && <p className="text-xs text-slate-500">📞 {v.phone}</p>}
+                  {v.email        && <p className="text-xs text-slate-400 truncate">✉ {v.email}</p>}
+                  <button
+                    onClick={() => {
+                      setForm({ ...BLANK_SHIP, shipping_date: new Date().toISOString().split('T')[0], vendor_id: String(v.id), carrier: v.name });
+                      setEditTarget(null);
+                      setShowForm(true);
+                    }}
+                    className="mt-2 w-full text-xs bg-indigo-600 text-white rounded-lg py-1.5 font-semibold hover:bg-indigo-700 transition-colors flex items-center justify-center gap-1"
+                  >
+                    <Plus size={11} /> Add Shipment
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        {shippers.length === 0 && (
+          <button onClick={openNew}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 font-semibold shadow-sm transition-colors flex-shrink-0">
+            <Plus size={14} /> Add Shipment
+          </button>
+        )}
+      </div>
+
+      {/* ── Add / Edit Form ── */}
+      {showForm && (
+        <div className="bg-white rounded-2xl border border-indigo-200 shadow-sm overflow-hidden">
+
+          {/* Selected shipper header */}
+          {selectedShipper ? (
+            <div className="bg-sky-50 border-b border-sky-100 px-5 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-sky-100 flex items-center justify-center">
+                  <Truck size={16} className="text-sky-600" />
+                </div>
+                <div>
+                  <p className="font-bold text-slate-800 text-sm">{selectedShipper.name}</p>
+                  <div className="flex items-center gap-3 text-xs text-slate-500 mt-0.5">
+                    {selectedShipper.contact_name && <span>👤 {selectedShipper.contact_name}</span>}
+                    {selectedShipper.phone        && <span>📞 {selectedShipper.phone}</span>}
+                    {selectedShipper.email        && <span>✉ {selectedShipper.email}</span>}
+                  </div>
+                </div>
+              </div>
+              {/* Switch shipper */}
+              {shippers.length > 1 && (
+                <select
+                  value={form.vendor_id}
+                  onChange={e => {
+                    const v = shippers.find(s => String(s.id) === e.target.value);
+                    setForm(f => ({ ...f, vendor_id: e.target.value, carrier: v?.name || f.carrier }));
+                  }}
+                  className="text-xs border border-sky-200 rounded-lg px-2 py-1 text-slate-600 bg-white focus:outline-none focus:ring-1 focus:ring-sky-400"
+                >
+                  {shippers.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                </select>
+              )}
+            </div>
+          ) : (
+            <div className="bg-slate-50 border-b border-slate-100 px-5 py-3">
+              <p className="text-xs font-semibold text-slate-500 mb-1">Select Shipping Company</p>
+              <div className="flex flex-wrap gap-2">
+                {shippers.map(v => (
+                  <button key={v.id} type="button"
+                    onClick={() => setForm(f => ({ ...f, vendor_id: String(v.id), carrier: v.name }))}
+                    className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg font-medium text-slate-600 hover:border-indigo-400 hover:text-indigo-700 bg-white transition-colors flex items-center gap-1.5">
+                    <Truck size={11} /> {v.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="p-5 space-y-4">
+            <h4 className="text-sm font-bold text-slate-800">{editTarget ? 'Edit Shipment' : 'New Shipment'}</h4>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Carrier / Service</label>
+                <input value={form.carrier} onChange={e => set('carrier', e.target.value)}
+                  placeholder="e.g. DHL Express, UPS Worldwide" className={inputShipCls} />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Tracking Number</label>
+                <input value={form.tracking_number} onChange={e => set('tracking_number', e.target.value)}
+                  placeholder="Optional" className={inputShipCls} />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Shipping Date</label>
+                <input type="date" value={form.shipping_date} onChange={e => set('shipping_date', e.target.value)} className={inputShipCls} />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Total Shipping Cost (PKR)</label>
+                <input type="number" min="0" value={form.amount} onChange={e => set('amount', e.target.value)}
+                  placeholder="0" className={inputShipCls} />
+              </div>
+            </div>
+
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 mb-1">Notes</label>
+              <textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={2}
+                className={`${inputShipCls} resize-none`} placeholder="Optional notes…" />
+            </div>
+
+            <div className="flex gap-3">
+              <button onClick={handleSave} disabled={saving}
+                className="flex-1 px-4 py-2.5 text-sm bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-60 font-semibold transition-colors flex items-center justify-center gap-2">
+                {saving ? 'Saving…' : <><Check size={14} />{editTarget ? 'Save Changes' : 'Add Shipment'}</>}
+              </button>
+              <button onClick={() => { setShowForm(false); setEditTarget(null); }}
+                className="px-4 py-2.5 text-sm border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-colors">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Records list ── */}
+      {records.length === 0 && !showForm ? (
+        <div className="bg-white rounded-2xl border border-slate-200 py-16 text-center">
+          <Truck size={32} className="text-slate-200 mx-auto mb-3" />
+          <p className="text-slate-500 font-semibold">No shipments recorded</p>
+          <p className="text-slate-400 text-sm mt-1">Select a shipping company above to add a shipment</p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-100 bg-slate-50/70">
+                <th className="text-left px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">Shipper</th>
+                <th className="text-left px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">Tracking</th>
+                <th className="text-left px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">Date</th>
+                <th className="text-right px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">Amount (PKR)</th>
+                <th className="text-center px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">Payment</th>
+                <th className="px-5 py-3" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {records.map(r => (
+                  <tr key={r.id} className="hover:bg-slate-50/60 transition-colors">
+                    <td className="px-5 py-3.5">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-sky-100 flex items-center justify-center flex-shrink-0">
+                          <Truck size={12} className="text-sky-600" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-slate-800 text-sm">{r.vendor_name || r.carrier || '—'}</p>
+                          {r.vendor_name && r.carrier && r.carrier !== r.vendor_name && (
+                            <p className="text-xs text-slate-400">{r.carrier}</p>
+                          )}
+                          {r.vendor_phone   && <p className="text-xs text-slate-400">📞 {r.vendor_phone}</p>}
+                          {r.vendor_contact && <p className="text-xs text-slate-400">👤 {r.vendor_contact}</p>}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-5 py-3.5 font-mono text-xs text-slate-500">{r.tracking_number || '—'}</td>
+                    <td className="px-5 py-3.5 text-slate-500 whitespace-nowrap">{fmtDateShort(r.shipping_date)}</td>
+                    <td className="px-5 py-3.5 text-right font-semibold text-slate-800">{pkrFmt(r.amount)}</td>
+                    <td className="px-5 py-3.5 text-center">
+                      <span className="inline-flex items-center gap-1 text-xs bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full font-semibold">
+                        Via Vendor
+                      </span>
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <div className="flex items-center justify-end gap-1">
+                        <button onClick={() => openEdit(r)} title="Edit"
+                          className="p-1.5 rounded-lg hover:bg-indigo-50 text-slate-400 hover:text-indigo-600 transition-colors"><Pencil size={13}/></button>
+                        {delTarget === r.id ? (
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => handleDelete(r.id)} className="text-xs bg-rose-600 text-white px-2 py-1 rounded-lg font-medium">Delete</button>
+                            <button onClick={() => setDelTarget(null)} className="text-xs border border-slate-200 px-2 py-1 rounded-lg text-slate-500">Cancel</button>
+                          </div>
+                        ) : (
+                          <button onClick={() => setDelTarget(r.id)} title="Delete"
+                            className="p-1.5 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-500 transition-colors"><Trash2 size={13}/></button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
@@ -5068,6 +5590,9 @@ export default function Projects() {
   const [costFields, setCostFields]   = useState([]);
   const [currencies, setCurrencies]   = useState([]);
   const [baseCurrency, setBaseCurrency] = useState('PKR');
+  const [showActive,    setShowActive]    = useState(true);
+  const [showCompleted, setShowCompleted] = useState(true);
+  const [finSummary,    setFinSummary]    = useState(null);
 
   const loadProjects = useCallback(async () => {
     try {
@@ -5087,13 +5612,15 @@ export default function Projects() {
       api.get('/cost-breakdown-items'),
       api.get('/currencies'),
       api.get('/settings'),
-    ]).then(([c, i, p, cf, cur, s]) => {
+      api.get('/financials/summary'),
+    ]).then(([c, i, p, cf, cur, s, fin]) => {
       setClients(c.data);
       setInvoices(i.data);
       setCatalog(p.data);
       setCostFields(Array.isArray(cf.data) ? cf.data.filter(x => x.enabled) : []);
       setCurrencies(Array.isArray(cur.data) ? cur.data : []);
       setBaseCurrency((s.data && s.data.base_currency) || 'PKR');
+      setFinSummary(fin.data);
     }).catch(() => {});
   }, [loadProjects]);
 
@@ -5151,7 +5678,7 @@ export default function Projects() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
         {[
           { label: 'Total Projects', value: stats.total,     icon: Layers,       color: 'text-indigo-600',  bg: 'bg-indigo-50' },
           { label: 'In Production',  value: stats.active,    icon: Flame,        color: 'text-orange-600',  bg: 'bg-orange-50' },
@@ -5164,6 +5691,69 @@ export default function Projects() {
           </div>
         ))}
       </div>
+
+      {/* Financial summary — global overview */}
+      {false && finSummary && (() => {
+        const pkr = n => `₨${Number(n||0).toLocaleString()}`;
+        const { invoiceRevenue=0, outstanding=0, totalExpenses=0, netProfit=0, inWallet } = finSummary;
+        const wallet = invoiceRevenue - totalExpenses;
+        const isProfit = netProfit >= 0;
+        return (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            {/* Total Received */}
+            <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 flex items-center gap-3 shadow-sm">
+              <div className="bg-emerald-100 text-emerald-600 p-2.5 rounded-xl flex-shrink-0">
+                <TrendingUp size={18} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xl font-bold text-emerald-700 truncate">{pkr(invoiceRevenue)}</p>
+                <p className="text-xs text-emerald-600 font-medium">Total Received</p>
+                {outstanding > 0 && <p className="text-2xs text-emerald-500 mt-0.5">{pkr(outstanding)} outstanding</p>}
+              </div>
+            </div>
+
+            {/* Total Expenses */}
+            <div className="bg-rose-50 border border-rose-100 rounded-xl p-4 flex items-center gap-3 shadow-sm">
+              <div className="bg-rose-100 text-rose-600 p-2.5 rounded-xl flex-shrink-0">
+                <TrendingDown size={18} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xl font-bold text-rose-700 truncate">{pkr(totalExpenses)}</p>
+                <p className="text-xs text-rose-600 font-medium">Total Expenses</p>
+                <p className="text-2xs text-rose-400 mt-0.5">All costs paid out</p>
+              </div>
+            </div>
+
+            {/* In Wallet */}
+            <div className="bg-cyan-50 border border-cyan-100 rounded-xl p-4 flex items-center gap-3 shadow-sm">
+              <div className="bg-cyan-100 text-cyan-600 p-2.5 rounded-xl flex-shrink-0">
+                <DollarSign size={18} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xl font-bold text-cyan-700 truncate">{pkr(wallet)}</p>
+                <p className="text-xs text-cyan-600 font-medium">In Wallet</p>
+                <p className="text-2xs text-cyan-400 mt-0.5">Received − expenses</p>
+              </div>
+            </div>
+
+            {/* Net Profit / Loss */}
+            <div className={`border rounded-xl p-4 flex items-center gap-3 shadow-sm ${isProfit ? 'bg-indigo-50 border-indigo-100' : 'bg-rose-50 border-rose-200'}`}>
+              <div className={`p-2.5 rounded-xl flex-shrink-0 ${isProfit ? 'bg-indigo-100 text-indigo-600' : 'bg-rose-100 text-rose-600'}`}>
+                {isProfit ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
+              </div>
+              <div className="min-w-0">
+                <p className={`text-xl font-bold truncate ${isProfit ? 'text-indigo-700' : 'text-rose-700'}`}>
+                  {isProfit ? '' : '−'}{pkr(Math.abs(netProfit))}
+                </p>
+                <p className={`text-xs font-medium ${isProfit ? 'text-indigo-600' : 'text-rose-600'}`}>
+                  {isProfit ? 'Net Profit' : 'Net Loss'}
+                </p>
+                <p className={`text-2xs mt-0.5 ${isProfit ? 'text-indigo-400' : 'text-rose-400'}`}>Revenue − expenses</p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3 mb-5">
@@ -5195,13 +5785,73 @@ export default function Projects() {
           <p className="text-slate-600 font-medium">{search || statusFilter !== 'all' ? 'No projects match your filters' : 'No projects yet'}</p>
           <p className="text-slate-400 text-sm mt-1">Click "New Project" to start your first production run</p>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map(p => (
-            <ProjectCard key={p.id} project={p} onClick={() => { setSelectedId(p.id); setView('detail'); }} />
-          ))}
-        </div>
-      )}
+      ) : (() => {
+        const activeProjects    = filtered.filter(p => p.status !== 'completed');
+        const completedProjects = filtered.filter(p => p.status === 'completed');
+        const openCard = p => { setSelectedId(p.id); setView('detail'); };
+
+        return (
+          <div className="space-y-6">
+
+            {/* ── Active / Running ── */}
+            {activeProjects.length > 0 && (
+              <div>
+                <button
+                  onClick={() => setShowActive(v => !v)}
+                  className="flex items-center gap-2.5 w-full text-left mb-3 group"
+                >
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <div className="w-2.5 h-2.5 rounded-full bg-orange-400 flex-shrink-0 animate-pulse" />
+                    <span className="font-bold text-slate-800 text-sm uppercase tracking-wider">Active / Running</span>
+                    <span className="text-xs bg-orange-100 text-orange-700 font-semibold px-2 py-0.5 rounded-full">
+                      {activeProjects.length}
+                    </span>
+                  </div>
+                  <span className="text-xs text-slate-400 group-hover:text-slate-600 transition-colors flex-shrink-0">
+                    {showActive ? '▲ Hide' : '▼ Show'}
+                  </span>
+                </button>
+                {showActive && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {activeProjects.map(p => (
+                      <ProjectCard key={p.id} project={p} onClick={() => openCard(p)} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Completed ── */}
+            {completedProjects.length > 0 && (
+              <div>
+                <button
+                  onClick={() => setShowCompleted(v => !v)}
+                  className="flex items-center gap-2.5 w-full text-left mb-3 group"
+                >
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 flex-shrink-0" />
+                    <span className="font-bold text-slate-800 text-sm uppercase tracking-wider">Completed</span>
+                    <span className="text-xs bg-emerald-100 text-emerald-700 font-semibold px-2 py-0.5 rounded-full">
+                      {completedProjects.length}
+                    </span>
+                  </div>
+                  <span className="text-xs text-slate-400 group-hover:text-slate-600 transition-colors flex-shrink-0">
+                    {showCompleted ? '▲ Hide' : '▼ Show'}
+                  </span>
+                </button>
+                {showCompleted && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {completedProjects.map(p => (
+                      <ProjectCard key={p.id} project={p} onClick={() => openCard(p)} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+          </div>
+        );
+      })()}
 
     </div>
   );

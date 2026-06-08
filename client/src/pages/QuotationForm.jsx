@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   ArrowLeft, FileText, Package, MapPin, Landmark,
   MessageSquare, FileCheck, Tag, Plus, X, Check,
   ChevronDown, AlertTriangle, User, Search,
-  Loader2, Save,
+  Loader2, Save, Building2,
 } from 'lucide-react';
 import api from '../lib/api';
 import { printDoc, downloadDoc } from '../lib/printDoc';
@@ -59,12 +60,228 @@ function SectionCard({ id, icon: Icon, title, iconColor = 'text-indigo-600', ico
   );
 }
 
+// ── Constants for the new-client drawer ──────────────────────────────────────
+
+const CLIENT_CURRENCIES = [
+  { code: 'USD', name: 'US Dollar' }, { code: 'AED', name: 'UAE Dirham' },
+  { code: 'PKR', name: 'Pakistani Rupee' }, { code: 'EUR', name: 'Euro' },
+  { code: 'GBP', name: 'British Pound' }, { code: 'SAR', name: 'Saudi Riyal' },
+];
+const CLIENT_LANGUAGES    = ['English', 'Arabic', 'Urdu', 'French', 'German', 'Spanish'];
+const CLIENT_PAYMENT_TERMS = ['Due on Receipt', 'Net 7', 'Net 15', 'Net 30', 'Net 45', 'Net 60'];
+const EMPTY_NEW_CLIENT = {
+  customer_type: 'business', name: '', company: '', display_name: '',
+  customer_number: '', email: '', phone: '', customer_language: 'English',
+  currency: 'USD', products_origin: 'Pakistan', payment_terms: 'Net 30',
+  customer_owner: '', address: '', city: '', zip: '', country: '',
+  shipping_receiver_name: '', shipping_receiver_phone: '',
+  shipping_address: '', shipping_city: '', shipping_zip: '', shipping_country: '',
+  notes: '', status: 'active',
+};
+
+// ── New Client Drawer ─────────────────────────────────────────────────────────
+
+function NewClientDrawer({ prefill = '', onSaved, onClose }) {
+  const [saving, setSaving] = useState(false);
+  const [err,    setErr]    = useState('');
+  const [form,   setForm]   = useState({ ...EMPTY_NEW_CLIENT, name: prefill });
+  const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  async function handleSave() {
+    if (!form.name?.trim() && !form.company?.trim()) {
+      setErr('Full name or company is required.'); return;
+    }
+    setSaving(true); setErr('');
+    try {
+      const display_name = form.display_name ||
+        (form.customer_type === 'business' && form.company?.trim()
+          ? form.company.trim()
+          : form.name?.trim() || form.company?.trim());
+      const { data } = await api.post('/clients', { ...form, display_name });
+      onSaved(data);
+    } catch (e) {
+      setErr(e?.response?.data?.error ?? 'Failed to create client.');
+    } finally { setSaving(false); }
+  }
+
+  const lbl = text => (
+    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">{text}</label>
+  );
+
+  const drawer = (
+    <>
+      {/* Backdrop */}
+      <div className="fixed inset-0 z-[100] bg-black/40" onClick={onClose} />
+
+      {/* Slide-over panel */}
+      <div className="fixed inset-y-0 right-0 z-[101] w-full max-w-md bg-white shadow-2xl flex flex-col">
+
+        {/* ── Header ── */}
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-200 bg-indigo-600 flex-shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 bg-white/20 rounded-lg flex items-center justify-center">
+              <User size={14} className="text-white" />
+            </div>
+            <div>
+              <h2 className="font-bold text-white text-sm">Add New Client</h2>
+              <p className="text-xs text-indigo-200">Saved directly to your clients list</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={handleSave} disabled={saving}
+              className="flex items-center gap-1.5 px-4 py-2 bg-white text-indigo-700 text-sm font-bold rounded-lg hover:bg-indigo-50 disabled:opacity-60 transition-colors shadow-sm">
+              {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+              {saving ? 'Saving…' : 'Save Client'}
+            </button>
+            <button onClick={onClose} className="p-2 rounded-lg hover:bg-white/20 text-white/70 hover:text-white transition-colors">
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+
+        {err && (
+          <div className="px-5 py-2 bg-rose-50 border-b border-rose-200 text-rose-600 text-xs font-medium flex items-center gap-2 flex-shrink-0">
+            <AlertTriangle size={12} /> {err}
+          </div>
+        )}
+
+        {/* ── Scrollable body ── */}
+        <div className="flex-1 overflow-y-auto">
+
+          {/* Section: Identity */}
+          <div className="px-5 pt-4 pb-3 border-b border-slate-100">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Identity</p>
+
+            {/* Type toggle */}
+            <div className="flex gap-2 mb-3">
+              {['business', 'individual'].map(t => (
+                <button key={t} type="button" onClick={() => set('customer_type', t)}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold border transition-all capitalize ${
+                    form.customer_type === t ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-slate-200 text-slate-600 hover:border-indigo-300'
+                  }`}>
+                  {t === 'business' ? <Building2 size={12} /> : <User size={12} />}{t}
+                </button>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-2 gap-2.5">
+              <div className={form.customer_type === 'business' ? '' : 'col-span-2'}>
+                {lbl(<>Full Name <span className="text-rose-400">*</span></>)}
+                <input value={form.name} onChange={e => set('name', e.target.value)}
+                  className={inputCls} placeholder="Contact name" autoFocus />
+              </div>
+              {form.customer_type === 'business' && (
+                <div>
+                  {lbl('Company')}
+                  <input value={form.company} onChange={e => set('company', e.target.value)}
+                    className={inputCls} placeholder="Company name" />
+                </div>
+              )}
+              <div>
+                {lbl('Email')}
+                <input type="email" value={form.email} onChange={e => set('email', e.target.value)}
+                  className={inputCls} placeholder="email@example.com" />
+              </div>
+              <div>
+                {lbl('Phone')}
+                <input value={form.phone} onChange={e => set('phone', e.target.value)}
+                  className={inputCls} placeholder="+92 300 …" />
+              </div>
+              {form.customer_type === 'business' && form.company?.trim() && (
+                <div className="col-span-2">
+                  {lbl('Display Name')}
+                  <select value={form.display_name} onChange={e => set('display_name', e.target.value)}
+                    className={`${inputCls} cursor-pointer`}>
+                    <option value="">— Select —</option>
+                    {form.name?.trim() && <option value={form.name.trim()}>{form.name.trim()}</option>}
+                    <option value={form.company.trim()}>{form.company.trim()}</option>
+                    {form.name?.trim() && <option value={`${form.name.trim()} (${form.company.trim()})`}>{form.name.trim()} ({form.company.trim()})</option>}
+                  </select>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Section: Settings */}
+          <div className="px-5 pt-4 pb-3 border-b border-slate-100">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Settings</p>
+            <div className="grid grid-cols-2 gap-2.5">
+              <div>
+                {lbl('Currency')}
+                <select value={form.currency} onChange={e => set('currency', e.target.value)}
+                  className={`${inputCls} cursor-pointer`}>
+                  {CLIENT_CURRENCIES.map(({ code, name }) => <option key={code} value={code}>{code} — {name}</option>)}
+                </select>
+              </div>
+              <div>
+                {lbl('Payment Terms')}
+                <select value={form.payment_terms} onChange={e => set('payment_terms', e.target.value)}
+                  className={`${inputCls} cursor-pointer`}>
+                  {CLIENT_PAYMENT_TERMS.map(t => <option key={t}>{t}</option>)}
+                </select>
+              </div>
+              <div>
+                {lbl('Language')}
+                <select value={form.customer_language} onChange={e => set('customer_language', e.target.value)}
+                  className={`${inputCls} cursor-pointer`}>
+                  {CLIENT_LANGUAGES.map(l => <option key={l}>{l}</option>)}
+                </select>
+              </div>
+              <div>
+                {lbl('Status')}
+                <select value={form.status} onChange={e => set('status', e.target.value)}
+                  className={`${inputCls} cursor-pointer`}>
+                  <option value="active">Active</option>
+                  <option value="lead">Lead</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Section: Address */}
+          <div className="px-5 pt-4 pb-3 border-b border-slate-100">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Address <span className="font-normal text-slate-300">(optional)</span></p>
+            <div className="grid grid-cols-2 gap-2.5">
+              <div className="col-span-2">
+                {lbl('Street')}
+                <input value={form.address} onChange={e => set('address', e.target.value)}
+                  className={inputCls} placeholder="Street / Area" />
+              </div>
+              <div>
+                {lbl('City')}
+                <input value={form.city} onChange={e => set('city', e.target.value)}
+                  className={inputCls} placeholder="City" />
+              </div>
+              <div>
+                {lbl('Country')}
+                <input value={form.country} onChange={e => set('country', e.target.value)}
+                  className={inputCls} placeholder="Country" />
+              </div>
+            </div>
+          </div>
+
+          {/* Section: Notes */}
+          <div className="px-5 pt-4 pb-5">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Notes <span className="font-normal text-slate-300">(optional)</span></p>
+            <textarea rows={3} value={form.notes} onChange={e => set('notes', e.target.value)}
+              className={`${inputCls} resize-none`} placeholder="Internal notes about this client…" />
+          </div>
+        </div>
+      </div>
+    </>
+  );
+
+  return createPortal(drawer, document.body);
+}
+
 // ── Client inline autocomplete ────────────────────────────────────────────────
 
-function ClientSelect({ value, onChange, clients }) {
-  const [query,   setQuery]   = useState('');
-  const [open,    setOpen]    = useState(false);
-  const [focused, setFocused] = useState(false);
+function ClientSelect({ value, onChange, clients, onClientsChange }) {
+  const [query,       setQuery]       = useState('');
+  const [open,        setOpen]        = useState(false);
+  const [focused,     setFocused]     = useState(false);
+  const [drawerOpen,  setDrawerOpen]  = useState(false);
   const ref = useRef();
 
   const dn       = c => c.display_name || c.company || c.name || '';
@@ -112,6 +329,12 @@ function ClientSelect({ value, onChange, clients }) {
     setQuery('');
   }
 
+  function handleNewClientSaved(newClient) {
+    onClientsChange(prev => [...prev, newClient]);
+    setDrawerOpen(false);
+    handleSelect(newClient);
+  }
+
   const inputValue = selected && !focused ? dn(selected) : query;
 
   return (
@@ -134,13 +357,21 @@ function ClientSelect({ value, onChange, clients }) {
         }
       </div>
 
+      {drawerOpen && (
+        <NewClientDrawer
+          prefill={query}
+          onSaved={handleNewClientSaved}
+          onClose={() => setDrawerOpen(false)}
+        />
+      )}
+
       {open && (
-        <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden">
-          <div className="max-h-60 overflow-y-auto divide-y divide-slate-50">
+        <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl flex flex-col">
+          <div className="max-h-56 overflow-y-auto divide-y divide-slate-50">
             <button type="button"
               onMouseDown={e => e.preventDefault()}
               onClick={() => handleSelect(null)}
-              className="w-full text-left px-4 py-2.5 text-sm text-slate-400 hover:bg-slate-50 italic border-b border-slate-100">
+              className="w-full text-left px-4 py-2.5 text-sm text-slate-400 hover:bg-slate-50 italic">
               — No client —
             </button>
             {filtered.slice(0, 20).map(c => (
@@ -160,6 +391,13 @@ function ClientSelect({ value, onChange, clients }) {
               <p className="px-4 py-3 text-sm text-slate-400 italic">No clients found</p>
             )}
           </div>
+          {/* Add new client — always visible at the bottom */}
+          <button type="button"
+            onMouseDown={e => e.preventDefault()}
+            onClick={() => { setOpen(false); setDrawerOpen(true); }}
+            className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-indigo-600 hover:bg-indigo-50 border-t border-slate-200 rounded-b-xl transition-colors">
+            <Plus size={14} /> Add New Client
+          </button>
         </div>
       )}
     </div>
@@ -961,7 +1199,7 @@ export default function QuotationForm() {
             {/* Client | Currency | Valid Until */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <Field label="Client">
-                <ClientSelect value={form.client_id} onChange={v => set('client_id', v)} clients={clients} />
+                <ClientSelect value={form.client_id} onChange={v => set('client_id', v)} clients={clients} onClientsChange={setClients} />
               </Field>
               <Field label={`Quote Currency${form.currency === baseCurrency ? ' (Default)' : ''}`}>
                 <div className="relative">

@@ -17,6 +17,8 @@ const monthLabel = m => {
 };
 const STATUS_DOT = { active: 'bg-emerald-400', inactive: 'bg-slate-400' };
 
+const inputCls = 'w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400';
+
 // ── EmployeeModal ──────────────────────────────────────────────────────────
 function EmployeeModal({ employee, onClose, onSave }) {
   const blank = {
@@ -42,17 +44,6 @@ function EmployeeModal({ employee, onClose, onSave }) {
     } finally { setSaving(false); }
   }
 
-  const F = ({ label, k, type = 'text', half }) => (
-    <div className={half ? 'col-span-1' : 'col-span-2'}>
-      <label className="block text-xs font-semibold text-slate-500 mb-1">{label}</label>
-      <input
-        type={type} value={form[k] || ''}
-        onChange={e => set(k, e.target.value)}
-        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
-      />
-    </div>
-  );
-
   return (
     <Drawer open={true} onClose={onClose} title={employee ? 'Edit Employee' : 'Add Employee'} width="max-w-xl">
       <form onSubmit={handleSubmit} className="p-6">
@@ -61,13 +52,34 @@ function EmployeeModal({ employee, onClose, onSave }) {
           <div className="col-span-2">
             <p className="text-2xs font-bold uppercase tracking-wider text-slate-400 mb-3">Personal Info</p>
           </div>
-          <F label="Full Name *" k="name" />
-          <F label="Designation / Role" k="designation" half />
-          <F label="Department" k="department" half />
-          <F label="Phone" k="phone" half />
-          <F label="Email" k="email" type="email" half />
-          <F label="CNIC / ID Number" k="cnic" half />
-          <F label="Join Date" k="joined_at" type="date" half />
+          <div className="col-span-2">
+            <label className="block text-xs font-semibold text-slate-500 mb-1">Full Name *</label>
+            <input type="text" value={form.name || ''} onChange={e => set('name', e.target.value)} className={inputCls} />
+          </div>
+          <div className="col-span-1">
+            <label className="block text-xs font-semibold text-slate-500 mb-1">Designation / Role</label>
+            <input type="text" value={form.designation || ''} onChange={e => set('designation', e.target.value)} className={inputCls} />
+          </div>
+          <div className="col-span-1">
+            <label className="block text-xs font-semibold text-slate-500 mb-1">Department</label>
+            <input type="text" value={form.department || ''} onChange={e => set('department', e.target.value)} className={inputCls} />
+          </div>
+          <div className="col-span-1">
+            <label className="block text-xs font-semibold text-slate-500 mb-1">Phone</label>
+            <input type="text" value={form.phone || ''} onChange={e => set('phone', e.target.value)} className={inputCls} />
+          </div>
+          <div className="col-span-1">
+            <label className="block text-xs font-semibold text-slate-500 mb-1">Email</label>
+            <input type="email" value={form.email || ''} onChange={e => set('email', e.target.value)} className={inputCls} />
+          </div>
+          <div className="col-span-1">
+            <label className="block text-xs font-semibold text-slate-500 mb-1">CNIC / ID Number</label>
+            <input type="text" value={form.cnic || ''} onChange={e => set('cnic', e.target.value)} className={inputCls} />
+          </div>
+          <div className="col-span-1">
+            <label className="block text-xs font-semibold text-slate-500 mb-1">Join Date</label>
+            <input type="date" value={form.joined_at || ''} onChange={e => set('joined_at', e.target.value)} className={inputCls} />
+          </div>
           <div className="col-span-1">
             <label className="block text-xs font-semibold text-slate-500 mb-1">Status</label>
             <select value={form.status} onChange={e => set('status', e.target.value)}
@@ -76,21 +88,36 @@ function EmployeeModal({ employee, onClose, onSave }) {
               <option value="inactive">Inactive</option>
             </select>
           </div>
-          <F label="Address" k="address" half />
+          <div className="col-span-1">
+            <label className="block text-xs font-semibold text-slate-500 mb-1">Address</label>
+            <input type="text" value={form.address || ''} onChange={e => set('address', e.target.value)} className={inputCls} />
+          </div>
 
           {/* Salary */}
           <div className="col-span-2 mt-2">
             <p className="text-2xs font-bold uppercase tracking-wider text-slate-400 mb-3">Salary</p>
           </div>
-          <F label="Monthly Salary (PKR)" k="salary" type="number" />
+          <div className="col-span-2">
+            <label className="block text-xs font-semibold text-slate-500 mb-1">Monthly Salary (PKR)</label>
+            <input type="number" value={form.salary || ''} onChange={e => set('salary', e.target.value)} className={inputCls} />
+          </div>
 
           {/* Bank */}
           <div className="col-span-2 mt-2">
             <p className="text-2xs font-bold uppercase tracking-wider text-slate-400 mb-3">Bank Details</p>
           </div>
-          <F label="Bank Name" k="bank_name" half />
-          <F label="Account Number" k="bank_account" half />
-          <F label="IBAN" k="bank_iban" />
+          <div className="col-span-1">
+            <label className="block text-xs font-semibold text-slate-500 mb-1">Bank Name</label>
+            <input type="text" value={form.bank_name || ''} onChange={e => set('bank_name', e.target.value)} className={inputCls} />
+          </div>
+          <div className="col-span-1">
+            <label className="block text-xs font-semibold text-slate-500 mb-1">Account Number</label>
+            <input type="text" value={form.bank_account || ''} onChange={e => set('bank_account', e.target.value)} className={inputCls} />
+          </div>
+          <div className="col-span-2">
+            <label className="block text-xs font-semibold text-slate-500 mb-1">IBAN</label>
+            <input type="text" value={form.bank_iban || ''} onChange={e => set('bank_iban', e.target.value)} className={inputCls} />
+          </div>
 
           {/* Notes */}
           <div className="col-span-2 mt-2">

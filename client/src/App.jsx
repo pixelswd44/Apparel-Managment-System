@@ -15,6 +15,7 @@ import Purchases from './pages/Purchases';
 import Inventory from './pages/Inventory';
 import Expenses from './pages/Expenses';
 import Financials from './pages/Financials';
+import Ledger from './pages/Ledger';
 import Clients from './pages/Clients';
 import ClientForm from './pages/ClientForm';
 import Payroll from './pages/Payroll';
@@ -25,6 +26,7 @@ import ProductForm from './pages/ProductForm';
 import Projects from './pages/Projects';
 import ProjectForm from './pages/ProjectForm';
 import Vendors from './pages/Vendors';
+import VendorDetail from './pages/VendorDetail';
 import Templates from './pages/Templates';
 import ResetPassword from './pages/ResetPassword';
 import api from './lib/api';
@@ -92,8 +94,10 @@ function AppRoutes({ needsWizard, onWizardComplete }) {
           <Route path="/projects/new"       element={<ProtectedRoute path="/projects"><ProjectForm /></ProtectedRoute>} />
           <Route path="/projects/:id/edit"  element={<ProtectedRoute path="/projects"><ProjectForm /></ProtectedRoute>} />
           <Route path="/vendors"            element={<ProtectedRoute path="/vendors"><Vendors /></ProtectedRoute>} />
+          <Route path="/vendors/:id"        element={<ProtectedRoute path="/vendors"><VendorDetail /></ProtectedRoute>} />
           <Route path="/expenses"           element={<ProtectedRoute path="/expenses"><Expenses /></ProtectedRoute>} />
           <Route path="/financials"         element={<ProtectedRoute path="/financials"><Financials /></ProtectedRoute>} />
+          <Route path="/ledger"             element={<ProtectedRoute path="/financials"><Ledger /></ProtectedRoute>} />
           <Route path="/clients"            element={<ProtectedRoute path="/clients"><Clients /></ProtectedRoute>} />
           <Route path="/clients/new"        element={<ProtectedRoute path="/clients"><ClientForm /></ProtectedRoute>} />
           <Route path="/clients/:id/edit"   element={<ProtectedRoute path="/clients"><ClientForm /></ProtectedRoute>} />

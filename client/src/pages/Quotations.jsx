@@ -125,7 +125,10 @@ function QuotationView({ quotationId, onClose, onEdit, onConverted, embedded = f
         items:            quotation.items,
         tax_rate:         quotation.tax_rate,
         discount:         quotation.discount,
+        shipping_cost:    quotation.shipping_cost,
         notes:            quotation.notes,
+        due_date:         quotation.due_date,
+        issued_at:        quotation.issued_at || new Date().toISOString().slice(0, 10),
         currency:         quotation.currency,
         subject:          quotation.subject,
         is_sampling:      quotation.is_sampling ? 1 : 0,
@@ -636,9 +639,9 @@ export default function Quotations() {
                 const expired = q.valid_until && new Date(q.valid_until) < new Date() && q.status !== 'accepted';
                 const isSelected = viewId === q.id;
                 return (
-                  <button key={q.id}
+                  <div key={q.id}
                     onClick={() => setViewId(isSelected ? null : q.id)}
-                    className={`w-full text-left px-4 py-3.5 border-b border-slate-100 transition-colors flex flex-col gap-1 relative ${
+                    className={`w-full text-left px-4 py-3.5 border-b border-slate-100 transition-colors flex flex-col gap-1 relative cursor-pointer ${
                       isSelected
                         ? 'bg-indigo-50 border-l-[3px] border-l-indigo-600'
                         : 'hover:bg-slate-50/80 border-l-[3px] border-l-transparent'
@@ -673,7 +676,7 @@ export default function Quotations() {
                         <Trash2 size={11} />
                       </button>
                     </div>
-                  </button>
+                  </div>
                 );
               })
             )}

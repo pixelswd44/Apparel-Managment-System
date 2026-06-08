@@ -423,6 +423,7 @@ export default function InvoiceForm() {
     discount:         '',
     shipping_cost:    '',
     notes:            '',
+    issued_at:        today(),
     due_date:         addDays(today(), 30),
     currency:         'USD',
     company_id:       null,
@@ -476,6 +477,7 @@ export default function InvoiceForm() {
             discount:         inv.discount         || '',
             shipping_cost:    inv.shipping_cost    || '',
             notes:            inv.notes            || '',
+            issued_at:        inv.issued_at         || today(),
             due_date:         inv.due_date         || addDays(today(), 30),
             currency:         inv.currency         || baseCurrCode,
             company_id:       inv.company_id       || defCo?.id || null,
@@ -819,6 +821,9 @@ export default function InvoiceForm() {
                     </option>
                   ))}
                 </select>
+              </Field>
+              <Field label="Invoice Date">
+                <input type="date" value={form.issued_at} onChange={e => set('issued_at', e.target.value)} className={inputCls} />
               </Field>
               <Field label="Due Date">
                 <input type="date" value={form.due_date} onChange={e => set('due_date', e.target.value)} className={inputCls} />

@@ -85,7 +85,12 @@ function enrichProject(project) {
 
   const extra_costs = JSON.parse(project.extra_costs || '[]');
   const images      = JSON.parse(project.images      || '[]');
-  return { ...project, products, stages, boxes, vendors, workers, extra_costs, images };
+  const shipping    = db.prepare(`
+    SELECT ps.*, v.name as vendor_name, v.phone as vendor_phone, v.contact_name as vendor_contact
+    FROM project_shipping ps LEFT JOIN vendors v ON v.id = ps.vendor_id
+    WHERE ps.project_id = ? ORDER BY ps.shipping_date DESC, ps.id DESC
+  `).all(project.id);
+  return { ...project, products, stages, boxes, vendors, workers, extra_costs, images, shipping };
 }
 
 // ── GET list ──────────────────────────────────────────────────────────────────
@@ -95,15 +100,101 @@ router.get('/', (req, res) => {
       SELECT p.*,
         c.name as client_name, c.company as client_company,
         i.number as invoice_number, i.amount_paid as invoice_amount_paid,
+        i.total as invoice_total,
         (SELECT COUNT(*) FROM project_products WHERE project_id = p.id)                    as product_count,
         (SELECT COUNT(*) FROM project_stages  WHERE project_id = p.id AND enabled = 1)     as stages_total,
-        (SELECT COUNT(*) FROM project_stages  WHERE project_id = p.id AND enabled = 1 AND status = 'done') as stages_done
+        (SELECT COUNT(*) FROM project_stages  WHERE project_id = p.id AND enabled = 1 AND status = 'done') as stages_done,
+        COALESCE((SELECT SUM(pvp.amount) FROM project_vendor_payments pvp
+          JOIN project_vendors pv ON pvp.project_vendor_id = pv.id
+          WHERE pv.project_id = p.id), 0) as fin_vendor_paid,
+        COALESCE((SELECT SUM(paid_amount) FROM project_workers
+          WHERE project_id = p.id AND paid_amount > 0), 0) as fin_worker_paid,
+        COALESCE((SELECT SUM(paid_amount) FROM project_shipping
+          WHERE project_id = p.id AND paid_amount > 0), 0) as fin_shipping_paid
       FROM projects p
       LEFT JOIN clients  c ON p.client_id  = c.id
       LEFT JOIN invoices i ON p.invoice_id = i.id
       ORDER BY p.updated_at DESC
     `).all();
-    res.json(rows);
+
+    // Build currency rate map for PKR conversion
+    const currencyRates = {};
+    try {
+      db.prepare('SELECT code, rate_to_pkr FROM currencies').all().forEach(c => {
+        currencyRates[c.code] = parseFloat(c.rate_to_pkr) || 1;
+      });
+    } catch {}
+    const getRateToPKR = code => (!code || code === 'PKR') ? 1 : (currencyRates[code] || 1);
+
+    // Compute per-project financials — mirrors client calcProject() exactly
+    const enrichedRows = rows.map(row => {
+
+      // ── Products: fabric rate×qty + process cost×qty + external costs ──
+      const products = db.prepare('SELECT fabrics, costs, external_costs, total_quantity, fabric_per_piece, fabric_price_per_unit FROM project_products WHERE project_id = ?').all(row.id);
+      let productCost = 0;
+      let fabricPaid  = 0;
+      for (const pp of products) {
+        try {
+          const fabrics  = JSON.parse(pp.fabrics        || '[]');
+          const costs    = JSON.parse(pp.costs          || '[]');
+          const extCosts = JSON.parse(pp.external_costs || '[]');
+          const qty      = parseFloat(pp.total_quantity) || 0;
+          // Fabric cost: new multi-fabric format OR legacy single-fabric fields
+          const fabricCost = fabrics.length > 0
+            ? fabrics.reduce((s, f) => s + (parseFloat(f.qty)||0) * (parseFloat(f.rate)||0), 0)
+            : (parseFloat(pp.fabric_per_piece)||0) * (parseFloat(pp.fabric_price_per_unit)||0) * qty;
+          const procCost = costs.reduce((s, c) => s + (parseFloat(c.cost_per_piece)||0), 0) * qty;
+          const extCost  = extCosts.reduce((s, c) => s + (parseFloat(c.total)||0), 0);
+          productCost += fabricCost + procCost + extCost;
+          fabricPaid  += fabrics.reduce((s, f) => s + (parseFloat(f.amount_paid)||0), 0)
+                       + costs.reduce((s, c) => s + (parseFloat(c.amount_paid)||0), 0)
+                       + extCosts.reduce((s, c) => s + (parseFloat(c.amount_paid)||0), 0);
+        } catch {}
+      }
+
+      // ── Vendor billed: tasks total, fallback to invoice_amount ──
+      const vendorRows = db.prepare('SELECT tasks, invoice_amount FROM project_vendors WHERE project_id = ?').all(row.id);
+      let vendorBilled = 0;
+      for (const pv of vendorRows) {
+        try {
+          const tasks = JSON.parse(pv.tasks || '[]');
+          const tasksTotal = tasks.reduce((s, t) =>
+            s + (t.type === 'per_piece' ? (parseFloat(t.agreed)||0)*(parseFloat(t.qty)||0) : (parseFloat(t.agreed)||0)), 0);
+          vendorBilled += tasksTotal > 0 ? tasksTotal : Number(pv.invoice_amount || 0);
+        } catch {}
+      }
+
+      // ── Worker agreed ──
+      const workerAgreed = db.prepare('SELECT COALESCE(SUM(agreed_amount),0) as total FROM project_workers WHERE project_id = ?').get(row.id).total;
+
+      // ── Shipping total (full billed amount) ──
+      const shippingTotal = db.prepare('SELECT COALESCE(SUM(amount),0) as total FROM project_shipping WHERE project_id = ?').get(row.id).total;
+
+      // ── Extra costs ──
+      let extraCosts = 0;
+      try { extraCosts = JSON.parse(row.extra_costs || '[]').reduce((s, c) => s + (parseFloat(c.amount)||0), 0); }
+      catch {}
+
+      // ── Received: mirrors calcProject — use exchange_rate_actual if set ──
+      const receivedCurrency = row.invoice_id ? (row.invoice_currency || 'USD') : (row.currency || 'PKR');
+      const receivedRaw      = row.invoice_id ? (parseFloat(row.invoice_amount_paid)||0) : (parseFloat(row.amount_received)||0);
+      const exchangeRate     = (row.exchange_rate_actual && row.exchange_rate_actual > 0)
+        ? row.exchange_rate_actual
+        : getRateToPKR(receivedCurrency);
+      const fin_received     = receivedRaw * exchangeRate;
+
+      const invoiceTotalRaw  = parseFloat(row.invoice_total) || 0;
+      const fin_outstanding  = Math.max(0, invoiceTotalRaw * exchangeRate - fin_received);
+
+      // ── Totals ──
+      const fin_total_expense = productCost + vendorBilled + workerAgreed + extraCosts + shippingTotal;
+      const fin_paid          = fabricPaid + row.fin_vendor_paid + row.fin_worker_paid + row.fin_shipping_paid + extraCosts;
+      const fin_net           = fin_received - fin_total_expense;
+
+      return { ...row, fin_received, fin_outstanding, fin_total_expense, fin_paid, fin_net };
+    });
+
+    res.json(enrichedRows);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -436,6 +527,73 @@ router.delete('/:id/boxes/:boxId', (req, res) => {
       return res.status(409).json({ error: 'This box has been shipped. Provide a reason to delete it.', shipped: true });
     }
     db.prepare('DELETE FROM project_boxes WHERE id=? AND project_id=?').run(req.params.boxId, req.params.id);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── Project Shipping ──────────────────────────────────────────────────────────
+
+router.get('/:id/shipping', (req, res) => {
+  try {
+    const rows = db.prepare(`
+      SELECT ps.*, v.name as vendor_name, v.phone as vendor_phone, v.contact_name as vendor_contact
+      FROM project_shipping ps
+      LEFT JOIN vendors v ON v.id = ps.vendor_id
+      WHERE ps.project_id=? ORDER BY ps.shipping_date DESC, ps.id DESC
+    `).all(req.params.id);
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/:id/shipping', (req, res) => {
+  try {
+    const { carrier='', tracking_number='', shipping_date='', amount=0, paid=0, paid_amount=0, notes='', vendor_id=null } = req.body;
+    const project = db.prepare('SELECT * FROM projects WHERE id=?').get(req.params.id);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+    const paidAmt  = parseFloat(paid_amount) || 0;
+    const vendorId = vendor_id ? parseInt(vendor_id) : null;
+
+    const result = db.prepare(`
+      INSERT INTO project_shipping (project_id, carrier, tracking_number, shipping_date, amount, paid, paid_amount, notes, vendor_id)
+      VALUES (?,?,?,?,?,?,?,?,?)
+    `).run(req.params.id, carrier, tracking_number, shipping_date, parseFloat(amount)||0, paid?1:0, paidAmt, notes, vendorId);
+
+    const row = db.prepare(`
+      SELECT ps.*, v.name as vendor_name, v.phone as vendor_phone
+      FROM project_shipping ps LEFT JOIN vendors v ON v.id = ps.vendor_id WHERE ps.id=?
+    `).get(result.lastInsertRowid);
+    res.status(201).json(row);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.put('/:id/shipping/:shipId', (req, res) => {
+  try {
+    const { carrier='', tracking_number='', shipping_date='', amount=0, notes='', vendor_id=null } = req.body;
+    const row = db.prepare('SELECT * FROM project_shipping WHERE id=? AND project_id=?').get(req.params.shipId, req.params.id);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    const vendorId = vendor_id ? parseInt(vendor_id) : null;
+    // Never overwrite paid_amount / paid from the form — payments are recorded via the vendor module
+    const paidAmt = row.paid_amount || 0;
+    const isPaid  = row.paid || 0;
+
+    db.prepare(`
+      UPDATE project_shipping SET carrier=?, tracking_number=?, shipping_date=?, amount=?, paid=?, paid_amount=?, notes=?, vendor_id=?
+      WHERE id=? AND project_id=?
+    `).run(carrier, tracking_number, shipping_date, parseFloat(amount)||0, isPaid, paidAmt, notes, vendorId, req.params.shipId, req.params.id);
+
+    const updated = db.prepare(`
+      SELECT ps.*, v.name as vendor_name, v.phone as vendor_phone
+      FROM project_shipping ps LEFT JOIN vendors v ON v.id = ps.vendor_id WHERE ps.id=?
+    `).get(req.params.shipId);
+    res.json(updated);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/:id/shipping/:shipId', (req, res) => {
+  try {
+    const row = db.prepare('SELECT * FROM project_shipping WHERE id=? AND project_id=?').get(req.params.shipId, req.params.id);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    db.prepare('DELETE FROM project_shipping WHERE id=?').run(row.id);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

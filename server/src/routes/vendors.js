@@ -10,10 +10,13 @@ router.get('/', (req, res) => {
   try {
     const rows = db.prepare(`
       SELECT v.*,
-        (SELECT COUNT(DISTINCT pv.project_id) FROM project_vendors pv WHERE pv.vendor_id = v.id) as project_count,
-        (SELECT COALESCE(SUM(pv.invoice_amount), 0) FROM project_vendors pv WHERE pv.vendor_id = v.id) as total_billed,
+        (SELECT COUNT(DISTINCT pv.project_id) FROM project_vendors pv WHERE pv.vendor_id = v.id)
+          + (SELECT COUNT(DISTINCT ps.project_id) FROM project_shipping ps WHERE ps.vendor_id = v.id) as project_count,
+        (SELECT COALESCE(SUM(pv.invoice_amount), 0) FROM project_vendors pv WHERE pv.vendor_id = v.id)
+          + (SELECT COALESCE(SUM(ps.amount), 0) FROM project_shipping ps WHERE ps.vendor_id = v.id) as total_billed,
         (SELECT COALESCE(SUM(pvp.amount), 0) FROM project_vendor_payments pvp
-           JOIN project_vendors pv ON pvp.project_vendor_id = pv.id WHERE pv.vendor_id = v.id) as total_paid
+           JOIN project_vendors pv ON pvp.project_vendor_id = pv.id WHERE pv.vendor_id = v.id)
+          + (SELECT COALESCE(SUM(ps.paid_amount), 0) FROM project_shipping ps WHERE ps.vendor_id = v.id) as total_paid
       FROM vendors v
       ORDER BY v.name ASC
     `).all();
@@ -46,7 +49,23 @@ router.get('/:id', (req, res) => {
       ).all(pv.id),
     }));
 
-    res.json({ ...vendor, projects: withPayments });
+    // Shipping records for this vendor — include individual payment history
+    const shippingRows = db.prepare(`
+      SELECT ps.*, p.title as project_title, p.status as project_status
+      FROM project_shipping ps
+      JOIN projects p ON p.id = ps.project_id
+      WHERE ps.vendor_id = ?
+      ORDER BY ps.shipping_date DESC
+    `).all(req.params.id);
+
+    const shippingProjects = shippingRows.map(ps => ({
+      ...ps,
+      payments: db.prepare(
+        `SELECT * FROM project_vendor_payments WHERE shipping_id = ? ORDER BY paid_at DESC`
+      ).all(ps.id),
+    }));
+
+    res.json({ ...vendor, projects: withPayments, shippingProjects });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -84,7 +103,189 @@ router.put('/:id', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ── DELETE ────────────────────────────────────────────────────────────────────
+// ── POST shipping payment — auto-distributes across outstanding shipments (oldest first) ──
+router.post('/:id/shipping-payments', (req, res) => {
+  try {
+    const vendorId = req.params.id;
+    const vendor   = db.prepare('SELECT id FROM vendors WHERE id = ?').get(vendorId);
+    if (!vendor) return res.status(404).json({ error: 'Vendor not found.' });
+
+    let remaining = parseFloat(req.body.amount) || 0;
+    if (remaining <= 0) return res.status(400).json({ error: 'Amount must be greater than 0.' });
+
+    const method    = req.body.method    || 'cash';
+    const reference = req.body.reference || '';
+    const notes     = req.body.notes     || '';
+    const paidAt    = req.body.paid_at   || new Date().toISOString().slice(0, 10);
+
+    // All outstanding shipping records for this vendor, oldest shipping_date first
+    const outstanding = db.prepare(`
+      SELECT *, (COALESCE(amount,0) - COALESCE(paid_amount,0)) as due
+      FROM project_shipping
+      WHERE vendor_id = ? AND (COALESCE(amount,0) - COALESCE(paid_amount,0)) > 0
+      ORDER BY shipping_date ASC, id ASC
+    `).all(vendorId);
+
+    const applied = [];
+
+    db.transaction(() => {
+      for (const ship of outstanding) {
+        if (remaining <= 0) break;
+        const due   = parseFloat(ship.due) || 0;
+        const apply = Math.min(remaining, due);
+
+        db.prepare(
+          `INSERT INTO project_vendor_payments (project_vendor_id, project_id, amount, method, reference, notes, paid_at, shipping_id)
+           VALUES (NULL, ?, ?, ?, ?, ?, ?, ?)`
+        ).run(ship.project_id, apply, method, reference, notes, paidAt, ship.id);
+
+        const newPaid = (parseFloat(ship.paid_amount) || 0) + apply;
+        db.prepare(
+          `UPDATE project_shipping SET paid_amount = ?, paid = CASE WHEN ? >= amount THEN 1 ELSE 0 END WHERE id = ?`
+        ).run(newPaid, newPaid, ship.id);
+
+        applied.push({ shipping_id: ship.id, project_id: ship.project_id, amount: apply });
+        remaining -= apply;
+      }
+
+      // Surplus after all outstanding → apply to most recent shipping record
+      if (remaining > 0) {
+        const lastShip = db.prepare(
+          `SELECT * FROM project_shipping WHERE vendor_id = ? ORDER BY shipping_date DESC, id DESC LIMIT 1`
+        ).get(vendorId);
+        if (lastShip) {
+          db.prepare(
+            `INSERT INTO project_vendor_payments (project_vendor_id, project_id, amount, method, reference, notes, paid_at, shipping_id)
+             VALUES (NULL, ?, ?, ?, ?, ?, ?, ?)`
+          ).run(lastShip.project_id, remaining, method, reference, notes, paidAt, lastShip.id);
+          const newPaid = (parseFloat(lastShip.paid_amount) || 0) + remaining;
+          db.prepare(
+            `UPDATE project_shipping SET paid_amount = ?, paid = CASE WHEN ? >= amount THEN 1 ELSE 0 END WHERE id = ?`
+          ).run(newPaid, newPaid, lastShip.id);
+          applied.push({ shipping_id: lastShip.id, project_id: lastShip.project_id, amount: remaining });
+          remaining = 0;
+        }
+      }
+    })();
+
+    res.status(201).json({ applied, leftover: Math.max(0, remaining) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── POST global payment — auto-distributes across outstanding project_vendors ──
+router.post('/:id/payments', (req, res) => {
+  try {
+    const vendorId = req.params.id;
+    const vendor   = db.prepare('SELECT id FROM vendors WHERE id = ?').get(vendorId);
+    if (!vendor) return res.status(404).json({ error: 'Vendor not found.' });
+
+    let remaining = parseFloat(req.body.amount) || 0;
+    if (remaining <= 0) return res.status(400).json({ error: 'Amount must be greater than 0.' });
+
+    const method    = req.body.method    || 'cash';
+    const reference = req.body.reference || '';
+    const notes     = req.body.notes     || '';
+    const paid_at   = req.body.paid_at   || new Date().toISOString().slice(0, 10);
+
+    // Get all outstanding project_vendors for this vendor, oldest first
+    const pvRows = db.prepare(`
+      SELECT pv.id,
+             pv.project_id,
+             COALESCE(pv.invoice_amount, 0) as invoice_amount,
+             COALESCE((SELECT SUM(amount) FROM project_vendor_payments WHERE project_vendor_id = pv.id), 0) as paid_so_far
+      FROM project_vendors pv
+      WHERE pv.vendor_id = ?
+      ORDER BY pv.created_at ASC
+    `).all(vendorId);
+
+    const insStmt = db.prepare(
+      `INSERT INTO project_vendor_payments (project_vendor_id, project_id, amount, method, reference, notes, paid_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    );
+
+    const applied = [];
+    db.transaction(() => {
+      for (const pv of pvRows) {
+        if (remaining <= 0) break;
+        const due = pv.invoice_amount - pv.paid_so_far;
+        if (due <= 0) continue;
+        const apply = Math.min(remaining, due);
+        const r = insStmt.run(pv.id, pv.project_id, apply, method, reference, notes, paid_at);
+        applied.push({ project_vendor_id: pv.id, amount: apply, payment_id: r.lastInsertRowid });
+        remaining -= apply;
+      }
+      // If amount exceeds all outstanding, record surplus on the most recent pv
+      if (remaining > 0 && pvRows.length > 0) {
+        const lastPv = pvRows[pvRows.length - 1];
+        const r = insStmt.run(lastPv.id, lastPv.project_id, remaining, method, reference, notes, paid_at);
+        applied.push({ project_vendor_id: lastPv.id, amount: remaining, payment_id: r.lastInsertRowid });
+      }
+    })();
+
+    res.status(201).json({ applied, leftover: Math.max(0, remaining) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── PUT update a single payment ───────────────────────────────────────────────
+router.put('/:id/payments/:paymentId', (req, res) => {
+  try {
+    // Find the payment — works for both process vendors (via project_vendors join) and shipping payments (shipping_id set)
+    const payment = db.prepare(`SELECT * FROM project_vendor_payments WHERE id = ?`).get(req.params.paymentId);
+    if (!payment) return res.status(404).json({ error: 'Payment not found.' });
+
+    // Verify ownership: either via project_vendors or via project_shipping.vendor_id
+    if (payment.shipping_id) {
+      const ship = db.prepare('SELECT vendor_id FROM project_shipping WHERE id = ?').get(payment.shipping_id);
+      if (!ship || String(ship.vendor_id) !== String(req.params.id)) return res.status(404).json({ error: 'Payment not found.' });
+    } else {
+      const pv = db.prepare('SELECT vendor_id FROM project_vendors WHERE id = ?').get(payment.project_vendor_id);
+      if (!pv || String(pv.vendor_id) !== String(req.params.id)) return res.status(404).json({ error: 'Payment not found.' });
+    }
+
+    const oldAmt = parseFloat(payment.amount) || 0;
+    const newAmt = parseFloat(req.body.amount);
+    if (!newAmt || newAmt <= 0) return res.status(400).json({ error: 'Amount must be greater than 0.' });
+    const method    = req.body.method    || payment.method;
+    const reference = req.body.reference ?? payment.reference;
+    const notes     = req.body.notes     ?? payment.notes;
+    const paid_at   = req.body.paid_at   || payment.paid_at;
+
+    db.transaction(() => {
+      db.prepare(`UPDATE project_vendor_payments SET amount=?, method=?, reference=?, notes=?, paid_at=? WHERE id=?`)
+        .run(newAmt, method, reference, notes, paid_at, req.params.paymentId);
+      // If it's a shipping payment, keep paid_amount in sync
+      if (payment.shipping_id) {
+        const diff = newAmt - oldAmt;
+        db.prepare(`UPDATE project_shipping SET paid_amount = MAX(0, COALESCE(paid_amount,0) + ?), paid = CASE WHEN COALESCE(paid_amount,0) + ? >= amount THEN 1 ELSE 0 END WHERE id = ?`)
+          .run(diff, diff, payment.shipping_id);
+      }
+    })();
+
+    res.json(db.prepare('SELECT * FROM project_vendor_payments WHERE id = ?').get(req.params.paymentId));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── DELETE a single payment ───────────────────────────────────────────────────
+router.delete('/:id/payments/:paymentId', (req, res) => {
+  try {
+    const payment = db.prepare(`SELECT * FROM project_vendor_payments WHERE id = ?`).get(req.params.paymentId);
+    if (!payment) return res.status(404).json({ error: 'Payment not found.' });
+
+    db.transaction(() => {
+      // If shipping payment, reverse the paid_amount
+      if (payment.shipping_id) {
+        const amt = parseFloat(payment.amount) || 0;
+        db.prepare(`UPDATE project_shipping SET paid_amount = MAX(0, COALESCE(paid_amount,0) - ?), paid = 0 WHERE id = ?`)
+          .run(amt, payment.shipping_id);
+      }
+      db.prepare('DELETE FROM project_vendor_payments WHERE id = ?').run(req.params.paymentId);
+    })();
+
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── DELETE vendor ─────────────────────────────────────────────────────────────
 router.delete('/:id', (req, res) => {
   try {
     const row = db.prepare('SELECT id FROM vendors WHERE id = ?').get(req.params.id);

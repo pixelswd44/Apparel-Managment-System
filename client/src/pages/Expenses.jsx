@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import api from '../lib/api';
 import {
   Receipt, Plus, Search, X, Edit2, Trash2, RefreshCw,
-  Tag, Calendar, Repeat, Wallet, ChevronDown, Check,
+  Tag, Calendar, Repeat, ChevronDown, Check,
   Home, Zap, Droplets, Truck, Coffee, Package, MoreHorizontal,
   BarChart2, AlertTriangle,
 } from 'lucide-react';
@@ -256,156 +256,140 @@ function ExpenseModal({ expense, categories, onClose, onSave }) {
 
 // ── DetailReport ──────────────────────────────────────────────────────────
 function DetailReport({ expenses, summary, month }) {
-  const total = summary.thisMonth || 0;
+  const total = expenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
   const count = expenses.length;
   const avg   = count > 0 ? total / count : 0;
 
-  // Category rows — backend returns 'name' field; enrich with per-category count
-  const catRows = (summary.byCategory || []).map(c => ({
-    ...c,
-    label: c.name || 'Uncategorized',
-    count: expenses.filter(e => (e.category_name || null) === (c.name || null)).length,
-    pct:   total > 0 ? (c.total / total) * 100 : 0,
-  }));
+  // Build category rows from live expenses (not just summary) so counts are accurate
+  const catMap = {};
+  expenses.forEach(e => {
+    const key   = e.expense_category_id || 'none';
+    const label = e.category_name  || 'Uncategorized';
+    const color = e.category_color || '#94a3b8';
+    if (!catMap[key]) catMap[key] = { label, color, total: 0, count: 0 };
+    catMap[key].total += parseFloat(e.amount) || 0;
+    catMap[key].count += 1;
+  });
+  const catRows = Object.values(catMap)
+    .sort((a, b) => b.total - a.total)
+    .map(c => ({ ...c, pct: total > 0 ? (c.total / total) * 100 : 0 }));
 
-  // Payment method breakdown computed from the expenses list
+  // Payment method breakdown
   const methodMap = {};
   expenses.forEach(e => {
     const m = e.payment_method || 'cash';
-    methodMap[m] = (methodMap[m] || 0) + parseFloat(e.amount || 0);
+    methodMap[m] = (methodMap[m] || 0) + (parseFloat(e.amount) || 0);
   });
   const methodRows = Object.entries(methodMap)
     .sort(([, a], [, b]) => b - a)
     .map(([method, amt]) => ({ method, amt, pct: total > 0 ? (amt / total) * 100 : 0 }));
 
   // Top 5 by amount
-  const top5 = [...expenses]
-    .sort((a, b) => parseFloat(b.amount) - parseFloat(a.amount))
-    .slice(0, 5);
+  const top5 = [...expenses].sort((a, b) => parseFloat(b.amount) - parseFloat(a.amount)).slice(0, 5);
 
   const monthLabel = month
     ? new Date(month + '-01').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
     : '';
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm mb-6 overflow-hidden">
+    <div className="space-y-5 pb-4">
 
-      {/* Report header bar */}
-      <div className="flex items-center justify-between px-6 py-3.5 bg-slate-800 text-white">
-        <div className="flex items-center gap-2">
-          <BarChart2 size={15} className="text-indigo-400" />
-          <span className="font-semibold text-sm tracking-wide">Expense Report</span>
-          {monthLabel && <span className="text-xs text-slate-400 font-normal ml-1">— {monthLabel}</span>}
-        </div>
-        <span className="text-xs text-slate-400">{count} {count === 1 ? 'entry' : 'entries'} this period</span>
+      {/* ── Key metrics ── */}
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+        {[
+          { label: 'Total Spent',       value: pkr(total),                         sub: monthLabel || 'this period',  color: 'text-slate-900' },
+          { label: 'No. of Expenses',   value: String(count),                      sub: 'entries recorded',           color: 'text-slate-900' },
+          { label: 'Average per Entry', value: count > 0 ? pkr(avg) : '—',         sub: 'per transaction',            color: 'text-slate-900' },
+          { label: 'Recurring / Month', value: pkr(summary.recurringMonthly || 0), sub: 'fixed monthly cost',         color: 'text-indigo-600' },
+        ].map(m => (
+          <div key={m.label} className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">{m.label}</p>
+            <p className={`text-2xl font-bold ${m.color}`}>{m.value}</p>
+            {m.sub && <p className="text-xs text-slate-400 mt-1">{m.sub}</p>}
+          </div>
+        ))}
       </div>
 
-      <div className="p-6 space-y-6">
-
-        {/* ── Key metrics ── */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          {[
-            { label: 'Total Spent',          value: pkr(total),                         sub: monthLabel,            accent: false },
-            { label: 'Transactions',         value: String(count),                      sub: 'entries recorded',    accent: false },
-            { label: 'Average per Entry',    value: count > 0 ? pkr(avg) : '—',         sub: 'per transaction',     accent: false },
-            { label: 'Recurring Monthly',    value: pkr(summary.recurringMonthly || 0), sub: 'fixed monthly cost',  accent: true  },
-          ].map(m => (
-            <div key={m.label} className="bg-slate-50 rounded-xl p-4 border border-slate-100">
-              <p className="text-2xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">{m.label}</p>
-              <p className={`text-xl font-bold ${m.accent ? 'text-indigo-600' : 'text-slate-900'}`}>{m.value}</p>
-              <p className="text-2xs text-slate-400 mt-0.5">{m.sub}</p>
+      {/* ── Expenses by Category ── */}
+      {catRows.length > 0 && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 bg-slate-50/60">
+            <div className="flex items-center gap-2">
+              <Tag size={14} className="text-indigo-500" />
+              <span className="font-bold text-slate-800 text-sm">Expenses by Category</span>
             </div>
-          ))}
-        </div>
+            <span className="text-xs text-slate-400">{catRows.length} categories · {pkr(total)} total</span>
+          </div>
 
-        {/* ── Category breakdown ── */}
-        {catRows.length > 0 && (
-          <div>
-            <p className="text-2xs font-bold uppercase tracking-wider text-slate-400 mb-3">By Category</p>
-            <div className="space-y-2.5">
-              {catRows.map((c, i) => (
-                <div key={i} className="flex items-center gap-3">
-                  <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: c.color || '#94a3b8' }} />
-                  <span className="text-sm font-medium text-slate-700 w-40 truncate">{c.label}</span>
-                  <span className="text-2xs text-slate-400 w-20 flex-shrink-0">
-                    {c.count} {c.count === 1 ? 'entry' : 'entries'}
-                  </span>
-                  <div className="flex-1 bg-slate-100 rounded-full h-2">
-                    <div className="h-2 rounded-full transition-all duration-500"
-                      style={{ width: `${c.pct}%`, background: c.color || '#94a3b8' }} />
+          {/* Category table */}
+          <div className="divide-y divide-slate-50">
+            {catRows.map((c, i) => (
+              <div key={i} className="px-5 py-3.5">
+                {/* Top row: dot + name + amount */}
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: c.color }} />
+                    <span className="text-sm font-semibold text-slate-800">{c.label}</span>
+                    <span className="text-xs text-slate-400 flex-shrink-0">
+                      {c.count} {c.count === 1 ? 'entry' : 'entries'}
+                    </span>
                   </div>
-                  <span className="text-2xs text-slate-400 w-10 text-right flex-shrink-0">
-                    {c.pct.toFixed(0)}%
-                  </span>
-                  <span className="text-sm font-bold text-slate-800 w-28 text-right flex-shrink-0">
-                    {pkr(c.total)}
-                  </span>
+                  <div className="text-right flex-shrink-0">
+                    <span className="text-sm font-bold text-slate-900">{pkr(c.total)}</span>
+                    <span className="text-xs text-slate-400 ml-2">{c.pct.toFixed(1)}%</span>
+                  </div>
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ── Bottom row: payment methods + largest expenses ── */}
-        {(methodRows.length > 0 || top5.length > 0) && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 pt-4 border-t border-slate-100">
-
-            {/* Payment method split */}
-            {methodRows.length > 0 && (
-              <div>
-                <p className="text-2xs font-bold uppercase tracking-wider text-slate-400 mb-3">By Payment Method</p>
-                <div className="space-y-3">
-                  {methodRows.map(m => (
-                    <div key={m.method}>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs font-semibold text-slate-700 capitalize">{m.method}</span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-2xs text-slate-400">{m.pct.toFixed(0)}%</span>
-                          <span className="text-xs font-bold text-slate-800">{pkr(m.amt)}</span>
-                        </div>
-                      </div>
-                      <div className="bg-slate-100 rounded-full h-1.5">
-                        <div className="h-1.5 rounded-full bg-indigo-500 transition-all duration-500"
-                          style={{ width: `${m.pct}%` }} />
-                      </div>
-                    </div>
-                  ))}
+                {/* Progress bar */}
+                <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                  <div className="h-1.5 rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(100, c.pct)}%`, background: c.color }} />
                 </div>
               </div>
-            )}
+            ))}
+          </div>
 
-            {/* Top 5 largest expenses */}
-            {top5.length > 0 && (
-              <div>
-                <p className="text-2xs font-bold uppercase tracking-wider text-slate-400 mb-3">Largest Expenses</p>
-                <div className="space-y-2.5">
-                  {top5.map((e, i) => (
-                    <div key={e.id} className="flex items-center gap-3">
-                      <span className="text-2xs font-bold text-slate-300 w-4 flex-shrink-0 text-center">
-                        {i + 1}
+          {/* Category totals footer */}
+          <div className="px-5 py-3 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500">Total</span>
+            <span className="text-sm font-bold text-slate-800">{pkr(total)}</span>
+          </div>
+        </div>
+      )}
+
+
+      {/* ── Largest Expenses ── */}
+      {top5.length > 0 && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="flex items-center gap-2 px-5 py-3.5 border-b border-slate-100 bg-slate-50/60">
+            <Receipt size={14} className="text-rose-500" />
+            <span className="font-bold text-slate-800 text-sm">Largest Expenses</span>
+          </div>
+          <div className="divide-y divide-slate-50">
+            {top5.map((e, i) => (
+              <div key={e.id} className="flex items-center gap-4 px-5 py-3.5">
+                <span className="text-sm font-bold text-slate-300 w-5 flex-shrink-0 text-center">{i + 1}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-slate-800">{e.title}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {fmtDate(e.expense_date)}
+                    {e.category_name && (
+                      <span className="font-medium ml-1.5" style={{ color: e.category_color || '#94a3b8' }}>
+                        · {e.category_name}
                       </span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-slate-700 truncate">{e.title}</p>
-                        {e.category_name
-                          ? <p className="text-2xs font-medium mt-0.5" style={{ color: e.category_color || '#94a3b8' }}>
-                              {e.category_name}
-                            </p>
-                          : <p className="text-2xs text-slate-400 mt-0.5">{fmtDate(e.expense_date)}</p>
-                        }
-                      </div>
-                      <span className="text-sm font-bold text-slate-800 flex-shrink-0">{pkr(e.amount)}</span>
-                    </div>
-                  ))}
+                    )}
+                    {e.paid_by && <span className="ml-1.5">· {e.paid_by}</span>}
+                  </p>
                 </div>
+                <span className="text-sm font-bold text-slate-900 flex-shrink-0">{pkr(e.amount)}</span>
               </div>
-            )}
+            ))}
           </div>
-        )}
+        </div>
+      )}
 
-        {count === 0 && (
-          <p className="text-center text-sm text-slate-400 py-2">No expenses recorded for this period.</p>
-        )}
-      </div>
+      {count === 0 && (
+        <p className="text-center text-sm text-slate-400 py-4">No expenses recorded for this period.</p>
+      )}
     </div>
   );
 }
@@ -417,7 +401,7 @@ export default function Expenses() {
   const [summary, setSummary] = useState({ thisMonth: 0, recurringMonthly: 0, byCategory: [] });
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [month, setMonth] = useState(curMonth());
+  const [month, setMonth] = useState(''); // empty = all months
   const [catFilter, setCatFilter] = useState('');
   const [modal, setModal] = useState(null);
   const [catModal, setCatModal] = useState(null);
@@ -425,6 +409,7 @@ export default function Expenses() {
   const [seeding, setSeeding] = useState(false);
   const [delTarget, setDelTarget] = useState(null);       // expense id pending delete
   const [delCatTarget, setDelCatTarget] = useState(null); // category id pending delete
+  const [selected, setSelected] = useState(null);         // expense shown in detail panel
   // Period filter: { from, to, label } — null from/to means "all time" / use month
   const [periodRange, setPeriodRange] = useState({ from: null, to: null, label: 'All Time' });
 
@@ -433,7 +418,7 @@ export default function Expenses() {
     // Build date params: quarter range takes priority over month picker
     const dateParams = periodRange.from
       ? { from: periodRange.from, to: periodRange.to }
-      : { month };
+      : month ? { month } : {};
     const [expRes, catRes, sumRes] = await Promise.all([
       api.get('/expenses', { params: { ...dateParams, category_id: catFilter || undefined } }),
       api.get('/expenses/categories'),
@@ -460,6 +445,7 @@ export default function Expenses() {
     await api.delete(`/expenses/${delTarget}`);
     setExpenses(p => p.filter(e => e.id !== delTarget));
     setDelTarget(null);
+    setSelected(null);
     load();
   }
 
@@ -551,7 +537,7 @@ export default function Expenses() {
       <div className="flex-1 min-h-0 flex flex-col lg:flex-row rounded-2xl border border-slate-200 shadow-sm overflow-hidden bg-white">
 
         {/* ── LEFT: filters + list ── */}
-        <div className="w-full lg:w-80 flex-shrink-0 flex flex-col border-b lg:border-b-0 lg:border-r border-slate-200 bg-white">
+        <div className="w-full lg:w-72 flex-shrink-0 flex flex-col border-b lg:border-b-0 lg:border-r border-slate-200 bg-white">
 
           {/* Search */}
           <div className="px-4 pt-4 pb-3 border-b border-slate-100">
@@ -566,8 +552,16 @@ export default function Expenses() {
           <div className="px-4 py-3 border-b border-slate-100 space-y-2">
             <PeriodPicker onChange={range => setPeriodRange(range)} />
             {!periodRange.from && (
-              <input type="month" value={month} onChange={e => setMonth(e.target.value)}
-                className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+              <div className="flex items-center gap-2">
+                <input type="month" value={month} onChange={e => setMonth(e.target.value)}
+                  className="flex-1 px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+                {month && (
+                  <button onClick={() => setMonth('')}
+                    className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1.5 rounded-lg hover:bg-slate-100 transition-colors whitespace-nowrap">
+                    Show All
+                  </button>
+                )}
+              </div>
             )}
           </div>
 
@@ -619,7 +613,11 @@ export default function Expenses() {
             ) : (
               <div className="divide-y divide-slate-50">
                 {filtered.map(exp => (
-                  <div key={exp.id} className="group flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
+                  <div key={exp.id}
+                    onClick={() => setSelected(s => s?.id === exp.id ? null : exp)}
+                    className={`group flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors ${
+                      selected?.id === exp.id ? 'bg-indigo-50 border-l-2 border-indigo-500' : 'hover:bg-slate-50 border-l-2 border-transparent'
+                    }`}>
                     {/* Category colour dot */}
                     <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-0.5"
                       style={{ background: exp.category_color || '#94a3b8' }} />
@@ -639,20 +637,23 @@ export default function Expenses() {
                         {exp.payment_method && ` · ${exp.payment_method}`}
                         {exp.paid_by && ` · ${exp.paid_by}`}
                       </p>
+                      {exp.notes && (
+                        <p className="text-xs text-slate-500 mt-0.5 truncate italic">{exp.notes}</p>
+                      )}
                     </div>
 
                     {/* Amount */}
                     <span className="text-sm font-bold text-slate-800 flex-shrink-0">{pkr(exp.amount)}</span>
 
-                    {/* Hover actions */}
-                    <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                      <button onClick={() => setModal(exp)}
-                        className="p-1 rounded-lg hover:bg-slate-200 text-slate-400 hover:text-slate-600 transition-colors">
-                        <Edit2 size={12} />
+                    {/* Actions — always visible */}
+                    <div className="flex gap-0.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                      <button onClick={() => setModal(exp)} title="Edit"
+                        className="p-1.5 rounded-lg bg-slate-100 hover:bg-indigo-100 text-slate-400 hover:text-indigo-600 transition-colors">
+                        <Edit2 size={13} />
                       </button>
-                      <button onClick={() => setDelTarget(exp.id)}
-                        className="p-1 rounded-lg hover:bg-rose-100 text-slate-400 hover:text-rose-500 transition-colors">
-                        <Trash2 size={12} />
+                      <button onClick={() => setDelTarget(exp.id)} title="Delete"
+                        className="p-1.5 rounded-lg bg-slate-100 hover:bg-rose-100 text-slate-400 hover:text-rose-500 transition-colors">
+                        <Trash2 size={13} />
                       </button>
                     </div>
                   </div>
@@ -672,12 +673,80 @@ export default function Expenses() {
           )}
         </div>
 
-        {/* ── RIGHT: analytics report ── */}
-        <div className="flex-1 min-w-0 overflow-y-auto p-6">
+        {/* ── RIGHT: detail or analytics ── */}
+        <div className="flex-1 min-w-0 overflow-y-auto p-5">
           {loading ? (
             <div className="flex flex-col items-center justify-center h-full gap-3">
               <div className="w-8 h-8 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
-              <p className="text-sm text-slate-400">Loading analytics…</p>
+              <p className="text-sm text-slate-400">Loading…</p>
+            </div>
+          ) : selected ? (
+            /* ── Expense Detail ── */
+            <div className="space-y-4">
+              {/* Header */}
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0"
+                    style={{ background: (selected.category_color || '#94a3b8') + '22' }}>
+                    <Receipt size={18} style={{ color: selected.category_color || '#94a3b8' }} />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900 leading-tight">{selected.title}</h2>
+                    {selected.category_name && (
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                        style={{ background: (selected.category_color || '#94a3b8') + '22', color: selected.category_color || '#94a3b8' }}>
+                        {selected.category_name}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <button onClick={() => setSelected(null)}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors flex-shrink-0">
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Amount */}
+              <div className="bg-slate-900 rounded-2xl p-5 text-white">
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Amount Paid</p>
+                <p className="text-3xl font-bold">{pkr(selected.amount)}</p>
+              </div>
+
+              {/* Details grid */}
+              <div className="bg-white rounded-2xl border border-slate-200 divide-y divide-slate-50 overflow-hidden">
+                {[
+                  { label: 'Date',           value: fmtDate(selected.expense_date) },
+                  { label: 'Payment Method', value: selected.payment_method || '—' },
+                  { label: 'Paid By',        value: selected.paid_by || '—' },
+                  { label: 'Category',       value: selected.category_name || 'Uncategorized' },
+                  { label: 'Recurring',      value: selected.recurring ? `Yes · ${selected.recurring_period}` : 'No' },
+                ].map(({ label, value }) => (
+                  <div key={label} className="flex items-center justify-between px-5 py-3 gap-4">
+                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex-shrink-0">{label}</span>
+                    <span className="text-sm font-medium text-slate-800 text-right capitalize">{value}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Notes */}
+              {selected.notes && (
+                <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4">
+                  <p className="text-xs font-semibold text-amber-600 uppercase tracking-wider mb-2">Notes / Description</p>
+                  <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">{selected.notes}</p>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-1">
+                <button onClick={() => { setModal(selected); setSelected(null); }}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors">
+                  <Edit2 size={14} /> Edit
+                </button>
+                <button onClick={() => { setDelTarget(selected.id); setSelected(null); }}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 border border-rose-200 rounded-xl text-sm font-medium text-rose-600 hover:bg-rose-50 transition-colors">
+                  <Trash2 size={14} /> Delete
+                </button>
+              </div>
             </div>
           ) : expenses.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center">
@@ -701,7 +770,7 @@ export default function Expenses() {
           expense={modal === 'new' ? null : modal}
           categories={categories}
           onClose={() => setModal(null)}
-          onSave={() => { setModal(null); load(); }}
+          onSave={() => { setModal(null); setSelected(null); load(); }}
         />
       )}
       {catModal && (

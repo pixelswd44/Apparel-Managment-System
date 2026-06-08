@@ -4,7 +4,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, FileText, Receipt,
   TrendingUp, Users, Layers, Settings, Box, AlertTriangle, Flame, Store, Archive,
-  UserCheck, Wallet, LayoutTemplate, LogOut, ChevronDown, KeyRound, Eye, EyeOff, Check, X, Menu,
+  UserCheck, Wallet, LayoutTemplate, LogOut, ChevronDown, KeyRound, Eye, EyeOff, Check, X, Menu, BookMarked,
 } from 'lucide-react';
 import { useDirty } from '../../lib/dirtyContext';
 import { useAuth } from '../../lib/authContext';
@@ -104,6 +104,7 @@ function ChangePasswordModal({ onClose }) {
 const ALL_NAV = [
   { to: '/',           icon: LayoutDashboard, label: 'Overview'   },
   { to: '/financials', icon: TrendingUp,      label: 'Financials' },
+  { to: '/ledger',     icon: BookMarked,      label: 'Ledger'     },
   { to: '/clients',    icon: Users,           label: 'Clients'    },
   { to: '/quotations', icon: FileText,        label: 'Quotations' },
   { to: '/invoices',   icon: Receipt,         label: 'Invoices'   },

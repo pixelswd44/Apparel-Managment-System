@@ -135,6 +135,77 @@ router.delete('/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// ── POST sync-project-fabric-purchase ────────────────────────────────────────
+// Called when a project product is saved.
+// Tracks fabric purchased quantities as stock-in, auto-creates items if needed.
+// Idempotent: reverses previous purchase transactions and re-applies fresh ones.
+router.post('/sync-project-fabric-purchase', (req, res) => {
+  const { project_product_id, fabrics } = req.body;
+  if (!project_product_id) return res.status(400).json({ error: 'project_product_id required' });
+
+  const ref = `pp-${project_product_id}-purchase`;
+
+  const sync = db.transaction(() => {
+    // 1. Reverse previous stock-in transactions for this project product
+    const prev = db.prepare(
+      `SELECT item_id, qty FROM inventory_transactions WHERE reference = ? AND type = 'in'`
+    ).all(ref);
+    for (const { item_id, qty } of prev) {
+      db.prepare(
+        `UPDATE inventory_items SET qty_total = MAX(0, qty_total - ?), updated_at = datetime('now') WHERE id = ?`
+      ).run(qty, item_id);
+    }
+    db.prepare(`DELETE FROM inventory_transactions WHERE reference = ? AND type = 'in'`).run(ref);
+
+    // 2. Apply fresh stock-in for current fabric rows
+    const synced = [];
+    for (const fabric of (fabrics || [])) {
+      const qty  = parseFloat(fabric.qty)  || 0;
+      const rate = parseFloat(fabric.rate) || 0;
+      const name = (fabric.name || '').trim();
+      if (qty <= 0 || !name) continue;
+
+      // Find or auto-create the inventory item
+      let item = fabric.inventory_item_id
+        ? db.prepare(`SELECT * FROM inventory_items WHERE id = ?`).get(fabric.inventory_item_id)
+        : null;
+
+      if (!item) {
+        // Try exact name match (case-insensitive)
+        item = db.prepare(
+          `SELECT * FROM inventory_items WHERE LOWER(name) = LOWER(?)`
+        ).get(name);
+      }
+
+      if (!item) {
+        // Auto-create the inventory item
+        const ins = db.prepare(
+          `INSERT INTO inventory_items (name, category, unit, qty_total, qty_used, rate, notes)
+           VALUES (?, 'fabric', ?, 0, 0, ?, 'Auto-created from project')`
+        ).run(name, fabric.unit || 'KG', rate);
+        item = db.prepare(`SELECT * FROM inventory_items WHERE id = ?`).get(ins.lastInsertRowid);
+      }
+
+      // Add stock-in
+      db.prepare(
+        `UPDATE inventory_items SET qty_total = qty_total + ?, rate = CASE WHEN ? > 0 THEN ? ELSE rate END, updated_at = datetime('now') WHERE id = ?`
+      ).run(qty, rate, rate, item.id);
+      db.prepare(
+        `INSERT INTO inventory_transactions (item_id, type, qty, reference, notes, unit_price) VALUES (?, 'in', ?, ?, ?, ?)`
+      ).run(item.id, qty, ref, `Project fabric purchase: ${name}`, rate);
+
+      synced.push({ inventory_item_id: item.id, name: item.name, qty });
+    }
+    return synced;
+  });
+
+  try {
+    res.json({ ok: true, synced: sync() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── POST sync-project-product ─────────────────────────────────────────────────
 // Called every time a project product is saved.
 // Atomically replaces previous deductions for this product with the new ones.

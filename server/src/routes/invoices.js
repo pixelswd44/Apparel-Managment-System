@@ -62,7 +62,7 @@ router.post('/', (req, res) => {
     const {
       client_id, company_id, quotation_id, status = 'unpaid', items = [], tax_rate = 0, discount = 0,
       shipping_cost = 0,
-      notes, due_date, currency = 'USD', subject, is_sampling = 0,
+      notes, due_date, issued_at, currency = 'USD', subject, is_sampling = 0,
       shipping_name, shipping_address, shipping_city, shipping_country, shipping_phone,
       bank_details, customer_notes, terms_conditions,
     } = req.body;
@@ -75,14 +75,14 @@ router.post('/', (req, res) => {
       INSERT INTO invoices (
         number, client_id, company_id, quotation_id, status, items,
         subtotal, tax_rate, tax_amount, discount, shipping_cost, total,
-        notes, due_date, currency, subject, is_sampling,
+        notes, due_date, issued_at, currency, subject, is_sampling,
         shipping_name, shipping_address, shipping_city, shipping_country, shipping_phone,
         bank_details, customer_notes, terms_conditions
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `).run(
       number, client_id || null, company_id || null, quotation_id || null, status, JSON.stringify(parsedItems),
       subtotal, parseFloat(tax_rate) || 0, tax_amount, parseFloat(discount) || 0, shipping, total,
-      notes || null, due_date || null, currency, subject || null, is_sampling ? 1 : 0,
+      notes || null, due_date || null, issued_at || null, currency, subject || null, is_sampling ? 1 : 0,
       shipping_name || null, shipping_address || null, shipping_city || null,
       shipping_country || null, shipping_phone || null,
       bank_details || null, customer_notes || null, terms_conditions || null,
@@ -99,7 +99,7 @@ router.put('/:id', (req, res) => {
     const {
       client_id, company_id, status, items = [], tax_rate = 0, discount = 0,
       shipping_cost = 0,
-      notes, due_date, number, currency = 'USD', subject, is_sampling = 0,
+      notes, due_date, issued_at, number, currency = 'USD', subject, is_sampling = 0,
       shipping_name, shipping_address, shipping_city, shipping_country, shipping_phone,
       bank_details, customer_notes, terms_conditions,
     } = req.body;
@@ -111,7 +111,7 @@ router.put('/:id', (req, res) => {
       UPDATE invoices SET
         number=?, client_id=?, company_id=?, status=?, items=?,
         subtotal=?, tax_rate=?, tax_amount=?, discount=?, shipping_cost=?, total=?,
-        notes=?, due_date=?, currency=?, subject=?, is_sampling=?,
+        notes=?, due_date=?, issued_at=?, currency=?, subject=?, is_sampling=?,
         shipping_name=?, shipping_address=?, shipping_city=?, shipping_country=?, shipping_phone=?,
         bank_details=?, customer_notes=?, terms_conditions=?,
         updated_at=datetime('now')
@@ -119,7 +119,7 @@ router.put('/:id', (req, res) => {
     `).run(
       number, client_id || null, company_id || null, status, JSON.stringify(parsedItems),
       subtotal, parseFloat(tax_rate) || 0, tax_amount, parseFloat(discount) || 0, shipping, total,
-      notes || null, due_date || null, currency, subject || null, is_sampling ? 1 : 0,
+      notes || null, due_date || null, issued_at || null, currency, subject || null, is_sampling ? 1 : 0,
       shipping_name || null, shipping_address || null, shipping_city || null,
       shipping_country || null, shipping_phone || null,
       bank_details || null, customer_notes || null, terms_conditions || null,
@@ -172,6 +172,27 @@ router.post('/:id/payments', (req, res) => {
 
     const payment = db.prepare('SELECT * FROM payments WHERE id = ?').get(payResult.lastInsertRowid);
     res.status(201).json({ payment, amount_paid: totalPaid, status: newStatus });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.patch('/:invoiceId/payments/:paymentId', (req, res) => {
+  try {
+    const { amount, method, reference, notes, paid_at } = req.body;
+    db.prepare(`
+      UPDATE payments SET amount=?, method=?, reference=?, notes=?, paid_at=?
+      WHERE id = ? AND invoice_id = ?
+    `).run(
+      parseFloat(amount), method, reference || null, notes || null,
+      paid_at || new Date().toISOString(),
+      req.params.paymentId, req.params.invoiceId,
+    );
+    const invoice  = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.invoiceId);
+    const totalPaid = db.prepare('SELECT COALESCE(SUM(amount),0) as t FROM payments WHERE invoice_id = ?').get(req.params.invoiceId).t;
+    const newStatus = totalPaid >= invoice.total ? 'paid' : totalPaid > 0 ? 'partial' : 'unpaid';
+    db.prepare(`UPDATE invoices SET amount_paid=?, status=?, updated_at=datetime('now') WHERE id=?`)
+      .run(totalPaid, newStatus, req.params.invoiceId);
+    const payment = db.prepare('SELECT * FROM payments WHERE id = ?').get(req.params.paymentId);
+    res.json({ payment, amount_paid: totalPaid, status: newStatus });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../lib/api';
 import {
-  TrendingUp, TrendingDown, DollarSign, AlertCircle,
+  TrendingUp, TrendingDown,
   ArrowUpRight, ArrowDownRight, RefreshCw, Wallet, Users,
-  Receipt, Store, BarChart2, Clock,
+  Receipt, Store, Clock, Package,
 } from 'lucide-react';
 import PeriodPicker from '../components/PeriodPicker';
 
@@ -36,10 +36,11 @@ const fmtDate = d => d ? new Date(d.includes('T') ? d : d + 'T00:00:00')
   .toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
 
 const TYPE_BADGE = {
-  income:  { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'Income',   Icon: ArrowUpRight },
-  expense: { bg: 'bg-rose-100',    text: 'text-rose-700',    label: 'Expense',  Icon: ArrowDownRight },
-  vendor:  { bg: 'bg-orange-100',  text: 'text-orange-700',  label: 'Vendor',   Icon: Store },
-  salary:  { bg: 'bg-blue-100',    text: 'text-blue-700',    label: 'Salary',   Icon: Users },
+  income:   { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'Income',   Icon: ArrowUpRight },
+  expense:  { bg: 'bg-rose-100',    text: 'text-rose-700',    label: 'Expense',  Icon: ArrowDownRight },
+  vendor:   { bg: 'bg-orange-100',  text: 'text-orange-700',  label: 'Vendor',   Icon: Store },
+  salary:   { bg: 'bg-blue-100',    text: 'text-blue-700',    label: 'Salary',   Icon: Users },
+  shipping: { bg: 'bg-sky-100',     text: 'text-sky-700',     label: 'Shipping', Icon: Receipt },
 };
 
 // ── Mini Bar Chart ─────────────────────────────────────────────────────────
@@ -119,6 +120,19 @@ export default function Financials() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Reload whenever the browser tab regains focus or the page becomes visible
+  // This ensures Financials always reflects changes made in other modules
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === 'visible') load(); };
+    const onFocus   = () => load();
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [load]);
+
   if (loading) return (
     <div className="flex items-center justify-center py-24 text-slate-400 text-sm gap-2">
       <RefreshCw size={16} className="animate-spin-slow" /> Loading financials…
@@ -132,8 +146,10 @@ export default function Financials() {
 
   const {
     invoiceRevenue = 0, outstanding = 0,
-    businessExpenses = 0, salariesPaid = 0, vendorPayments = 0,
-    totalExpenses = 0, netProfit = 0, revenueByCC = {},
+    businessExpenses = 0, salariesPaid = 0,
+    totalProjectsPaid = 0, totalProjectsExpense = 0,
+    totalExpenses = 0, outOfPocket = 0, projectedPL = 0,
+    netProfit = 0, revenueByCC = {},
   } = summary || {};
 
   // Build a readable sub-line like "AED 102,660 · USD 1,200"
@@ -176,38 +192,103 @@ export default function Financials() {
         <PeriodPicker onChange={range => { setPeriodRange(range); }} />
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      {/* KPI Cards — Row 1 */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
         <SummaryCard
-          label="Total Revenue"
+          label="Total Received"
           value={fmt(invoiceRevenue)}
           sub={revenueCCSub || 'Invoice payments collected'}
           Icon={TrendingUp}
           accent="text-emerald-500"
         />
         <SummaryCard
-          label="Total Expenses"
-          value={fmt(totalExpenses)}
-          sub="Business + salaries + vendors"
-          Icon={TrendingDown}
-          accent="text-rose-400"
-        />
-        <SummaryCard
-          label={netProfit >= 0 ? 'Net Profit' : 'Net Loss'}
-          value={fmt(Math.abs(netProfit))}
-          sub={netProfit >= 0 ? `Margin: ${pct(netProfit, invoiceRevenue)}%` : 'Spending exceeds revenue'}
-          Icon={netProfit >= 0 ? TrendingUp : TrendingDown}
-          accent={netProfit >= 0 ? 'text-indigo-500' : 'text-rose-500'}
-          negative={netProfit < 0}
-        />
-        <SummaryCard
           label="Outstanding"
           value={fmt(outstanding)}
-          sub="Unpaid invoice balances"
+          sub="Due from clients — not yet received"
           Icon={Clock}
           accent="text-amber-500"
         />
+        {/* Out of Pocket — cash paid out vs cash received */}
+        <SummaryCard
+          label={outOfPocket > 0 ? 'Out of Pocket' : 'Cash Surplus'}
+          value={fmt(Math.abs(outOfPocket))}
+          sub={outOfPocket > 0 ? 'Cash paid exceeds cash received' : 'Received covers all paid costs'}
+          Icon={outOfPocket > 0 ? TrendingDown : TrendingUp}
+          accent={outOfPocket > 0 ? 'text-rose-500' : 'text-emerald-500'}
+          negative={outOfPocket > 0}
+        />
+        {/* Projected P&L — full picture when everything settles */}
+        <SummaryCard
+          label={projectedPL >= 0 ? 'Projected Profit' : 'Projected Loss'}
+          value={fmt(Math.abs(projectedPL))}
+          sub={projectedPL >= 0 ? '(Rcvd + Outstanding) − Full Project Costs' : 'Full costs exceed total revenue'}
+          Icon={projectedPL >= 0 ? TrendingUp : TrendingDown}
+          accent={projectedPL >= 0 ? 'text-indigo-500' : 'text-rose-500'}
+          negative={projectedPL < 0}
+        />
       </div>
+
+      {/* KPI Cards — Row 2: project costs + wallet */}
+      {(() => {
+        const inWallet = invoiceRevenue - totalExpenses;
+        return (
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+
+            {/* Total Paid (Projects) */}
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-rose-100">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider mb-3 text-rose-500">
+                <Package size={13} /> Total Paid (Projects)
+              </div>
+              <p className="text-2xl font-bold text-slate-900">{fmt(totalProjectsPaid)}</p>
+              <p className="text-xs text-slate-400 mt-1">All project costs paid out</p>
+            </div>
+
+            {/* Business Expenses + Salaries */}
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-orange-100">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider mb-3 text-orange-500">
+                <Receipt size={13} /> Other Expenses
+              </div>
+              <p className="text-2xl font-bold text-slate-900">{fmt(businessExpenses + salariesPaid)}</p>
+              <p className="text-xs text-slate-400 mt-1">
+                Business {fmt(businessExpenses)} · Salaries {fmt(salariesPaid)}
+              </p>
+            </div>
+
+            {/* In Wallet */}
+            <div className={`rounded-2xl p-5 shadow-sm border-2 ${inWallet >= 0 ? 'bg-cyan-50 border-cyan-200' : 'bg-rose-50 border-rose-200'}`}>
+              <div className={`flex items-center gap-2 text-xs font-semibold uppercase tracking-wider mb-2 ${inWallet >= 0 ? 'text-cyan-600' : 'text-rose-500'}`}>
+                <Wallet size={13} /> In Wallet
+              </div>
+              <p className={`text-2xl font-bold mb-3 ${inWallet >= 0 ? 'text-cyan-700' : 'text-rose-600'}`}>
+                {inWallet >= 0 ? '' : '−'}{fmt(Math.abs(inWallet))}
+              </p>
+              <div className="space-y-1 border-t border-cyan-200 pt-2">
+                <div className="flex justify-between text-xs">
+                  <span className="text-slate-500">+ Received</span>
+                  <span className="text-emerald-600 font-medium">{fmt(invoiceRevenue)}</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-slate-500">− Projects paid</span>
+                  <span className="text-rose-500">{fmt(totalProjectsPaid)}</span>
+                </div>
+                {businessExpenses > 0 && (
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-500">− Business exp.</span>
+                    <span className="text-rose-500">{fmt(businessExpenses)}</span>
+                  </div>
+                )}
+                {salariesPaid > 0 && (
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-500">− Salaries</span>
+                    <span className="text-rose-500">{fmt(salariesPaid)}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
 
       {/* Charts + P&L row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
@@ -259,8 +340,21 @@ export default function Financials() {
           <div className="mb-4">
             <p className="text-2xs font-bold uppercase tracking-wider text-emerald-500 mb-2">Income</p>
             <div className="flex items-center justify-between py-1.5 border-b border-slate-50">
-              <span className="text-xs text-slate-600">Invoice Payments</span>
+              <span className="text-xs text-slate-600">Invoice Payments Received</span>
               <span className="text-xs font-semibold text-emerald-600">+{fmt(invoiceRevenue)}</span>
+            </div>
+            {outstanding > 0 && (
+              <div className="flex items-center justify-between py-1.5 border-b border-slate-50">
+                <div>
+                  <span className="text-xs text-slate-600">Outstanding (Receivable)</span>
+                  <p className="text-2xs text-slate-400">Due from clients — counted in profit</p>
+                </div>
+                <span className="text-xs font-semibold text-amber-500">+{fmt(outstanding)}</span>
+              </div>
+            )}
+            <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
+              <span className="text-xs font-bold text-slate-700">Total Revenue</span>
+              <span className="text-xs font-bold text-emerald-600">+{fmt(invoiceRevenue + outstanding)}</span>
             </div>
           </div>
 
@@ -268,28 +362,48 @@ export default function Financials() {
           <div className="mb-4">
             <p className="text-2xs font-bold uppercase tracking-wider text-rose-500 mb-2">Expenses</p>
             {[
-              { label: 'Business Expenses',    val: businessExpenses },
-              { label: 'Salaries Paid',        val: salariesPaid },
-              { label: 'Vendor Payments',      val: vendorPayments },
-            ].map(({ label, val }) => (
+              { label: 'Projects Paid',     val: totalProjectsPaid, sub: 'all project costs paid out' },
+              { label: 'Business Expenses', val: businessExpenses,  sub: 'rent, utilities, etc.' },
+              { label: 'Salaries Paid',     val: salariesPaid,      sub: 'from Payroll' },
+            ].filter(r => r.val > 0).map(({ label, val, sub }) => (
               <div key={label} className="flex items-center justify-between py-1.5 border-b border-slate-50">
-                <span className="text-xs text-slate-600">{label}</span>
+                <div>
+                  <span className="text-xs text-slate-600">{label}</span>
+                  <p className="text-2xs text-slate-400">{sub}</p>
+                </div>
                 <span className="text-xs font-semibold text-rose-500">−{fmt(val)}</span>
               </div>
             ))}
+            <div className="flex items-center justify-between pt-2 mt-1">
+              <span className="text-xs font-bold text-slate-700">Total Expenses</span>
+              <span className="text-xs font-bold text-rose-600">−{fmt(totalExpenses)}</span>
+            </div>
           </div>
 
-          {/* Net */}
-          <div className={`mt-auto rounded-xl px-4 py-3 ${netProfit >= 0 ? 'bg-emerald-50 border border-emerald-100' : 'bg-rose-50 border border-rose-100'}`}>
+          {/* Out of Pocket */}
+          <div className={`rounded-xl px-4 py-3 mb-2 ${outOfPocket > 0 ? 'bg-rose-50 border border-rose-100' : 'bg-emerald-50 border border-emerald-100'}`}>
             <div className="flex items-center justify-between">
-              <span className="text-sm font-bold text-slate-700">{netProfit >= 0 ? 'Net Profit' : 'Net Loss'}</span>
-              <span className={`text-lg font-bold ${netProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                {netProfit >= 0 ? '+' : '−'}{fmt(Math.abs(netProfit))}
+              <div>
+                <span className="text-sm font-bold text-slate-700">{outOfPocket > 0 ? 'Out of Pocket' : 'Cash Surplus'}</span>
+                <p className="text-xs text-slate-400 mt-0.5">Received − all paid costs</p>
+              </div>
+              <span className={`text-lg font-bold ${outOfPocket > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                {outOfPocket > 0 ? '−' : '+'}{fmt(Math.abs(outOfPocket))}
               </span>
             </div>
-            {invoiceRevenue > 0 && (
-              <p className="text-xs text-slate-400 mt-0.5">Margin: {pct(netProfit, invoiceRevenue)}%</p>
-            )}
+          </div>
+
+          {/* Projected P&L */}
+          <div className={`mt-auto rounded-xl px-4 py-3 ${projectedPL >= 0 ? 'bg-indigo-50 border border-indigo-100' : 'bg-rose-50 border border-rose-200'}`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-sm font-bold text-slate-700">{projectedPL >= 0 ? 'Projected Profit' : 'Projected Loss'}</span>
+                <p className="text-xs text-slate-400 mt-0.5">(Rcvd + Outstanding) − full project costs</p>
+              </div>
+              <span className={`text-lg font-bold ${projectedPL >= 0 ? 'text-indigo-600' : 'text-rose-600'}`}>
+                {projectedPL >= 0 ? '+' : '−'}{fmt(Math.abs(projectedPL))}
+              </span>
+            </div>
           </div>
         </div>
       </div>

@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Store, Plus, Search, X, Trash2, Pencil, Phone, Mail,
   MapPin, Star, Banknote, Truck, Package, Scissors, Layers,
   CheckCircle2, AlertCircle, FileText, User, AlertTriangle,
-  ChevronRight, Check, Save,
+  ChevronRight, Check, Save, CreditCard, ChevronDown,
 } from 'lucide-react';
 import api from '../lib/api';
 import Drawer from '../components/Drawer';
@@ -220,7 +221,14 @@ function VendorDrawer({ vendorId, onClose, onEdit, onDeleted }) {
   const [loading, setLoading] = useState(true);
   const [delConf, setDelConf] = useState(false);
   const [deleting,setDeleting]= useState(false);
-  const [tab,     setTab]     = useState('Overview'); // 'Overview' | 'History'
+  const [tab,     setTab]     = useState('Overview'); // 'Overview' | 'Projects' | 'Pay'
+
+  // Payment form state
+  const [payForm,  setPayForm]  = useState({ amount: '', method: 'cash', reference: '', notes: '', paid_at: new Date().toISOString().slice(0,10) });
+  const [paying,   setPaying]   = useState(false);
+  const [payErr,   setPayErr]   = useState('');
+  const [payOk,    setPayOk]    = useState('');
+  const setP = (k, v) => setPayForm(f => ({ ...f, [k]: v }));
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -240,6 +248,21 @@ function VendorDrawer({ vendorId, onClose, onEdit, onDeleted }) {
       onDeleted(vendorId);
       onClose();
     } catch { setDeleting(false); }
+  }
+
+  async function handlePay() {
+    const amt = parseFloat(payForm.amount);
+    if (!amt || amt <= 0) { setPayErr('Enter a valid amount.'); return; }
+    setPaying(true); setPayErr(''); setPayOk('');
+    try {
+      const { data: res } = await api.post(`/vendors/${vendorId}/payments`, payForm);
+      const total = res.applied.reduce((s, a) => s + a.amount, 0);
+      setPayOk(`₨${total.toLocaleString()} recorded across ${res.applied.length} project(s).`);
+      setPayForm(f => ({ ...f, amount: '', reference: '', notes: '' }));
+      await load(); // refresh totals
+    } catch (e) {
+      setPayErr(e?.response?.data?.error ?? 'Payment failed.');
+    } finally { setPaying(false); }
   }
 
   if (!data && !loading) return null;
@@ -337,11 +360,13 @@ function VendorDrawer({ vendorId, onClose, onEdit, onDeleted }) {
 
             {/* Tabs */}
             <div className="flex gap-1 bg-slate-100 p-1 rounded-xl mx-6 mt-4 flex-shrink-0">
-              {['Overview','Projects'].map(t => (
-                <button key={t} onClick={() => setTab(t)}
-                  className={`flex-1 py-1.5 text-sm rounded-lg font-medium transition-all duration-150 ${
+              {['Overview','Projects','Pay'].map(t => (
+                <button key={t} onClick={() => { setTab(t); setPayOk(''); setPayErr(''); }}
+                  className={`flex-1 py-1.5 text-sm rounded-lg font-medium transition-all duration-150 flex items-center justify-center gap-1.5 ${
                     tab === t ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                  }`}>{t}</button>
+                  }`}>
+                  {t === 'Pay' && <CreditCard size={13} />}{t}
+                </button>
               ))}
             </div>
 
@@ -442,7 +467,6 @@ function VendorDrawer({ vendorId, onClose, onEdit, onDeleted }) {
                                 </div>
                               </>
                             )}
-
                             {/* Payment history */}
                             {pv.payments?.length > 0 && (
                               <div className="mt-3 pt-3 border-t border-slate-100 space-y-1.5">
@@ -464,6 +488,119 @@ function VendorDrawer({ vendorId, onClose, onEdit, onDeleted }) {
                   )}
                 </>
               )}
+
+              {tab === 'Pay' && (
+                <div className="space-y-4">
+
+                  {/* Outstanding per project */}
+                  {data.projects?.some(pv => (pv.invoice_amount - pv.total_paid) > 0) ? (
+                    <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wider px-4 pt-3 pb-2">Outstanding per Project</p>
+                      <div className="divide-y divide-slate-100">
+                        {data.projects.filter(pv => (pv.invoice_amount - pv.total_paid) > 0).map(pv => {
+                          const due = pv.invoice_amount - pv.total_paid;
+                          return (
+                            <div key={pv.id} className="flex items-center justify-between px-4 py-2.5">
+                              <div>
+                                <p className="text-sm font-medium text-slate-800">{pv.project_title}</p>
+                                {pv.service_description && <p className="text-xs text-slate-400">{pv.service_description}</p>}
+                              </div>
+                              <div className="text-right">
+                                <p className="text-sm font-bold text-rose-500">{pkr(due)} due</p>
+                                <p className="text-xs text-slate-400">{pkr(pv.total_paid)} of {pkr(pv.invoice_amount)} paid</p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="px-4 py-2.5 bg-rose-50 border-t border-rose-100 flex items-center justify-between">
+                        <span className="text-xs font-bold text-rose-700">Total Outstanding</span>
+                        <span className="text-sm font-bold text-rose-600">{pkr(outstanding)}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-emerald-50 border border-emerald-100 rounded-2xl px-4 py-3 flex items-center gap-2">
+                      <CheckCircle2 size={16} className="text-emerald-600 flex-shrink-0" />
+                      <p className="text-sm text-emerald-700 font-medium">All projects are fully paid.</p>
+                    </div>
+                  )}
+
+                  {/* Payment form */}
+                  <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3">
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Record Payment</p>
+                    <p className="text-xs text-slate-400">Amount auto-distributes across outstanding projects (oldest first). You can pay partial or combined amounts.</p>
+
+                    {payOk && (
+                      <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm px-3 py-2.5 rounded-xl flex items-center gap-2">
+                        <CheckCircle2 size={14} className="flex-shrink-0" /> {payOk}
+                      </div>
+                    )}
+                    {payErr && (
+                      <div className="bg-rose-50 border border-rose-200 text-rose-600 text-sm px-3 py-2.5 rounded-xl flex items-center gap-2">
+                        <AlertCircle size={14} className="flex-shrink-0" /> {payErr}
+                      </div>
+                    )}
+
+                    {/* Amount */}
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Amount (₨)</label>
+                      <div className="relative">
+                        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-medium">₨</span>
+                        <input type="number" min="0" value={payForm.amount} onChange={e => setP('amount', e.target.value)}
+                          className={`${inputCls} pl-8`} placeholder="0" autoFocus />
+                      </div>
+                      {/* Quick-fill buttons */}
+                      {outstanding > 0 && (
+                        <div className="flex gap-2 mt-2">
+                          <button type="button" onClick={() => setP('amount', String(outstanding))}
+                            className="text-xs px-3 py-1.5 bg-indigo-50 text-indigo-600 border border-indigo-200 rounded-lg hover:bg-indigo-100 font-semibold transition-colors">
+                            Pay Full ({pkr(outstanding)})
+                          </button>
+                          {data.projects?.filter(pv => (pv.invoice_amount - pv.total_paid) > 0).slice(0, 1).map(pv => {
+                            const due = pv.invoice_amount - pv.total_paid;
+                            return (
+                              <button key={pv.id} type="button" onClick={() => setP('amount', String(due))}
+                                className="text-xs px-3 py-1.5 bg-slate-50 text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-100 font-medium transition-colors truncate max-w-[160px]">
+                                Pay {pv.project_title} ({pkr(due)})
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Method</label>
+                        <select value={payForm.method} onChange={e => setP('method', e.target.value)} className={selectCls}>
+                          {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m.replace('_',' ')}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Date</label>
+                        <input type="date" value={payForm.paid_at} onChange={e => setP('paid_at', e.target.value)} className={inputCls} />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Reference / Cheque No.</label>
+                      <input value={payForm.reference} onChange={e => setP('reference', e.target.value)} className={inputCls} placeholder="Optional" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Notes</label>
+                      <input value={payForm.notes} onChange={e => setP('notes', e.target.value)} className={inputCls} placeholder="Optional" />
+                    </div>
+
+                    <button onClick={handlePay} disabled={paying || !payForm.amount}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold disabled:opacity-50 transition-colors">
+                      {paying
+                        ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Processing…</>
+                        : <><CreditCard size={15} />Record Payment</>
+                      }
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </>
         )}
@@ -484,64 +621,81 @@ function VendorCard({ vendor, onClick }) {
 
   return (
     <div onClick={onClick}
-      className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-indigo-200 transition-all duration-150 cursor-pointer group">
+      className={`bg-white rounded-2xl shadow-sm hover:shadow-md transition-all duration-150 cursor-pointer group overflow-hidden border ${
+        bal > 0 ? 'border-rose-200 hover:border-rose-300' : 'border-slate-200 hover:border-indigo-200'
+      }`}>
 
-      {/* Top */}
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${typeInfo.color}`}>
-            <TypeIcon size={16} />
-          </div>
-          <div className="min-w-0">
-            <p className="font-bold text-slate-900 group-hover:text-indigo-700 transition-colors truncate">{vendor.name}</p>
-            <p className="text-xs text-slate-400">{typeInfo.label}</p>
-          </div>
+      {/* Outstanding banner — only when there's a balance */}
+      {bal > 0 && (
+        <div className="bg-rose-50 border-b border-rose-200 px-4 py-2.5 flex items-center justify-between">
+          <span className="text-xs font-bold text-rose-600 uppercase tracking-wider">Outstanding</span>
+          <span className="text-base font-bold text-rose-600">{pkr(bal)}</span>
         </div>
-        {vendor.status === 'active'
-          ? <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-700 flex-shrink-0">Active</span>
-          : <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-slate-100 text-slate-500 flex-shrink-0">Inactive</span>}
-      </div>
-
-      {/* Contact */}
-      {vendor.phone && (
-        <div className="flex items-center gap-1.5 text-xs text-slate-500 mb-2">
-          <Phone size={11} className="text-slate-400" />
-          {vendor.phone}
+      )}
+      {bal === 0 && billed > 0 && (
+        <div className="bg-emerald-50 border-b border-emerald-100 px-4 py-2.5 flex items-center justify-between">
+          <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Fully Settled</span>
+          <span className="text-xs font-semibold text-emerald-500">✓ {pkr(paid)} paid</span>
         </div>
       )}
 
-      {/* Rating */}
-      {vendor.rating > 0 && (
-        <div className="flex items-center gap-0.5 mb-3">
-          {[1,2,3,4,5].map(n => (
-            <Star key={n} size={12} className={n <= vendor.rating ? 'text-amber-400 fill-amber-400' : 'text-slate-200'} />
-          ))}
-        </div>
-      )}
-
-      {/* Financial */}
-      <div className="border-t border-slate-100 pt-3 mt-3">
-        {billed > 0 ? (
-          <div className="space-y-2">
-            <div className="flex justify-between text-xs">
-              <span className="text-slate-500">Billed</span>
-              <span className="text-slate-700 font-medium">{pkr(billed)}</span>
+      <div className="p-5">
+        {/* Name + type + status */}
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${typeInfo.color}`}>
+              <TypeIcon size={18} />
             </div>
-            <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-              <div className={`h-1.5 rounded-full transition-all ${pct === 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`}
-                style={{ width: `${pct}%` }} />
+            <div className="min-w-0">
+              <p className="text-base font-bold text-slate-900 group-hover:text-indigo-700 transition-colors truncate">{vendor.name}</p>
+              <p className="text-xs text-slate-400 mt-0.5">{typeInfo.label}</p>
             </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-emerald-600 font-medium">{pkr(paid)} paid</span>
-              {bal > 0 && <span className="text-rose-500 font-medium">{pkr(bal)} due</span>}
-            </div>
-            <p className="text-2xs text-slate-400">{vendor.project_count || 0} project{vendor.project_count !== 1 ? 's' : ''}</p>
           </div>
-        ) : (
-          <p className="text-xs text-slate-400">
-            No invoices yet · {vendor.project_count || 0} project{vendor.project_count !== 1 ? 's' : ''}
-          </p>
+          {vendor.status === 'active'
+            ? <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-700 flex-shrink-0">Active</span>
+            : <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-slate-100 text-slate-500 flex-shrink-0">Inactive</span>}
+        </div>
+
+        {/* Contact */}
+        {vendor.phone && (
+          <div className="flex items-center gap-2 text-xs text-slate-500 mb-2.5">
+            <Phone size={12} className="text-slate-400" />
+            {vendor.phone}
+          </div>
         )}
+
+        {/* Rating */}
+        {vendor.rating > 0 && (
+          <div className="flex items-center gap-0.5 mb-3">
+            {[1,2,3,4,5].map(n => (
+              <Star key={n} size={13} className={n <= vendor.rating ? 'text-amber-400 fill-amber-400' : 'text-slate-200'} />
+            ))}
+          </div>
+        )}
+
+        {/* Financial */}
+        <div className="border-t border-slate-100 pt-3 mt-2">
+          {billed > 0 ? (
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs text-slate-500">
+                <span>Billed</span>
+                <span className="font-semibold text-slate-700">{pkr(billed)}</span>
+              </div>
+              <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                <div className={`h-1.5 rounded-full transition-all ${pct === 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`}
+                  style={{ width: `${pct}%` }} />
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-emerald-600 font-semibold">{pkr(paid)} paid</span>
+                <span className="text-slate-400">{vendor.project_count || 0} project{vendor.project_count !== 1 ? 's' : ''}</span>
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-slate-400">
+              No invoices yet · {vendor.project_count || 0} project{vendor.project_count !== 1 ? 's' : ''}
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -550,13 +704,13 @@ function VendorCard({ vendor, onClick }) {
 // ─── Main Export ──────────────────────────────────────────────────────────────
 
 export default function Vendors() {
-  const [vendors,        setVendors]    = useState([]);
-  const [loading,        setLoading]    = useState(true);
-  const [search,         setSearch]     = useState('');
-  const [typeFilter,     setTypeFilter] = useState('all');
-  const [showModal,      setShowModal]  = useState(false);
-  const [editVendor,     setEditVendor] = useState(null);
-  const [drawerVendorId, setDrawerId]   = useState(null);
+  const navigate = useNavigate();
+  const [vendors,    setVendors]    = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [search,     setSearch]     = useState('');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [showModal,  setShowModal]  = useState(false);
+  const [editVendor, setEditVendor] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -670,26 +824,17 @@ export default function Vendors() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map(v => (
             <VendorCard key={v.id} vendor={v}
-              onClick={() => setDrawerId(v.id)} />
+              onClick={() => navigate(`/vendors/${v.id}`)} />
           ))}
         </div>
       )}
 
-      {/* ── Modals / Drawer ── */}
+      {/* ── Add / Edit Modal ── */}
       {showModal && (
         <VendorModal
           vendor={editVendor}
           onClose={() => { setShowModal(false); setEditVendor(null); }}
           onSaved={v => { handleSaved(v); load(); }}
-        />
-      )}
-
-      {drawerVendorId && (
-        <VendorDrawer
-          vendorId={drawerVendorId}
-          onClose={() => setDrawerId(null)}
-          onEdit={v => { setEditVendor(v); setShowModal(true); setDrawerId(null); }}
-          onDeleted={id => { handleDeleted(id); load(); }}
         />
       )}
     </div>

@@ -548,10 +548,64 @@ const migrations = [
   // Shipping cost on quotations & invoices (added to subtotal before tax)
   `ALTER TABLE quotations ADD COLUMN shipping_cost REAL DEFAULT 0`,
   `ALTER TABLE invoices   ADD COLUMN shipping_cost REAL DEFAULT 0`,
+  `ALTER TABLE invoices   ADD COLUMN issued_at DATE`,
+  `CREATE TABLE IF NOT EXISTS project_shipping (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id      INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    carrier         TEXT    DEFAULT '',
+    tracking_number TEXT    DEFAULT '',
+    shipping_date   TEXT    DEFAULT '',
+    amount          REAL    DEFAULT 0,
+    paid            INTEGER DEFAULT 0,
+    paid_amount     REAL    DEFAULT 0,
+    notes           TEXT    DEFAULT '',
+    expense_id      INTEGER,
+    created_at      TEXT    DEFAULT (datetime('now'))
+  )`,
+  // Freight vendor linking
+  `ALTER TABLE project_shipping ADD COLUMN vendor_id INTEGER REFERENCES vendors(id)`,
+  // Shipping-linked payment tracking
+  `ALTER TABLE project_vendor_payments ADD COLUMN shipping_id INTEGER REFERENCES project_shipping(id)`,
 ];
 
 for (const sql of migrations) {
   try { db.exec(sql); } catch { /* column already exists */ }
+}
+
+// ── Fix: make project_vendor_payments.project_vendor_id nullable ───────────
+// Shipping payments have no project_vendor row, so the FK constraint breaks.
+// We recreate the table if the column is still NOT NULL.
+try {
+  const colInfo = db.prepare("PRAGMA table_info(project_vendor_payments)").all();
+  const pvpIdCol = colInfo.find(c => c.name === 'project_vendor_id');
+  if (pvpIdCol && pvpIdCol.notnull === 1) {
+    db.transaction(() => {
+      db.exec(`CREATE TABLE project_vendor_payments_v2 (
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_vendor_id INTEGER REFERENCES project_vendors(id) ON DELETE CASCADE,
+        project_id        INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        amount            REAL NOT NULL,
+        method            TEXT DEFAULT 'cash',
+        reference         TEXT DEFAULT '',
+        notes             TEXT DEFAULT '',
+        paid_at           TEXT DEFAULT (datetime('now')),
+        created_at        TEXT DEFAULT (datetime('now')),
+        receipt_url       TEXT DEFAULT '',
+        shipping_id       INTEGER REFERENCES project_shipping(id) ON DELETE SET NULL
+      )`);
+      // Copy existing rows; shipping_id defaults to NULL for old rows
+      db.exec(`INSERT INTO project_vendor_payments_v2
+        (id, project_vendor_id, project_id, amount, method, reference, notes, paid_at, created_at, receipt_url)
+        SELECT id, project_vendor_id, project_id, amount, method, reference, notes, paid_at, created_at,
+               COALESCE(receipt_url,'')
+        FROM project_vendor_payments`);
+      db.exec(`DROP TABLE project_vendor_payments`);
+      db.exec(`ALTER TABLE project_vendor_payments_v2 RENAME TO project_vendor_payments`);
+    })();
+    console.log('[DB] project_vendor_payments recreated with nullable project_vendor_id');
+  }
+} catch (e) {
+  console.error('[DB] Migration error (project_vendor_payments):', e.message);
 }
 
 // ── Seed cost_breakdown_items if empty ─────────────────────────────────────

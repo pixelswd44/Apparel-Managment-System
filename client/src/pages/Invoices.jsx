@@ -57,8 +57,15 @@ function StatusBadge({ status }) {
 
 // ── Payment Modal ─────────────────────────────────────────────────────────────
 
-function PaymentModal({ invoice, onClose, onSuccess }) {
-  const [form, setForm] = useState({
+function PaymentModal({ invoice, onClose, onSuccess, editPayment = null }) {
+  const isEdit = !!editPayment;
+  const [form, setForm] = useState(isEdit ? {
+    amount:    parseFloat(editPayment.amount).toFixed(2),
+    method:    editPayment.method || 'cash',
+    reference: editPayment.reference || '',
+    notes:     editPayment.notes || '',
+    paid_at:   editPayment.paid_at?.split('T')[0] ?? new Date().toISOString().split('T')[0],
+  } : {
     amount:    (parseFloat(invoice.total) - parseFloat(invoice.amount_paid || 0)).toFixed(2),
     method:    'cash',
     reference: '',
@@ -76,13 +83,14 @@ function PaymentModal({ invoice, onClose, onSuccess }) {
     }
     setSaving(true); setError('');
     try {
-      const { data } = await api.post(`/invoices/${invoice.id}/payments`, {
-        ...form, paid_at: new Date(form.paid_at).toISOString(),
-      });
-      onSuccess(data);
+      const payload = { ...form, paid_at: new Date(form.paid_at).toISOString() };
+      const { data } = isEdit
+        ? await api.patch(`/invoices/${invoice.id}/payments/${editPayment.id}`, payload)
+        : await api.post(`/invoices/${invoice.id}/payments`, payload);
+      onSuccess(data, isEdit ? editPayment.id : null);
       onClose();
     } catch (e) {
-      setError(e?.response?.data?.error ?? 'Failed to record payment.');
+      setError(e?.response?.data?.error ?? (isEdit ? 'Failed to update payment.' : 'Failed to record payment.'));
     } finally { setSaving(false); }
   }
 
@@ -91,7 +99,7 @@ function PaymentModal({ invoice, onClose, onSuccess }) {
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-modal">
         <div className="flex items-center justify-between mb-5">
           <div>
-            <h3 className="font-bold text-slate-900">Record Payment</h3>
+            <h3 className="font-bold text-slate-900">{isEdit ? 'Edit Payment' : 'Record Payment'}</h3>
             <p className="text-xs text-slate-400 mt-0.5">{invoice.number} · Balance: {fmtMoney(parseFloat(invoice.total) - parseFloat(invoice.amount_paid || 0), sym)}</p>
           </div>
           <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-all"><X size={16} /></button>
@@ -151,7 +159,7 @@ function PaymentModal({ invoice, onClose, onSuccess }) {
         <div className="flex gap-3 mt-6">
           <button onClick={handleSave} disabled={saving}
             className="flex-1 px-4 py-2.5 text-sm bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-60 font-semibold transition-colors flex items-center justify-center gap-2">
-            {saving ? 'Recording…' : <><Check size={14} />Record Payment</>}
+            {saving ? (isEdit ? 'Saving…' : 'Recording…') : <><Check size={14} />{isEdit ? 'Save Changes' : 'Record Payment'}</>}
           </button>
           <button onClick={onClose} className="px-4 py-2.5 text-sm border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-colors">Cancel</button>
         </div>
@@ -368,6 +376,7 @@ function InvoiceView({ invoiceId, onClose, onConverted, embedded = false }) {
   const [settings,    setSettings]   = useState({});
   const [loading,     setLoading]    = useState(true);
   const [payModal,    setPayModal]   = useState(false);
+  const [editingPayment, setEditingPayment] = useState(null);
   const [receipt,     setReceipt]    = useState(null);
   const [delConfirm,  setDelConfirm] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -424,14 +433,31 @@ function InvoiceView({ invoiceId, onClose, onConverted, embedded = false }) {
     }
   }
 
-  function handlePaymentSuccess(data) {
+  async function handleDeletePayment(payment) {
+    if (!window.confirm(`Delete this payment of ${fmtMoney(payment.amount, getSym(invoice.currency))}? This cannot be undone.`)) return;
+    try {
+      const { data } = await api.delete(`/invoices/${invoice.id}/payments/${payment.id}`);
+      setInvoice(prev => ({
+        ...prev,
+        amount_paid: data.amount_paid,
+        status:      data.status,
+        payments: (prev.payments || []).filter(p => p.id !== payment.id),
+      }));
+    } catch (e) {
+      alert(e?.response?.data?.error ?? 'Failed to delete payment.');
+    }
+  }
+
+  function handlePaymentSuccess(data, editedId = null) {
     setInvoice(prev => ({
       ...prev,
       amount_paid: data.amount_paid,
       status:      data.status,
-      payments:    [data.payment, ...(prev.payments || [])],
+      payments: editedId
+        ? (prev.payments || []).map(p => p.id === editedId ? data.payment : p)
+        : [data.payment, ...(prev.payments || [])],
     }));
-    setReceipt(data.payment);
+    if (!editedId) setReceipt(data.payment);
   }
 
   if (loading) {
@@ -484,8 +510,13 @@ function InvoiceView({ invoiceId, onClose, onConverted, embedded = false }) {
 
   return (
     <>
-      {payModal && (
-        <PaymentModal invoice={invoice} onClose={() => setPayModal(false)} onSuccess={handlePaymentSuccess} />
+      {(payModal || editingPayment) && (
+        <PaymentModal
+          invoice={invoice}
+          editPayment={editingPayment}
+          onClose={() => { setPayModal(false); setEditingPayment(null); }}
+          onSuccess={handlePaymentSuccess}
+        />
       )}
 
       <div className={embedded
@@ -648,7 +679,7 @@ function InvoiceView({ invoiceId, onClose, onConverted, embedded = false }) {
                 <p className="text-xs font-semibold text-slate-700 flex-1 min-w-0 truncate">{invoice.subject}</p>
               )}
               <p className="text-xs text-slate-500 flex-shrink-0 ml-auto whitespace-nowrap">
-                <span className="font-semibold text-slate-700">Date:</span> {fmt(invoice.created_at)}
+                <span className="font-semibold text-slate-700">Date:</span> {fmt(invoice.issued_at || invoice.created_at)}
                 {invoice.due_date && (
                   <> &nbsp;·&nbsp;
                     <span className={`font-semibold ${new Date(invoice.due_date) < new Date() && invoice.status !== 'paid' ? 'text-rose-600' : 'text-slate-700'}`}>Due:</span>{' '}
@@ -800,9 +831,17 @@ function InvoiceView({ invoiceId, onClose, onConverted, embedded = false }) {
                         <p className="text-sm font-bold text-emerald-700">{fmtMoney(p.amount, getSym(invoice.currency))}</p>
                         <p className="text-xs text-slate-400">{fmt(p.paid_at)}</p>
                       </div>
+                      <button onClick={() => setEditingPayment(p)}
+                        className="text-xs text-slate-500 hover:text-slate-700 font-semibold px-2 py-1 rounded-lg hover:bg-slate-100 transition-colors">
+                        Edit
+                      </button>
                       <button onClick={() => setReceipt(p)}
                         className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold px-2 py-1 rounded-lg hover:bg-indigo-50 transition-colors">
                         Receipt
+                      </button>
+                      <button onClick={() => handleDeletePayment(p)}
+                        className="text-xs text-rose-500 hover:text-rose-700 font-semibold px-2 py-1 rounded-lg hover:bg-rose-50 transition-colors">
+                        Delete
                       </button>
                     </div>
                   </div>
@@ -872,10 +911,14 @@ function ConfirmDelete({ invoice, onConfirm, onCancel, loading }) {
 
 // ── Payments Tab ──────────────────────────────────────────────────────────────
 
-function PaymentsTab({ onPrintReceipt, settings }) {
-  const [payments, setPayments] = useState([]);
-  const [loading,  setLoading]  = useState(true);
-  const [search,   setSearch]   = useState('');
+function PaymentsTab({ onPrintReceipt, settings, onPaymentDeleted }) {
+  const [payments,    setPayments]    = useState([]);
+  const [loading,     setLoading]     = useState(true);
+  const [search,      setSearch]      = useState('');
+  const [editTarget,  setEditTarget]  = useState(null); // payment being edited
+  const [editForm,    setEditForm]    = useState({});
+  const [editSaving,  setEditSaving]  = useState(false);
+  const [editError,   setEditError]   = useState('');
 
   useEffect(() => {
     api.get('/payments')
@@ -883,6 +926,48 @@ function PaymentsTab({ onPrintReceipt, settings }) {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  function openEdit(p) {
+    setEditTarget(p);
+    setEditForm({
+      amount:    parseFloat(p.amount).toFixed(2),
+      method:    p.method || 'cash',
+      reference: p.reference || '',
+      notes:     p.notes || '',
+      paid_at:   p.paid_at?.split('T')[0] ?? new Date().toISOString().split('T')[0],
+    });
+    setEditError('');
+  }
+
+  async function handleDelete(p) {
+    if (!window.confirm(`Delete payment of ${fmtMoney(p.amount, getSym(p.currency))} for ${p.invoice_number}? This cannot be undone.`)) return;
+    try {
+      await api.delete(`/invoices/${p.invoice_id}/payments/${p.id}`);
+      setPayments(prev => prev.filter(x => x.id !== p.id));
+      if (onPaymentDeleted) onPaymentDeleted();
+    } catch (e) {
+      alert(e?.response?.data?.error ?? 'Failed to delete payment.');
+    }
+  }
+
+  async function handleEditSave() {
+    if (!parseFloat(editForm.amount) || parseFloat(editForm.amount) <= 0) {
+      setEditError('Enter a valid amount.'); return;
+    }
+    setEditSaving(true); setEditError('');
+    try {
+      const { data } = await api.patch(
+        `/invoices/${editTarget.invoice_id}/payments/${editTarget.id}`,
+        { ...editForm, paid_at: new Date(editForm.paid_at).toISOString() },
+      );
+      setPayments(prev => prev.map(p =>
+        p.id === editTarget.id ? { ...p, ...editForm, paid_at: data.payment.paid_at, amount: data.payment.amount } : p
+      ));
+      setEditTarget(null);
+    } catch (e) {
+      setEditError(e?.response?.data?.error ?? 'Failed to update payment.');
+    } finally { setEditSaving(false); }
+  }
 
   const filtered = search.trim()
     ? payments.filter(p =>
@@ -950,7 +1035,7 @@ function PaymentsTab({ onPrintReceipt, settings }) {
                 <th className="text-left px-5 py-3.5 text-xs font-semibold text-slate-400 uppercase tracking-wider">Date</th>
                 <th className="text-left px-5 py-3.5 text-xs font-semibold text-slate-400 uppercase tracking-wider">Reference</th>
                 <th className="text-right px-5 py-3.5 text-xs font-semibold text-slate-400 uppercase tracking-wider">Amount</th>
-                <th className="px-5 py-3.5 text-xs font-semibold text-slate-400 uppercase tracking-wider text-right">Receipt</th>
+                <th className="px-5 py-3.5 text-xs font-semibold text-slate-400 uppercase tracking-wider text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -984,6 +1069,12 @@ function PaymentsTab({ onPrintReceipt, settings }) {
                       <span className="font-bold text-emerald-700">{fmtMoney(p.amount, sym)}</span>
                     </td>
                     <td className="px-5 py-3.5 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={() => openEdit(p)}
+                        className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 font-semibold px-2.5 py-1.5 rounded-lg hover:bg-slate-100 transition-colors border border-transparent hover:border-slate-200">
+                        <Pencil size={12} /> Edit
+                      </button>
                       <button
                         onClick={() => onPrintReceipt({
                           invoice: {
@@ -1004,6 +1095,12 @@ function PaymentsTab({ onPrintReceipt, settings }) {
                         className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-semibold px-2.5 py-1.5 rounded-lg hover:bg-indigo-50 transition-colors border border-transparent hover:border-indigo-200">
                         <Printer size={12} /> Receipt
                       </button>
+                      <button
+                        onClick={() => handleDelete(p)}
+                        className="inline-flex items-center gap-1 text-xs text-rose-500 hover:text-rose-700 font-semibold px-2.5 py-1.5 rounded-lg hover:bg-rose-50 transition-colors border border-transparent hover:border-rose-200">
+                        <Trash2 size={12} /> Delete
+                      </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -1018,6 +1115,86 @@ function PaymentsTab({ onPrintReceipt, settings }) {
           {filtered.length} payment{filtered.length !== 1 ? 's' : ''}
           {search ? ` matching "${search}"` : ''}
         </p>
+      )}
+
+      {/* ── Edit Payment Modal ── */}
+      {editTarget && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] p-4 animate-overlay">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-modal">
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <h3 className="font-bold text-slate-900">Edit Payment</h3>
+                <p className="text-xs text-slate-400 mt-0.5">{editTarget.invoice_number} · {editTarget.client_name}</p>
+              </div>
+              <button onClick={() => setEditTarget(null)} className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-all"><X size={16} /></button>
+            </div>
+
+            {editError && (
+              <div className="mb-4 bg-rose-50 border border-rose-200 text-rose-700 text-sm px-3 py-2.5 rounded-xl flex items-center gap-2">
+                <AlertTriangle size={14} />{editError}
+              </div>
+            )}
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Payment Method</label>
+                <div className="flex gap-2">
+                  {PAY_METHODS.map(({ value, label, icon: Icon }) => (
+                    <button key={value} type="button"
+                      onClick={() => setEditForm(f => ({ ...f, method: value }))}
+                      className={`flex-1 flex flex-col items-center gap-1.5 py-3 rounded-xl border text-xs font-semibold transition-all ${
+                        editForm.method === value
+                          ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
+                          : 'border-slate-200 text-slate-600 hover:border-indigo-200 hover:bg-indigo-50'
+                      }`}>
+                      <Icon size={16} />{label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Amount ({getSym(editTarget.currency)})</label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">{getSym(editTarget.currency)}</span>
+                  <input type="number" min="0" step="any" value={editForm.amount} autoFocus
+                    onChange={e => setEditForm(f => ({ ...f, amount: e.target.value }))}
+                    className={`${inputCls} pl-7`} placeholder="0.00" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Date</label>
+                  <input type="date" value={editForm.paid_at}
+                    onChange={e => setEditForm(f => ({ ...f, paid_at: e.target.value }))}
+                    className={inputCls} />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Reference #</label>
+                  <input value={editForm.reference}
+                    onChange={e => setEditForm(f => ({ ...f, reference: e.target.value }))}
+                    className={inputCls} placeholder="Cheque / TXN ID…" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Notes</label>
+                <textarea rows={2} value={editForm.notes}
+                  onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
+                  className={`${inputCls} resize-none`} placeholder="Optional note…" />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button onClick={handleEditSave} disabled={editSaving}
+                className="flex-1 px-4 py-2.5 text-sm bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-60 font-semibold transition-colors flex items-center justify-center gap-2">
+                {editSaving ? 'Saving…' : <><Check size={14} />Save Changes</>}
+              </button>
+              <button onClick={() => setEditTarget(null)} className="px-4 py-2.5 text-sm border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-colors">Cancel</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1151,6 +1328,7 @@ export default function Invoices() {
           <PaymentsTab
             settings={settings}
             onPrintReceipt={data => setPaymentsReceipt(data)}
+            onPaymentDeleted={load}
           />
         </div>
       )}
@@ -1230,7 +1408,7 @@ export default function Invoices() {
                         <p className="text-xs text-slate-400 truncate">{inv.subject}</p>
                       )}
                       <div className="flex items-center justify-between mt-0.5">
-                        <span className="text-xs text-slate-400">{fmt(inv.created_at)}</span>
+                        <span className="text-xs text-slate-400">{fmt(inv.issued_at || inv.created_at)}</span>
                         <div className="text-right">
                           <span className="text-xs font-bold text-slate-700">{fmtMoney(inv.total, sym)}</span>
                           {balance > 0 && (

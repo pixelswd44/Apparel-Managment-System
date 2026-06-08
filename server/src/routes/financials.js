@@ -49,13 +49,77 @@ router.get('/summary', (req, res) => {
     ? db.prepare(`SELECT COALESCE(SUM(net_pay),0) as total FROM payroll_records WHERE status='paid' AND date(paid_at) >= ? AND date(paid_at) <= ?`).get(from, to).total
     : db.prepare(`SELECT COALESCE(SUM(net_pay),0) as total FROM payroll_records WHERE status='paid'`).get().total;
 
-  // Vendor payments — stored in PKR
-  const vendorPayments = hasRange
-    ? db.prepare(`SELECT COALESCE(SUM(amount),0) as total FROM project_vendor_payments WHERE date(paid_at) >= ? AND date(paid_at) <= ?`).get(from, to).total
-    : db.prepare(`SELECT COALESCE(SUM(amount),0) as total FROM project_vendor_payments`).get().total;
+  // ── Total Projects Paid ────────────────────────────────────────────────────
+  // Matches the "Paid" shown on each project card:
+  //   product fabrics paid + process costs paid + external costs paid
+  //   + vendor payments + worker payments + shipping paid + extra costs
+  const allProducts = db.prepare(`SELECT fabrics, costs, external_costs FROM project_products`).all();
+  const productsPaid = allProducts.reduce((sum, pp) => {
+    try {
+      const fabs = JSON.parse(pp.fabrics         || '[]').reduce((s, f) => s + (parseFloat(f.amount_paid) || 0), 0);
+      const prcs = JSON.parse(pp.costs           || '[]').reduce((s, c) => s + (parseFloat(c.amount_paid) || 0), 0);
+      const exts = JSON.parse(pp.external_costs  || '[]').reduce((s, e) => s + (parseFloat(e.amount_paid) || 0), 0);
+      return sum + fabs + prcs + exts;
+    } catch { return sum; }
+  }, 0);
 
-  const totalExpenses = businessExpenses + salariesPaid + vendorPayments;
-  const netProfit     = invoiceRevenue - totalExpenses;
+  const vendorPayments = db.prepare(`SELECT COALESCE(SUM(amount),0) as total FROM project_vendor_payments`).get().total;
+  const workerPayments = db.prepare(`SELECT COALESCE(SUM(paid_amount),0) as total FROM project_workers WHERE paid_amount > 0`).get().total;
+  const shippingPaid   = db.prepare(`SELECT COALESCE(SUM(paid_amount),0) as total FROM project_shipping WHERE paid_amount > 0`).get().total;
+
+  const allProjectsExtra = db.prepare(`SELECT extra_costs FROM projects WHERE extra_costs IS NOT NULL`).all();
+  const extraCosts = allProjectsExtra.reduce((sum, p) => {
+    try { return sum + JSON.parse(p.extra_costs || '[]').reduce((s, c) => s + (parseFloat(c.amount) || 0), 0); }
+    catch { return sum; }
+  }, 0);
+
+  const totalProjectsPaid = productsPaid + vendorPayments + workerPayments + shippingPaid + extraCosts;
+
+  // ── Total Projects Expense (Billed/Projected — mirrors fin_total_expense in projects route) ──
+  // productCost: fabric rate×qty + process cost_per_piece×qty + external_costs total
+  const allProductsFull = db.prepare(`SELECT fabrics, costs, external_costs, total_quantity, fabric_per_piece, fabric_price_per_unit FROM project_products`).all();
+  const totalProductCost = allProductsFull.reduce((sum, pp) => {
+    try {
+      const fabrics  = JSON.parse(pp.fabrics        || '[]');
+      const costs    = JSON.parse(pp.costs          || '[]');
+      const extCosts = JSON.parse(pp.external_costs || '[]');
+      const qty      = parseFloat(pp.total_quantity) || 0;
+      const fabricCost = fabrics.length > 0
+        ? fabrics.reduce((s, f) => s + (parseFloat(f.qty)||0) * (parseFloat(f.rate)||0), 0)
+        : (parseFloat(pp.fabric_per_piece)||0) * (parseFloat(pp.fabric_price_per_unit)||0) * qty;
+      const procCost = costs.reduce((s, c) => s + (parseFloat(c.cost_per_piece)||0), 0) * qty;
+      const extCost  = extCosts.reduce((s, c) => s + (parseFloat(c.total)||0), 0);
+      return sum + fabricCost + procCost + extCost;
+    } catch { return sum; }
+  }, 0);
+
+  // vendorBilled: tasks total or invoice_amount fallback
+  const allVendorRows = db.prepare(`SELECT tasks, invoice_amount FROM project_vendors`).all();
+  const totalVendorBilled = allVendorRows.reduce((sum, pv) => {
+    try {
+      const tasks = JSON.parse(pv.tasks || '[]');
+      const tasksTotal = tasks.reduce((s, t) =>
+        s + (t.type === 'per_piece' ? (parseFloat(t.agreed)||0)*(parseFloat(t.qty)||0) : (parseFloat(t.agreed)||0)), 0);
+      return sum + (tasksTotal > 0 ? tasksTotal : Number(pv.invoice_amount || 0));
+    } catch { return sum; }
+  }, 0);
+
+  const totalWorkerAgreed  = db.prepare(`SELECT COALESCE(SUM(agreed_amount),0) as total FROM project_workers`).get().total;
+  const totalShippingBilled = db.prepare(`SELECT COALESCE(SUM(amount),0) as total FROM project_shipping`).get().total;
+
+  // totalProjectsExpense = full projected cost (what projects are expected to cost when all paid)
+  const totalProjectsExpense = totalProductCost + totalVendorBilled + totalWorkerAgreed + totalShippingBilled + extraCosts;
+
+  const totalExpenses = totalProjectsPaid + businessExpenses + salariesPaid;
+
+  // Out of Pocket = cash already paid out minus cash received (positive = money from your pocket)
+  const outOfPocket = totalExpenses - invoiceRevenue;
+
+  // Projected P&L = (received + outstanding) minus full projected costs
+  const projectedPL = (invoiceRevenue + outstanding) - (totalProjectsExpense + businessExpenses + salariesPaid);
+
+  // Legacy netProfit kept for compatibility (same as projectedPL)
+  const netProfit = projectedPL;
 
   // Per-currency revenue breakdown for display
   const revenueByCC = {};
@@ -64,7 +128,7 @@ router.get('/summary', (req, res) => {
     revenueByCC[cc] = (revenueByCC[cc] || 0) + (parseFloat(p.amount) || 0);
   }
 
-  res.json({ invoiceRevenue, outstanding, businessExpenses, salariesPaid, vendorPayments, totalExpenses, netProfit, revenueByCC });
+  res.json({ invoiceRevenue, outstanding, businessExpenses, salariesPaid, totalProjectsPaid, totalProjectsExpense, totalExpenses, outOfPocket, projectedPL, netProfit, revenueByCC });
 });
 
 // ── Monthly P&L (last 12 months, or within a date range) ──────────────────
@@ -112,8 +176,33 @@ router.get('/monthly', (req, res) => {
       `SELECT COALESCE(SUM(amount), 0) as total FROM project_vendor_payments WHERE strftime('%Y-%m', paid_at) = ?`
     ).get(month).total;
 
-    const totalOut = expenses + salaries + vendorPay;
-    return { month, revenue, expenses, salaries, vendorPay, totalOut, net: revenue - totalOut };
+    const workerPay = db.prepare(
+      `SELECT COALESCE(SUM(paid_amount), 0) as total FROM project_workers WHERE paid_amount > 0 AND strftime('%Y-%m', created_at) = ?`
+    ).get(month).total;
+
+    const shippingPay = db.prepare(
+      `SELECT COALESCE(SUM(paid_amount), 0) as total FROM project_shipping WHERE paid_amount > 0 AND strftime('%Y-%m', shipping_date) = ?`
+    ).get(month).total;
+
+    // Fabric costs by month — only amount_paid (cash actually paid for fabric)
+    const fabricRows = db.prepare(
+      `SELECT pp.fabrics FROM project_products pp JOIN projects p ON p.id=pp.project_id WHERE strftime('%Y-%m', p.updated_at) = ?`
+    ).all(month);
+    const fabricPay = fabricRows.reduce((sum, pp) => {
+      try { return sum + JSON.parse(pp.fabrics||'[]').reduce((s,f) => s + (parseFloat(f.amount_paid)||0), 0); }
+      catch { return sum; }
+    }, 0);
+
+    const extraRows = db.prepare(
+      `SELECT extra_costs FROM projects WHERE strftime('%Y-%m', updated_at) = ? AND extra_costs IS NOT NULL`
+    ).all(month);
+    const extraPay = extraRows.reduce((sum, p) => {
+      try { return sum + (JSON.parse(p.extra_costs||'[]')).reduce((s,c)=>s+(parseFloat(c.amount)||0),0); }
+      catch { return sum; }
+    }, 0);
+
+    const totalOut = expenses + salaries + vendorPay + workerPay + shippingPay + fabricPay + extraPay;
+    return { month, revenue, expenses, salaries, vendorPay, workerPay, shippingPay, fabricPay, extraPay, totalOut, net: revenue - totalOut };
   });
 
   res.json(result);
@@ -182,11 +271,17 @@ router.get('/transactions', (req, res) => {
 
   const vendorPay = db.prepare(`
     SELECT pvp.id, 'vendor' as type, 'Vendor Payment' as category,
-           pv.vendor_name as reference, pv.vendor_name as party,
+           COALESCE(v.name, vs.name, 'Vendor') as reference,
+           COALESCE(v.name, vs.name, 'Vendor') as party,
            pvp.amount, 'PKR' as currency,
-           pvp.paid_at as date
+           pvp.paid_at as date,
+           COALESCE(pvp.reference,'') as tx_ref,
+           COALESCE(pvp.method,'') as method
     FROM project_vendor_payments pvp
     LEFT JOIN project_vendors pv ON pv.id = pvp.project_vendor_id
+    LEFT JOIN vendors v ON v.id = pv.vendor_id
+    LEFT JOIN project_shipping ps ON ps.id = pvp.shipping_id
+    LEFT JOIN vendors vs ON vs.id = ps.vendor_id
     WHERE 1=1 ${vendWhere}
     ORDER BY pvp.paid_at DESC LIMIT ?
   `).all(...vendArgs).map(p => ({ ...p, amount_pkr: p.amount, amount_orig: p.amount }));
@@ -202,11 +297,217 @@ router.get('/transactions', (req, res) => {
     ORDER BY pr.paid_at DESC LIMIT ?
   `).all(...salArgs).map(s => ({ ...s, amount_pkr: s.amount, amount_orig: s.amount }));
 
-  const all = [...payments, ...expenses, ...vendorPay, ...salaries]
+  const workerWhere = hasRange ? `AND date(pw.created_at) >= ? AND date(pw.created_at) <= ?` : '';
+  const workerArgs  = hasRange ? [from, to, limit] : [limit];
+  const workerPay = db.prepare(`
+    SELECT pw.id, 'vendor' as type, 'Worker Payment' as category,
+           pw.worker_name as reference, pw.worker_name as party,
+           pw.paid_amount as amount, 'PKR' as currency,
+           pw.created_at as date
+    FROM project_workers pw
+    WHERE pw.paid_amount > 0 ${workerWhere}
+    ORDER BY pw.created_at DESC LIMIT ?
+  `).all(...workerArgs).map(p => ({ ...p, amount_pkr: p.amount, amount_orig: p.amount }));
+
+  const shippingWhere = hasRange ? `AND date(ps.shipping_date) >= ? AND date(ps.shipping_date) <= ?` : '';
+  const shippingArgs  = hasRange ? [from, to, limit] : [limit];
+  const shippingTx = db.prepare(`
+    SELECT ps.id, 'shipping' as type, 'Shipping' as category,
+           COALESCE(v.name, ps.carrier, 'Shipping') as reference,
+           COALESCE(v.name, ps.carrier, 'Shipping') as party,
+           ps.paid_amount as amount, 'PKR' as currency,
+           ps.shipping_date as date,
+           ps.carrier, ps.tracking_number,
+           p.title as project_title
+    FROM project_shipping ps
+    LEFT JOIN projects p ON p.id = ps.project_id
+    LEFT JOIN vendors v ON v.id = ps.vendor_id
+    WHERE ps.paid_amount > 0 ${shippingWhere}
+    ORDER BY ps.shipping_date DESC LIMIT ?
+  `).all(...shippingArgs).map(s => ({ ...s, amount_pkr: s.amount, amount_orig: s.amount }));
+
+  const all = [...payments, ...expenses, ...vendorPay, ...salaries, ...workerPay, ...shippingTx]
     .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
     .slice(0, limit);
 
   res.json(all);
+});
+
+// ── Ledger ─────────────────────────────────────────────────────────────────
+// Returns every credit (income) and debit (expense) entry sorted by date ASC
+// with a running balance, plus a summary section at the end.
+router.get('/ledger', (req, res) => {
+  const { from, to } = req.query;
+  const rates = getRates();
+  const dateFilter = (col) => from && to ? `AND date(${col}) >= '${from}' AND date(${col}) <= '${to}'` : '';
+
+  const entries = [];
+
+  // ── CREDITS (Income) ───────────────────────────────────────────────────────
+  const payments = db.prepare(`
+    SELECT p.id, p.paid_at as date, p.amount, COALESCE(p.currency,'PKR') as currency,
+           'Income' as section, 'Invoice Payment' as category,
+           i.number as reference, COALESCE(c.display_name, c.company, c.name,'') as party
+    FROM payments p
+    LEFT JOIN invoices i ON i.id = p.invoice_id
+    LEFT JOIN clients  c ON c.id = p.client_id
+    WHERE 1=1 ${dateFilter('p.paid_at')}
+    ORDER BY p.paid_at ASC
+  `).all();
+  for (const p of payments) {
+    entries.push({ date: p.date, section: 'Income', category: p.category,
+      description: `Invoice ${p.reference || ''}`, party: p.party || '',
+      credit: toPKR(p.amount, p.currency, rates), debit: 0,
+      currency: p.currency, amount_orig: parseFloat(p.amount) });
+  }
+
+  // ── DEBITS (Expenses) ──────────────────────────────────────────────────────
+  // Vendor payments
+  const vendorPay = db.prepare(`
+    SELECT pvp.id, pvp.paid_at as date, pvp.amount,
+           COALESCE(v.name, vs.name, 'Vendor') as party,
+           COALESCE(pvp.reference,'') as ref,
+           proj.title as project_title
+    FROM project_vendor_payments pvp
+    LEFT JOIN project_vendors pv ON pv.id = pvp.project_vendor_id
+    LEFT JOIN vendors v  ON v.id  = pv.vendor_id
+    LEFT JOIN project_shipping ps ON ps.id = pvp.shipping_id
+    LEFT JOIN vendors vs ON vs.id = ps.vendor_id
+    LEFT JOIN projects proj ON proj.id = pvp.project_id
+    WHERE 1=1 ${dateFilter('pvp.paid_at')}
+    ORDER BY pvp.paid_at ASC
+  `).all();
+  for (const p of vendorPay) {
+    entries.push({ date: p.date, section: 'Project Costs', category: 'Vendor Payment',
+      description: p.project_title ? `Vendor – ${p.project_title}` : 'Vendor Payment',
+      party: p.party, credit: 0, debit: parseFloat(p.amount) || 0,
+      currency: 'PKR', amount_orig: parseFloat(p.amount) || 0, reference: p.ref });
+  }
+
+  // Worker payments
+  const workerPay = db.prepare(`
+    SELECT pw.id, pw.created_at as date, pw.paid_amount as amount,
+           pw.worker_name as party, proj.title as project_title
+    FROM project_workers pw
+    LEFT JOIN projects proj ON proj.id = pw.project_id
+    WHERE pw.paid_amount > 0 ${dateFilter('pw.created_at')}
+    ORDER BY pw.created_at ASC
+  `).all();
+  for (const p of workerPay) {
+    entries.push({ date: p.date, section: 'Project Costs', category: 'Worker Payment',
+      description: p.project_title ? `Worker – ${p.project_title}` : 'Worker Payment',
+      party: p.party || '', credit: 0, debit: parseFloat(p.amount) || 0,
+      currency: 'PKR', amount_orig: parseFloat(p.amount) || 0 });
+  }
+
+  // Shipping paid
+  const shippingPay = db.prepare(`
+    SELECT ps.id, ps.shipping_date as date, ps.paid_amount as amount,
+           COALESCE(v.name, ps.carrier,'Shipping') as party,
+           proj.title as project_title, ps.tracking_number
+    FROM project_shipping ps
+    LEFT JOIN vendors v ON v.id = ps.vendor_id
+    LEFT JOIN projects proj ON proj.id = ps.project_id
+    WHERE ps.paid_amount > 0 ${dateFilter('ps.shipping_date')}
+    ORDER BY ps.shipping_date ASC
+  `).all();
+  for (const p of shippingPay) {
+    entries.push({ date: p.date, section: 'Project Costs', category: 'Shipping',
+      description: p.project_title ? `Shipping – ${p.project_title}` : 'Shipping',
+      party: p.party, credit: 0, debit: parseFloat(p.amount) || 0,
+      currency: 'PKR', amount_orig: parseFloat(p.amount) || 0,
+      reference: p.tracking_number || '' });
+  }
+
+  // Fabric/process/external costs paid (from project_products)
+  const allPP = db.prepare(`
+    SELECT pp.fabrics, pp.costs, pp.external_costs, proj.title as project_title, proj.updated_at
+    FROM project_products pp
+    LEFT JOIN projects proj ON proj.id = pp.project_id
+  `).all();
+  for (const pp of allPP) {
+    try {
+      const fabs = JSON.parse(pp.fabrics || '[]');
+      const cs   = JSON.parse(pp.costs   || '[]');
+      const exts = JSON.parse(pp.external_costs || '[]');
+      const paidFab  = fabs.reduce((s, f) => s + (parseFloat(f.amount_paid)||0), 0);
+      const paidProc = cs.reduce((s, c) => s + (parseFloat(c.amount_paid)||0), 0);
+      const paidExt  = exts.reduce((s, e) => s + (parseFloat(e.amount_paid)||0), 0);
+      const total = paidFab + paidProc + paidExt;
+      if (total > 0) {
+        entries.push({ date: pp.updated_at, section: 'Project Costs', category: 'Materials & Process',
+          description: pp.project_title ? `Materials – ${pp.project_title}` : 'Materials & Process',
+          party: '', credit: 0, debit: total, currency: 'PKR', amount_orig: total });
+      }
+    } catch {}
+  }
+
+  // Extra costs
+  const extraRows = db.prepare(`SELECT extra_costs, title, updated_at FROM projects WHERE extra_costs IS NOT NULL`).all();
+  for (const p of extraRows) {
+    try {
+      const costs = JSON.parse(p.extra_costs || '[]');
+      const total = costs.reduce((s, c) => s + (parseFloat(c.amount)||0), 0);
+      if (total > 0) {
+        entries.push({ date: p.updated_at, section: 'Project Costs', category: 'Extra Costs',
+          description: `Extra Costs – ${p.title}`, party: '', credit: 0, debit: total,
+          currency: 'PKR', amount_orig: total });
+      }
+    } catch {}
+  }
+
+  // Business expenses
+  const bizExp = db.prepare(`
+    SELECT e.id, e.expense_date as date, e.amount, e.title as description,
+           COALESCE(ec.name,'Expense') as category, e.paid_by as party
+    FROM expenses e
+    LEFT JOIN expense_categories ec ON ec.id = e.expense_category_id
+    WHERE 1=1 ${dateFilter('e.expense_date')}
+    ORDER BY e.expense_date ASC
+  `).all();
+  for (const e of bizExp) {
+    entries.push({ date: e.date, section: 'Business Expenses', category: e.category,
+      description: e.description || e.category, party: e.party || '',
+      credit: 0, debit: parseFloat(e.amount) || 0, currency: 'PKR', amount_orig: parseFloat(e.amount) || 0 });
+  }
+
+  // Salaries
+  const salaries = db.prepare(`
+    SELECT pr.id, pr.paid_at as date, pr.net_pay as amount,
+           emp.name as party
+    FROM payroll_records pr
+    LEFT JOIN employees emp ON emp.id = pr.employee_id
+    WHERE pr.status = 'paid' ${dateFilter('pr.paid_at')}
+    ORDER BY pr.paid_at ASC
+  `).all();
+  for (const s of salaries) {
+    entries.push({ date: s.date, section: 'Salaries', category: 'Salary',
+      description: `Salary – ${s.party || 'Employee'}`, party: s.party || '',
+      credit: 0, debit: parseFloat(s.amount) || 0, currency: 'PKR', amount_orig: parseFloat(s.amount) || 0 });
+  }
+
+  // Sort all entries by date ASC, compute running balance
+  entries.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  let balance = 0;
+  const ledger = entries.map(e => {
+    balance += (e.credit - e.debit);
+    return { ...e, balance };
+  });
+
+  // Summary
+  const totalCredit = entries.reduce((s, e) => s + e.credit, 0);
+  const totalDebit  = entries.reduce((s, e) => s + e.debit,  0);
+  const summary = {
+    totalCredit, totalDebit, netBalance: totalCredit - totalDebit,
+    bySection: {},
+  };
+  for (const e of entries) {
+    if (!summary.bySection[e.section]) summary.bySection[e.section] = { credit: 0, debit: 0 };
+    summary.bySection[e.section].credit += e.credit;
+    summary.bySection[e.section].debit  += e.debit;
+  }
+
+  res.json({ ledger, summary });
 });
 
 export default router;

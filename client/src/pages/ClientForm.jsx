@@ -324,12 +324,26 @@ export default function ClientForm() {
                     <input value={form.name} onChange={e => set('name', e.target.value)} className={inputCls} placeholder="Primary contact name" />
                   </Field>
                   <Field label="Display Name">
-                    <input value={form.display_name} onChange={e => set('display_name', e.target.value)} className={inputCls} placeholder="Name shown on invoices" />
+                    <select
+                      value={form.display_name}
+                      onChange={e => set('display_name', e.target.value)}
+                      className={selectCls}
+                    >
+                      <option value="">— Select display name —</option>
+                      {form.name?.trim() && (
+                        <option value={form.name.trim()}>Full Name: {form.name.trim()}</option>
+                      )}
+                      {form.customer_type === 'business' && form.company?.trim() && (
+                        <option value={form.company.trim()}>Company: {form.company.trim()}</option>
+                      )}
+                      {form.customer_type === 'business' && form.company?.trim() && form.name?.trim() && (
+                        <option value={`${form.name.trim()} (${form.company.trim()})`}>
+                          Both: {form.name.trim()} ({form.company.trim()})
+                        </option>
+                      )}
+                    </select>
                   </Field>
                 </div>
-                <Field label="In Primary Language">
-                  <input value={form.name_primary} onChange={e => set('name_primary', e.target.value)} className={inputCls} placeholder="Full name in English" />
-                </Field>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <Field label="Email Address">
                     <input type="email" value={form.email} onChange={e => set('email', e.target.value)} className={inputCls} placeholder="email@example.com" />
