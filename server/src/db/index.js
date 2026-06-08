@@ -1,12 +1,116 @@
-import Database from 'better-sqlite3';
+import initSqlJs from 'sql.js';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const db = new Database(join(__dirname, '../../apparel.db'));
+const DB_PATH = join(__dirname, '../../apparel.db');
 
-db.pragma('journal_mode = WAL');
+// ── sql.js initialisation (top-level await works in ESM) ─────────────────────
+const SQL = await initSqlJs();
+
+// ── better-sqlite3 compatibility wrapper ─────────────────────────────────────
+function toSqlJsParams(params) {
+  if (params === undefined || params === null) return [];
+  if (Array.isArray(params)) return params;
+  if (typeof params !== 'object') return [params];
+  // Named params: {name: val} → {':name': val}  (sql.js uses colon prefix)
+  const out = {};
+  for (const [k, v] of Object.entries(params)) {
+    out[/^[:$@]/.test(k) ? k : `:${k}`] = v;
+  }
+  return out;
+}
+
+class Stmt {
+  constructor(sqlDb, sql, wrapper) {
+    this._sqlDb = sqlDb;
+    this._sql   = sql;
+    this._w     = wrapper;
+  }
+  _mk(params) {
+    const st = this._sqlDb.prepare(this._sql);
+    const p  = toSqlJsParams(params);
+    if ((Array.isArray(p) && p.length) || (!Array.isArray(p) && p && Object.keys(p).length)) {
+      st.bind(p);
+    }
+    return st;
+  }
+  all(...args) {
+    const p  = args.length === 1 ? args[0] : args.length > 1 ? args : undefined;
+    const st = this._mk(p);
+    const rows = [];
+    while (st.step()) rows.push(st.getAsObject());
+    st.free();
+    return rows;
+  }
+  get(...args) {
+    const p  = args.length === 1 ? args[0] : args.length > 1 ? args : undefined;
+    const st = this._mk(p);
+    let row;
+    if (st.step()) row = st.getAsObject();
+    st.free();
+    return row;
+  }
+  run(...args) {
+    const p  = args.length === 1 ? args[0] : args.length > 1 ? args : undefined;
+    const st = this._mk(p);
+    st.step();
+    const changes = this._sqlDb.getRowsModified();
+    st.free();
+    const r = this._sqlDb.exec('SELECT last_insert_rowid()');
+    const lastInsertRowid = r[0]?.values[0]?.[0] ?? 0;
+    this._w._save();
+    return { changes, lastInsertRowid };
+  }
+  iterate(...args) { return this.all(...args)[Symbol.iterator](); }
+}
+
+class BetterSqliteCompat {
+  constructor(path) {
+    this._path = path;
+    this._inTx = false;
+    this._db   = existsSync(path)
+      ? new SQL.Database(readFileSync(path))
+      : new SQL.Database();
+  }
+  prepare(sql)  { return new Stmt(this._db, sql, this); }
+  exec(sql)     { this._db.run(sql); this._save(); return this; }
+  pragma(str)   {
+    try { this._db.run(`PRAGMA ${str}`); } catch { /* ignore unsupported */ }
+    return this;
+  }
+  transaction(fn) {
+    return (...args) => {
+      this._db.run('BEGIN');
+      this._inTx = true;
+      try {
+        const result = fn(...args);
+        this._db.run('COMMIT');
+        this._inTx = false;
+        this._save();
+        return result;
+      } catch (e) {
+        this._db.run('ROLLBACK');
+        this._inTx = false;
+        throw e;
+      }
+    };
+  }
+  _save() {
+    if (this._inTx) return;
+    writeFileSync(this._path, Buffer.from(this._db.export()));
+  }
+  close() { this._save(); this._db.close(); }
+}
+
+const db = new BetterSqliteCompat(DB_PATH);
 db.pragma('foreign_keys = ON');
+
+// Save on process exit
+process.on('exit',   () => { try { db._save(); } catch {} });
+process.on('SIGINT',  () => process.exit(0));
+process.on('SIGTERM', () => process.exit(0));
 
 // Checkpoint any pending WAL data into the main DB file on every startup.
 // This is safe: SQLite replays the WAL before any read, so data is never lost.
