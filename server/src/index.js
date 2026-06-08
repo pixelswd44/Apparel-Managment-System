@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { existsSync } from 'fs';
 import { verifyToken } from './middleware/auth.js';
 import authRouter from './routes/auth.js';
 import setupRouter from './routes/setup.js';
@@ -73,5 +74,15 @@ app.use('/api/expenses',           expensesRouter);
 app.use('/api/financials',         financialsRouter);
 app.use('/api/document-templates', documentTemplatesRouter);
 app.use('/api/backup',             backupRouter);
+
+// ── Serve React build in production ───────────────────────────────────────────
+const clientDist = join(__dirname, '../../client/dist');
+if (existsSync(clientDist)) {
+  app.use(express.static(clientDist));
+  // Catch-all: return index.html for client-side routing
+  app.get('*', (req, res) => {
+    res.sendFile(join(clientDist, 'index.html'));
+  });
+}
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

@@ -1,4 +1,13 @@
 {
+  "name": "apparel-crm",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Apparel Management CRM",
+  "scripts": {
+    "build": "cd client && npm install && npm run build",
+    "install:all": "cd client && npm install && cd ../server && npm install",
+    "start": "node app.js"
+  },
   "devDependencies": {
     "xlsx": "^0.18.5"
   }
