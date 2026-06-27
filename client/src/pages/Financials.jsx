@@ -767,7 +767,7 @@ export default function Financials() {
             <p className="text-2xs font-bold uppercase tracking-wider text-emerald-500 mb-2">Income</p>
             <div className="flex items-center justify-between py-1.5 border-b border-slate-50">
               <span className="text-xs text-slate-600">Invoice Payments Received</span>
-              <span className="text-xs font-semibold text-emerald-600">+{fmt(invoiceRevenue)}</span>
+              <span className="text-xs font-semibold text-emerald-600" title={fmt(invoiceRevenue)}>+{fmtC(invoiceRevenue)}</span>
             </div>
             {outstanding > 0 && (
               <div className="flex items-center justify-between py-1.5 border-b border-slate-50">
@@ -775,12 +775,12 @@ export default function Financials() {
                   <span className="text-xs text-slate-600">Outstanding (Receivable)</span>
                   <p className="text-2xs text-slate-400">Due from clients — counted in profit</p>
                 </div>
-                <span className="text-xs font-semibold text-amber-500">+{fmt(outstanding)}</span>
+                <span className="text-xs font-semibold text-amber-500" title={fmt(outstanding)}>+{fmtC(outstanding)}</span>
               </div>
             )}
             <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
               <span className="text-xs font-bold text-slate-700">Total Revenue</span>
-              <span className="text-xs font-bold text-emerald-600">+{fmt(invoiceRevenue + outstanding)}</span>
+              <span className="text-xs font-bold text-emerald-600" title={fmt(invoiceRevenue + outstanding)}>+{fmtC(invoiceRevenue + outstanding)}</span>
             </div>
           </div>
 
@@ -797,12 +797,12 @@ export default function Financials() {
                   <span className="text-xs text-slate-600">{label}</span>
                   <p className="text-2xs text-slate-400">{sub}</p>
                 </div>
-                <span className="text-xs font-semibold text-rose-500">−{fmt(val)}</span>
+                <span className="text-xs font-semibold text-rose-500" title={fmt(val)}>−{fmtC(val)}</span>
               </div>
             ))}
             <div className="flex items-center justify-between pt-2 mt-1">
               <span className="text-xs font-bold text-slate-700">Total Expenses</span>
-              <span className="text-xs font-bold text-rose-600">−{fmt(totalExpenses)}</span>
+              <span className="text-xs font-bold text-rose-600" title={fmt(totalExpenses)}>−{fmtC(totalExpenses)}</span>
             </div>
           </div>
 
@@ -813,8 +813,8 @@ export default function Financials() {
                 <span className="text-sm font-bold text-slate-700">{outOfPocket > 0 ? 'Out of Pocket' : 'Cash Surplus'}</span>
                 <p className="text-xs text-slate-400 mt-0.5">Received − all paid costs</p>
               </div>
-              <span className={`text-lg font-bold ${outOfPocket > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                {outOfPocket > 0 ? '−' : '+'}{fmt(Math.abs(outOfPocket))}
+              <span className={`text-lg font-bold ${outOfPocket > 0 ? 'text-rose-600' : 'text-emerald-600'}`} title={fmt(Math.abs(outOfPocket))}>
+                {outOfPocket > 0 ? '−' : '+'}{fmtC(Math.abs(outOfPocket))}
               </span>
             </div>
           </div>
@@ -826,8 +826,8 @@ export default function Financials() {
                 <span className="text-sm font-bold text-slate-700">{projectedPL >= 0 ? 'Projected Profit' : 'Projected Loss'}</span>
                 <p className="text-xs text-slate-400 mt-0.5">(Rcvd + Outstanding) − full project costs</p>
               </div>
-              <span className={`text-lg font-bold ${projectedPL >= 0 ? 'text-indigo-600' : 'text-rose-600'}`}>
-                {projectedPL >= 0 ? '+' : '−'}{fmt(Math.abs(projectedPL))}
+              <span className={`text-lg font-bold ${projectedPL >= 0 ? 'text-indigo-600' : 'text-rose-600'}`} title={fmt(Math.abs(projectedPL))}>
+                {projectedPL >= 0 ? '+' : '−'}{fmtC(Math.abs(projectedPL))}
               </span>
             </div>
           </div>
@@ -851,7 +851,7 @@ export default function Financials() {
                           <div className="w-2.5 h-2.5 rounded-full" style={{ background: c.color || '#94a3b8' }} />
                           <span className="text-xs text-slate-600">{c.category}</span>
                         </div>
-                        <span className="text-xs font-semibold text-slate-700">{fmt(c.total)}</span>
+                        <span className="text-xs font-semibold text-slate-700" title={fmt(c.total)}>{fmtC(c.total)}</span>
                       </div>
                       <div className="h-1.5 bg-slate-100 rounded-full">
                         <div className="h-1.5 rounded-full" style={{ width: `${w}%`, background: c.color || '#6366f1' }} />

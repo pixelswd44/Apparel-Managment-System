@@ -530,7 +530,7 @@ function DraggableStatCards({ cards }) {
     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
       {ordered.map((card, pos) => {
         const realIdx = order[pos];
-        const { label, value, sub, icon: Icon, iconBg, iconCl, dot } = card;
+        const { label, value, full, sub, icon: Icon, iconBg, iconCl, dot } = card;
         const isOver = dragOver === pos;
         return (
           <div
@@ -567,7 +567,8 @@ function DraggableStatCards({ cards }) {
                 <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dot}`} />
                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider truncate">{label}</p>
               </div>
-              <p className="text-lg sm:text-2xl font-bold text-slate-800 leading-tight break-all">{value}</p>
+              <p className="text-2xl sm:text-3xl font-black tracking-tight text-slate-800 leading-none" title={full || undefined}>{value}</p>
+              {full && full !== value && <p className="text-xs text-slate-400 mt-0.5 font-medium truncate">{full}</p>}
               <p className="text-xs text-slate-400 mt-0.5 truncate">{sub}</p>
             </div>
           </div>
@@ -654,6 +655,16 @@ export default function Overview() {
   };
   const fmt$ = pkrAmt => fmtSel(conv(pkrAmt));
 
+  // Compact: 11,704,779 → $11.7M, 496,129 → $496K
+  const fmtSelC = amount => {
+    const n = Math.abs(parseFloat(amount) || 0);
+    const s = sym(selectedCurrency);
+    if (n >= 1_000_000) return `${s}${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+    if (n >= 1_000)     return `${s}${(n / 1_000).toFixed(1).replace(/\.0$/, '')}K`;
+    return `${s}${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+  };
+  const fmt$C = pkrAmt => fmtSelC(conv(pkrAmt));
+
   // Rate label: show 1 CURRENCY = X PKR
   const selPkrRate = ratesToPkr[selectedCurrency] || 1;
   const usdPkrRate = ratesToPkr['USD'] || 280;
@@ -663,12 +674,13 @@ export default function Overview() {
 
   const revSubLabel = periodRange.from
     ? periodRange.label
-    : `${fmt$(d.month_revenue_pkr)} this month`;
+    : `${fmt$C(d.month_revenue_pkr)} this month`;
 
   const statCards = [
     {
       label: 'Total Revenue',
-      value: fmt$(d.revenue_pkr),
+      value: fmt$C(d.revenue_pkr),
+      full:  fmt$(d.revenue_pkr),
       sub:   revSubLabel,
       icon:  TrendingUp,
       iconBg: 'bg-indigo-50',
@@ -687,7 +699,7 @@ export default function Overview() {
     {
       label: 'Open Quotations',
       value: d.open_quotations ?? 0,
-      sub:   `${fmt$(d.pipeline_pkr)} pipeline`,
+      sub:   `${fmt$C(d.pipeline_pkr)} pipeline`,
       icon:  FileText,
       iconBg: 'bg-amber-50',
       iconCl: 'text-amber-600',
@@ -696,7 +708,7 @@ export default function Overview() {
     {
       label: 'Accepted Quotations',
       value: d.accepted_quotations ?? 0,
-      sub:   fmt$(d.accepted_pkr),
+      sub:   fmt$C(d.accepted_pkr),
       icon:  CheckCircle,
       iconBg: 'bg-violet-50',
       iconCl: 'text-violet-600',
@@ -705,7 +717,7 @@ export default function Overview() {
     {
       label: 'Unpaid Invoices',
       value: d.unpaid_invoices ?? 0,
-      sub:   `${fmt$(d.unpaid_pkr)} outstanding`,
+      sub:   `${fmt$C(d.unpaid_pkr)} outstanding`,
       icon:  Receipt,
       iconBg: 'bg-rose-50',
       iconCl: 'text-rose-600',
@@ -765,7 +777,7 @@ export default function Overview() {
               <p className="text-xs text-slate-400 mt-0.5">Last 6 months · {selectedCurrency}</p>
             </div>
             <div className="text-right">
-              <p className="text-2xl font-bold text-indigo-600">{fmt$(d.revenue_pkr)}</p>
+              <p className="text-2xl font-bold text-indigo-600" title={fmt$(d.revenue_pkr)}>{fmt$C(d.revenue_pkr)}</p>
               <p className="text-xs text-slate-400">total collected</p>
             </div>
           </div>
@@ -779,17 +791,17 @@ export default function Overview() {
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
           <h2 className="font-bold text-slate-800">This Month</h2>
           {[
-            { label: 'Revenue',        value: fmt$(d.month_revenue_pkr), icon: Banknote,   cl: 'text-indigo-600' },
-            { label: 'New Quotations', value: d.month_quotations ?? 0,   icon: FileText,   cl: 'text-amber-600'  },
-            { label: 'Pipeline',       value: fmt$(d.pipeline_pkr),       icon: TrendingUp, cl: 'text-violet-600' },
+            { label: 'Revenue',        value: fmt$C(d.month_revenue_pkr), full: fmt$(d.month_revenue_pkr), icon: Banknote,   cl: 'text-indigo-600' },
+            { label: 'New Quotations', value: d.month_quotations ?? 0,    icon: FileText,   cl: 'text-amber-600'  },
+            { label: 'Pipeline',       value: fmt$C(d.pipeline_pkr),      full: fmt$(d.pipeline_pkr),      icon: TrendingUp, cl: 'text-violet-600' },
             { label: 'Overdue',        value: d.overdue_invoices ?? 0,    icon: Clock,      cl: 'text-rose-600'   },
-          ].map(({ label, value, icon: Icon, cl }) => (
+          ].map(({ label, value, full, icon: Icon, cl }) => (
             <div key={label} className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <Icon size={14} className={`${cl} flex-shrink-0`} />
                 <span className="text-sm text-slate-600">{label}</span>
               </div>
-              <span className="text-sm font-bold text-slate-800">{value}</span>
+              <span className="text-sm font-bold text-slate-800" title={full || undefined}>{value}</span>
             </div>
           ))}
         </div>
