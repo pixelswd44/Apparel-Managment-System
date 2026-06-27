@@ -10,8 +10,14 @@ import api from '../lib/api';
 import PeriodPicker from '../components/PeriodPicker';
 
 const pkr  = n => `Rs${Number(n || 0).toLocaleString('en-PK', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-const fmtD = d => d ? new Date(d.includes('T') ? d : d + 'T00:00:00')
-  .toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+const fmtD = d => {
+  if (!d) return '—';
+  // Handle SQLite "YYYY-MM-DD HH:MM:SS" (space-separated) and ISO "YYYY-MM-DDTHH:MM:SS"
+  const iso = d.includes('T') ? d : d.replace(' ', 'T');
+  const dt = new Date(iso);
+  if (isNaN(dt.getTime())) return '—';
+  return dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+};
 
 const SECTION_COLORS = {
   'Income':            'text-emerald-600 bg-emerald-50',

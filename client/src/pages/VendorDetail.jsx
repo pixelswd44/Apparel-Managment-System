@@ -794,7 +794,7 @@ export default function VendorDetail() {
         </div>
         <div className="p-5 space-y-4">
           {/* Contact tiles — up to 4 across */}
-          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {data.contact_name && (
               <div className="flex items-center gap-3 bg-slate-50 rounded-xl p-3">
                 <div className="w-8 h-8 bg-white border border-slate-200 rounded-lg flex items-center justify-center flex-shrink-0">

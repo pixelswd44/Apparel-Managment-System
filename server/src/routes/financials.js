@@ -419,39 +419,68 @@ router.get('/ledger', (req, res) => {
       reference: p.tracking_number || '' });
   }
 
-  // Fabric/process/external costs paid (from project_products)
+  // Fabric/process/external costs — emit one row per item using item.date if set
   const allPP = db.prepare(`
-    SELECT pp.fabrics, pp.costs, pp.external_costs, proj.title as project_title, proj.updated_at
+    SELECT pp.fabrics, pp.costs, pp.external_costs, proj.title as project_title,
+           proj.updated_at, proj.created_at
     FROM project_products pp
     LEFT JOIN projects proj ON proj.id = pp.project_id
   `).all();
+
+  const normDate = d => {
+    if (!d) return null;
+    // Convert SQLite "YYYY-MM-DD HH:MM:SS" → "YYYY-MM-DD"
+    return d.replace(' ', 'T').split('T')[0];
+  };
+
   for (const pp of allPP) {
     try {
+      const fallbackDate = normDate(pp.updated_at) || normDate(pp.created_at);
       const fabs = JSON.parse(pp.fabrics || '[]');
       const cs   = JSON.parse(pp.costs   || '[]');
       const exts = JSON.parse(pp.external_costs || '[]');
-      const paidFab  = fabs.reduce((s, f) => s + (parseFloat(f.amount_paid)||0), 0);
-      const paidProc = cs.reduce((s, c) => s + (parseFloat(c.amount_paid)||0), 0);
-      const paidExt  = exts.reduce((s, e) => s + (parseFloat(e.amount_paid)||0), 0);
-      const total = paidFab + paidProc + paidExt;
-      if (total > 0) {
-        entries.push({ date: pp.updated_at, section: 'Project Costs', category: 'Materials & Process',
-          description: pp.project_title ? `Materials – ${pp.project_title}` : 'Materials & Process',
-          party: '', credit: 0, debit: total, currency: 'PKR', amount_orig: total });
+
+      // One ledger row per fabric item
+      for (const f of fabs) {
+        const amt = parseFloat(f.amount_paid) || 0;
+        if (amt <= 0) continue;
+        entries.push({ date: f.date || fallbackDate, section: 'Project Costs', category: 'Materials & Process',
+          description: `Fabric${f.name ? ` – ${f.name}` : ''}${pp.project_title ? ` (${pp.project_title})` : ''}`,
+          party: '', credit: 0, debit: amt, currency: 'PKR', amount_orig: amt });
+      }
+      // One ledger row per process/cost item
+      for (const c of cs) {
+        const amt = parseFloat(c.amount_paid) || 0;
+        if (amt <= 0) continue;
+        entries.push({ date: c.date || fallbackDate, section: 'Project Costs', category: 'Materials & Process',
+          description: `Process${c.label ? ` – ${c.label}` : ''}${pp.project_title ? ` (${pp.project_title})` : ''}`,
+          party: '', credit: 0, debit: amt, currency: 'PKR', amount_orig: amt });
+      }
+      // One ledger row per external cost item
+      for (const e of exts) {
+        const amt = parseFloat(e.amount_paid) || 0;
+        if (amt <= 0) continue;
+        entries.push({ date: e.date || fallbackDate, section: 'Project Costs', category: 'Materials & Process',
+          description: `External${e.label ? ` – ${e.label}` : ''}${pp.project_title ? ` (${pp.project_title})` : ''}`,
+          party: '', credit: 0, debit: amt, currency: 'PKR', amount_orig: amt });
       }
     } catch {}
   }
 
-  // Extra costs
-  const extraRows = db.prepare(`SELECT extra_costs, title, updated_at FROM projects WHERE extra_costs IS NOT NULL`).all();
+  // Extra costs — one row per cost item using item.date
+  const extraRows = db.prepare(`
+    SELECT extra_costs, title, updated_at, created_at FROM projects WHERE extra_costs IS NOT NULL
+  `).all();
   for (const p of extraRows) {
     try {
+      const fallbackDate = normDate(p.updated_at) || normDate(p.created_at);
       const costs = JSON.parse(p.extra_costs || '[]');
-      const total = costs.reduce((s, c) => s + (parseFloat(c.amount)||0), 0);
-      if (total > 0) {
-        entries.push({ date: p.updated_at, section: 'Project Costs', category: 'Extra Costs',
-          description: `Extra Costs – ${p.title}`, party: '', credit: 0, debit: total,
-          currency: 'PKR', amount_orig: total });
+      for (const c of costs) {
+        const amt = parseFloat(c.amount) || 0;
+        if (amt <= 0) continue;
+        entries.push({ date: c.date || fallbackDate, section: 'Project Costs', category: 'Extra Costs',
+          description: `${c.label || 'Extra Cost'} – ${p.title}`,
+          party: '', credit: 0, debit: amt, currency: 'PKR', amount_orig: amt });
       }
     } catch {}
   }

@@ -128,8 +128,8 @@ function SummaryCard({ label, value, sub, Icon, accent, negative }) {
   );
 }
 
-// ── Capital Sidebar Panel ──────────────────────────────────────────────────
-function CapitalModal({ type, item, onClose, onSave }) {
+// ── Capital Inline Form Page ───────────────────────────────────────────────
+function CapitalForm({ type, item, onClose, onSave }) {
   const isInv = type === 'investment';
   const [form, setForm] = useState(item ? { ...item } : {
     investor_name: '', lender_name: '', amount: '', date: new Date().toISOString().split('T')[0],
@@ -137,6 +137,8 @@ function CapitalModal({ type, item, onClose, onSave }) {
   });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const [saving, setSaving] = useState(false);
+  const inputCls = 'mt-1 w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 bg-white';
+  const labelCls = 'block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1';
 
   const submit = async e => {
     e.preventDefault();
@@ -152,107 +154,98 @@ function CapitalModal({ type, item, onClose, onSave }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex" onClick={onClose}>
-      {/* Backdrop */}
-      <div className="flex-1 bg-black/30" />
-      {/* Sidebar panel slides in from right */}
-      <div className="bg-white w-full max-w-sm h-full flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-          <h3 className="font-bold text-slate-900 text-base">
-            {item ? 'Edit' : 'New'} {isInv ? 'Investment' : 'Loan'}
-          </h3>
-          <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors">
-            <X size={16} />
-          </button>
-        </div>
-        <form onSubmit={submit} className="flex flex-col flex-1 overflow-hidden">
-          <div className="flex-1 overflow-y-auto p-5 space-y-4">
+    <div className="animate-page">
+      {/* Page header */}
+      <div className="flex items-center gap-3 mb-6">
+        <button onClick={onClose}
+          className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-indigo-600 font-medium transition-colors">
+          <X size={16} /> Cancel
+        </button>
+        <span className="text-slate-300">/</span>
+        <h2 className="font-bold text-slate-900 text-lg">
+          {item ? 'Edit' : 'New'} {isInv ? 'Investment' : 'Loan'}
+        </h2>
+      </div>
+
+      <form onSubmit={submit}>
+        <div className="max-w-lg bg-white border border-slate-200 rounded-2xl shadow-sm p-6 space-y-5">
           <div>
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              {isInv ? 'Investor Name' : 'Lender Name'} *
-            </label>
+            <label className={labelCls}>{isInv ? 'Investor Name' : 'Lender Name'} *</label>
             <input required value={isInv ? form.investor_name : form.lender_name}
               onChange={e => set(isInv ? 'investor_name' : 'lender_name', e.target.value)}
-              className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
+              className={inputCls}
               placeholder={isInv ? 'e.g. Ahmed Khan' : 'e.g. Bank Al-Habib'} />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+
+          <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Amount (PKR) *</label>
+              <label className={labelCls}>Amount (PKR) *</label>
               <input required type="number" min="0" step="any" value={form.amount}
-                onChange={e => set('amount', e.target.value)}
-                className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
-                placeholder="0" />
+                onChange={e => set('amount', e.target.value)} className={inputCls} placeholder="0" />
             </div>
             <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Date *</label>
+              <label className={labelCls}>Date *</label>
               <input required type="date" value={form.date}
-                onChange={e => set('date', e.target.value)}
-                className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400" />
+                onChange={e => set('date', e.target.value)} className={inputCls} />
             </div>
           </div>
+
           {isInv ? (
             <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Equity % (optional)</label>
+              <label className={labelCls}>Equity % (optional)</label>
               <input type="number" min="0" max="100" step="any" value={form.equity_pct}
-                onChange={e => set('equity_pct', e.target.value)}
-                className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
-                placeholder="0" />
+                onChange={e => set('equity_pct', e.target.value)} className={inputCls} placeholder="0" />
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Interest Rate %</label>
+                <label className={labelCls}>Interest Rate %</label>
                 <input type="number" min="0" step="any" value={form.interest_rate}
-                  onChange={e => set('interest_rate', e.target.value)}
-                  className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
-                  placeholder="0" />
+                  onChange={e => set('interest_rate', e.target.value)} className={inputCls} placeholder="0" />
               </div>
               <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Due Date</label>
+                <label className={labelCls}>Due Date</label>
                 <input type="date" value={form.due_date}
-                  onChange={e => set('due_date', e.target.value)}
-                  className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400" />
+                  onChange={e => set('due_date', e.target.value)} className={inputCls} />
               </div>
             </div>
           )}
+
           {!isInv && (
             <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Amount Paid Back (PKR)</label>
+              <label className={labelCls}>Amount Paid Back (PKR)</label>
               <input type="number" min="0" step="any" value={form.paid_amount}
-                onChange={e => set('paid_amount', e.target.value)}
-                className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
-                placeholder="0" />
+                onChange={e => set('paid_amount', e.target.value)} className={inputCls} placeholder="0" />
             </div>
           )}
+
           <div>
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</label>
-            <select value={form.status} onChange={e => set('status', e.target.value)}
-              className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 bg-white">
+            <label className={labelCls}>Status</label>
+            <select value={form.status} onChange={e => set('status', e.target.value)} className={inputCls}>
               {isInv
                 ? [['active','Active'], ['exited','Exited']].map(([v,l]) => <option key={v} value={v}>{l}</option>)
                 : [['active','Active'], ['paid','Paid']].map(([v,l]) => <option key={v} value={v}>{l}</option>)}
             </select>
           </div>
+
           <div>
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Notes</label>
-            <textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={2}
-              className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 resize-none"
-              placeholder="Optional notes…" />
+            <label className={labelCls}>Notes</label>
+            <textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={3}
+              className={inputCls + ' resize-none'} placeholder="Optional notes…" />
           </div>
-          </div>{/* end scrollable body */}
-          <div className="flex gap-3 px-5 py-4 border-t border-slate-100 flex-shrink-0">
+
+          <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose}
               className="flex-1 px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">
               Cancel
             </button>
             <button type="submit" disabled={saving}
               className="flex-1 px-4 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 transition-colors disabled:opacity-50">
-              {saving ? 'Saving…' : 'Save'}
+              {saving ? 'Saving…' : item ? 'Save Changes' : `Add ${isInv ? 'Investment' : 'Loan'}`}
             </button>
           </div>
-        </form>
-      </div>
+        </div>
+      </form>
     </div>
   );
 }
@@ -379,6 +372,18 @@ export default function Financials() {
     await api.delete(`/financials/${type}/${id}`);
     loadCapital();
   };
+
+  // Render inline form page when adding/editing
+  if (capitalModal) {
+    return (
+      <CapitalForm
+        type={capitalModal.type}
+        item={capitalModal.item}
+        onClose={() => setCapitalModal(null)}
+        onSave={() => { loadCapital(); setCapitalModal(null); }}
+      />
+    );
+  }
 
   return (
     <div className="animate-page">
@@ -891,15 +896,6 @@ export default function Financials() {
       </div>
       </>}
 
-      {/* Capital modal */}
-      {capitalModal && (
-        <CapitalModal
-          type={capitalModal.type}
-          item={capitalModal.item}
-          onClose={() => setCapitalModal(null)}
-          onSave={() => loadCapital()}
-        />
-      )}
     </div>
   );
 }

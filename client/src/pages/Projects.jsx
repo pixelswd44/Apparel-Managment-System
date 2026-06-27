@@ -507,7 +507,7 @@ function ProductLine({ pp, catalogProducts, costFields, onSave, onRemove }) {
 
   // Fabric helpers
   function addFabric() {
-    setForm(f => ({ ...f, fabrics: [...f.fabrics, { id: Date.now(), name: '', unit: 'KG', qty: '', rate: '', amount_paid: '' }] }));
+    setForm(f => ({ ...f, fabrics: [...f.fabrics, { id: Date.now(), name: '', unit: 'KG', qty: '', rate: '', amount_paid: '', date: new Date().toISOString().split('T')[0] }] }));
   }
   function setFabric(id, field, val) {
     setForm(f => ({ ...f, fabrics: f.fabrics.map(fb => fb.id === id ? { ...fb, [field]: val } : fb) }));
@@ -534,7 +534,7 @@ function ProductLine({ pp, catalogProducts, costFields, onSave, onRemove }) {
 
   // External cost helpers
   function addExternal() {
-    setForm(f => ({ ...f, external_costs: [...f.external_costs, { id: Date.now(), label: '', total: '', amount_paid: '' }] }));
+    setForm(f => ({ ...f, external_costs: [...f.external_costs, { id: Date.now(), label: '', total: '', amount_paid: '', date: new Date().toISOString().split('T')[0] }] }));
   }
   function setExternal(id, field, val) {
     setForm(f => ({ ...f, external_costs: f.external_costs.map(e => e.id === id ? { ...e, [field]: val } : e) }));
