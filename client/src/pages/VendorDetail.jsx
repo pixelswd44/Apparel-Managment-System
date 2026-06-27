@@ -707,14 +707,14 @@ export default function VendorDetail() {
 
         {/* Outstanding banner */}
         {outstanding > 0 ? (
-          <div className="bg-rose-50 border-b border-rose-200 px-6 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-2">
+          <div className="bg-rose-50 border-b border-rose-200 px-5 py-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0">
               <AlertCircle size={14} className="text-rose-500 flex-shrink-0" />
-              <span className="text-xs font-bold text-rose-600 uppercase tracking-wider">Total Outstanding</span>
+              <span className="text-xs font-bold text-rose-600 uppercase tracking-wider truncate">Outstanding</span>
             </div>
-            <div className="text-right">
-              <span className="text-xl font-bold text-rose-600">{pkr(outstanding)}</span>
-              <span className="text-xs text-rose-400 ml-2">
+            <div className="text-right flex-shrink-0">
+              <span className="text-lg font-bold text-rose-600">{pkr(outstanding)}</span>
+              <span className="text-xs text-rose-400 ml-1 hidden sm:inline">
                 across {isFreight
                   ? freightByProject.filter(g => g.shipments.some(sp => Number(sp.amount||0) - Number(sp.paid_amount||0) > 0)).length
                   : (data.projects || []).filter(pv => (pv.invoice_amount - pv.total_paid) > 0).length
@@ -732,51 +732,54 @@ export default function VendorDetail() {
           </div>
         ) : null}
 
-        <div className="px-6 py-5 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+        <div className="px-5 py-5 flex items-start gap-4">
           {/* Icon */}
-          <div className={`w-16 h-16 rounded-2xl flex items-center justify-center flex-shrink-0 ${typeInfo.color} ring-4 ring-white shadow-md`}>
-            <TypeIcon size={28} />
+          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 ${typeInfo.color} ring-4 ring-white shadow-md`}>
+            <TypeIcon size={24} />
           </div>
 
-          {/* Info */}
+          {/* Info + Actions */}
           <div className="flex-1 min-w-0">
-            <div className="flex flex-wrap items-center gap-2 mb-1">
-              <h1 className="text-2xl font-bold text-slate-900 truncate">{data.name}</h1>
-              <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${
-                data.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
-              }`}>{data.status === 'active' ? 'Active' : 'Inactive'}</span>
-            </div>
-            <p className="text-sm text-slate-500">{typeInfo.label}</p>
-            {data.rating > 0 && (
-              <div className="flex items-center gap-0.5 mt-1.5">
-                {[1,2,3,4,5].map(n => (
-                  <Star key={n} size={14} className={n <= data.rating ? 'text-amber-400 fill-amber-400' : 'text-slate-200'} />
-                ))}
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2 mb-1">
+                  <h1 className="text-xl font-bold text-slate-900 truncate">{data.name}</h1>
+                  <span className={`text-xs px-2.5 py-1 rounded-full font-semibold flex-shrink-0 ${
+                    data.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                  }`}>{data.status === 'active' ? 'Active' : 'Inactive'}</span>
+                </div>
+                <p className="text-sm text-slate-500">{typeInfo.label}</p>
+                {data.rating > 0 && (
+                  <div className="flex items-center gap-0.5 mt-1.5">
+                    {[1,2,3,4,5].map(n => (
+                      <Star key={n} size={13} className={n <= data.rating ? 'text-amber-400 fill-amber-400' : 'text-slate-200'} />
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-
-          {/* Actions */}
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <button onClick={() => setShowEdit(true)}
-              className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 hover:border-indigo-300 transition-colors">
-              <Pencil size={14} /> Edit
-            </button>
-            {!delConf ? (
-              <button onClick={() => setDelConf(true)}
-                className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium border border-slate-200 text-slate-700 rounded-xl hover:bg-rose-50 hover:border-rose-300 hover:text-rose-600 transition-colors">
-                <Trash2 size={14} /> Delete
-              </button>
-            ) : (
-              <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">
-                <span className="text-sm text-rose-600 font-medium">Confirm delete?</span>
-                <button onClick={handleDelete} disabled={deleting}
-                  className="text-sm font-bold text-rose-600 hover:text-rose-800 px-2">
-                  {deleting ? '…' : 'Yes'}
+              {/* Actions — icon-only on mobile, labelled on sm+ */}
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                <button onClick={() => setShowEdit(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 hover:border-indigo-300 transition-colors">
+                  <Pencil size={14} /><span className="hidden sm:inline">Edit</span>
                 </button>
-                <button onClick={() => setDelConf(false)} className="text-sm text-slate-400 px-1">No</button>
+                {!delConf ? (
+                  <button onClick={() => setDelConf(true)}
+                    className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium border border-slate-200 text-slate-700 rounded-xl hover:bg-rose-50 hover:border-rose-300 hover:text-rose-600 transition-colors">
+                    <Trash2 size={14} /><span className="hidden sm:inline">Delete</span>
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">
+                    <span className="text-xs text-rose-600 font-medium">Delete?</span>
+                    <button onClick={handleDelete} disabled={deleting}
+                      className="text-sm font-bold text-rose-600 hover:text-rose-800 px-1">
+                      {deleting ? '…' : 'Yes'}
+                    </button>
+                    <button onClick={() => setDelConf(false)} className="text-xs text-slate-400 px-1">No</button>
+                  </div>
+                )}
               </div>
-            )}
+            </div>
           </div>
         </div>
       </div>
@@ -875,12 +878,12 @@ export default function VendorDetail() {
             text: outstanding > 0 ? 'text-rose-600' : 'text-slate-400' },
           { label: 'Payment Rate',   value: totalBilled > 0 ? `${Math.round((totalPaid/totalBilled)*100)}%` : '—', sub: 'of total billed', icon: CreditCard, bg: 'bg-indigo-50', text: 'text-indigo-600' },
         ].map(({ label, value, sub, icon: Icon, bg, text }) => (
-          <div key={label} className="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-3 shadow-sm">
-            <div className={`${bg} ${text} p-3 rounded-xl flex-shrink-0`}><Icon size={18} /></div>
-            <div>
-              <p className="text-xl font-bold text-slate-900">{value}</p>
-              <p className="text-xs text-slate-500 font-medium">{label}</p>
-              <p className="text-xs text-slate-400">{sub}</p>
+          <div key={label} className="bg-white border border-slate-200 rounded-xl p-3 sm:p-4 flex items-center gap-3 shadow-sm">
+            <div className={`${bg} ${text} p-2.5 rounded-xl flex-shrink-0`}><Icon size={16} /></div>
+            <div className="min-w-0">
+              <p className="text-base sm:text-xl font-bold text-slate-900 break-all leading-tight">{value}</p>
+              <p className="text-xs text-slate-500 font-medium truncate">{label}</p>
+              <p className="text-xs text-slate-400 truncate">{sub}</p>
             </div>
           </div>
         ))}

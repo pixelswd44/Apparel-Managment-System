@@ -4,9 +4,51 @@ import {
   TrendingUp, TrendingDown,
   ArrowUpRight, ArrowDownRight, RefreshCw, Wallet, Users,
   Receipt, Store, Clock, Package, Plus, Pencil, Trash2, X,
-  Landmark, HandCoins, CheckCircle2, AlertCircle,
+  Landmark, HandCoins, CheckCircle2, AlertCircle, ChevronDown,
 } from 'lucide-react';
 import PeriodPicker from '../components/PeriodPicker';
+
+// ── Currency Selector (same pattern as Overview) ───────────────────────────
+const CURRENCY_SYMBOLS = {
+  USD:'$', EUR:'€', GBP:'£', PKR:'₨', AED:'د.إ', SAR:'ر.س', INR:'₹',
+};
+const symFor = code => CURRENCY_SYMBOLS[(code||'').toUpperCase()] || `${code} `;
+
+function CurrencySelector({ selected, currencies, onChange }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef();
+  useEffect(() => {
+    if (!open) return;
+    const h = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [open]);
+  const current = currencies.find(c => c.code === selected);
+  const getSymbol = c => c.symbol || symFor(c.code);
+  return (
+    <div className="relative" ref={ref}>
+      <button onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 hover:border-indigo-300 hover:bg-indigo-50/60 hover:text-indigo-700 transition-all shadow-sm">
+        <span className="text-base leading-none">{current ? getSymbol(current).trim() : selected}</span>
+        <span>{selected}</span>
+        <ChevronDown size={13} className={`text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1.5 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-y-auto min-w-[180px]" style={{maxHeight:240}}>
+          {currencies.map(c => (
+            <button key={c.code} onClick={() => { onChange(c.code); setOpen(false); }}
+              className={`w-full flex items-center justify-between px-4 py-2.5 text-sm transition-colors ${
+                c.code === selected ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-slate-700 hover:bg-slate-50'
+              }`}>
+              <span>{c.code}</span>
+              <span className="text-slate-400 text-xs">{getSymbol(c).trim()}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 // Raw PKR formatter (fallback only)
@@ -86,7 +128,7 @@ function SummaryCard({ label, value, sub, Icon, accent, negative }) {
   );
 }
 
-// ── Capital Modal ──────────────────────────────────────────────────────────
+// ── Capital Sidebar Panel ──────────────────────────────────────────────────
 function CapitalModal({ type, item, onClose, onSave }) {
   const isInv = type === 'investment';
   const [form, setForm] = useState(item ? { ...item } : {
@@ -110,8 +152,11 @@ function CapitalModal({ type, item, onClose, onSave }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4 sm:p-6" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex" onClick={onClose}>
+      {/* Backdrop */}
+      <div className="flex-1 bg-black/30" />
+      {/* Sidebar panel slides in from right */}
+      <div className="bg-white w-full max-w-sm h-full flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
           <h3 className="font-bold text-slate-900 text-base">
             {item ? 'Edit' : 'New'} {isInv ? 'Investment' : 'Loan'}
@@ -120,7 +165,8 @@ function CapitalModal({ type, item, onClose, onSave }) {
             <X size={16} />
           </button>
         </div>
-        <form onSubmit={submit} className="p-5 space-y-4">
+        <form onSubmit={submit} className="flex flex-col flex-1 overflow-hidden">
+          <div className="flex-1 overflow-y-auto p-5 space-y-4">
           <div>
             <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
               {isInv ? 'Investor Name' : 'Lender Name'} *
@@ -194,7 +240,8 @@ function CapitalModal({ type, item, onClose, onSave }) {
               className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 resize-none"
               placeholder="Optional notes…" />
           </div>
-          <div className="flex gap-3 pt-1">
+          </div>{/* end scrollable body */}
+          <div className="flex gap-3 px-5 py-4 border-t border-slate-100 flex-shrink-0">
             <button type="button" onClick={onClose}
               className="flex-1 px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">
               Cancel
@@ -222,6 +269,10 @@ export default function Financials() {
   const [loading, setLoading] = useState(true);
   const [txType, setTxType] = useState('all');
   const [periodRange, setPeriodRange] = useState({ from: null, to: null, label: 'All Time' });
+
+  const [selectedCurrency, setSelectedCurrency] = useState(
+    () => localStorage.getItem('financials_currency') || null
+  );
 
   const [investments, setInvestments] = useState([]);
   const [loans, setLoans] = useState([]);
@@ -255,8 +306,11 @@ export default function Financials() {
       setMonthly(m.data);
       setTransactions(t.data);
       setByCategory(c.data);
-      setCurrencies(Array.isArray(cur.data) ? cur.data : []);
-      setBaseCurrency((settings.data && settings.data.base_currency) || 'PKR');
+      const currList = Array.isArray(cur.data) ? cur.data : [];
+      setCurrencies(currList);
+      const base = (settings.data && settings.data.base_currency) || 'PKR';
+      setBaseCurrency(base);
+      setSelectedCurrency(prev => prev || base);
     } finally { setLoading(false); }
   }, [periodRange.from, periodRange.to]);
 
@@ -281,8 +335,14 @@ export default function Financials() {
     </div>
   );
 
-  // Base-currency formatter (PKR amounts → base currency display)
-  const fmt = makeFormatter(currencies, baseCurrency);
+  const activeCurrency = selectedCurrency || baseCurrency;
+  const handleCurrencyChange = code => {
+    setSelectedCurrency(code);
+    localStorage.setItem('financials_currency', code);
+  };
+
+  // Active-currency formatter (PKR amounts → selected currency display)
+  const fmt = makeFormatter(currencies, activeCurrency);
   const baseSymbol = baseCurrency === 'PKR' ? '₨'
     : (currencies.find(c => c.code === baseCurrency)?.symbol || baseCurrency);
 
@@ -328,7 +388,14 @@ export default function Financials() {
           <h1 className="text-2xl font-bold text-slate-900">Financials</h1>
           <p className="text-sm text-slate-500 mt-0.5">P&L, investments &amp; loans</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {currencies.length > 0 && (
+            <CurrencySelector
+              selected={activeCurrency}
+              currencies={currencies}
+              onChange={handleCurrencyChange}
+            />
+          )}
           <button onClick={tab === 'pl' ? load : loadCapital} className="flex items-center gap-1.5 px-3 py-2 text-sm border border-slate-200 bg-white rounded-xl text-slate-600 hover:border-indigo-300 font-medium">
             <RefreshCw size={14} />
           </button>
@@ -366,13 +433,13 @@ export default function Financials() {
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-5">
               <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
                 <p className="text-xs font-semibold text-indigo-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><Landmark size={13} /> Total Raised</p>
-                <p className="text-xl sm:text-2xl font-bold text-slate-900 break-all">{pkr(total)}</p>
+                <p className="text-xl sm:text-2xl font-bold text-slate-900 break-all">{fmt(total)}</p>
                 <p className="text-xs text-slate-400 mt-1">{investments.length} investment{investments.length !== 1 ? 's' : ''}</p>
               </div>
               <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
                 <p className="text-xs font-semibold text-emerald-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><CheckCircle2 size={13} /> Active</p>
                 <p className="text-xl sm:text-2xl font-bold text-slate-900">{active.length}</p>
-                <p className="text-xs text-slate-400 mt-1">{pkr(active.reduce((s,i) => s + parseFloat(i.amount||0), 0))}</p>
+                <p className="text-xs text-slate-400 mt-1">{fmt(active.reduce((s,i) => s + parseFloat(i.amount||0), 0))}</p>
               </div>
               <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm col-span-2 sm:col-span-1">
                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Exited</p>
@@ -405,7 +472,7 @@ export default function Financials() {
                       <p className="text-xs text-slate-400">{inv.date}{inv.notes ? ` · ${inv.notes}` : ''}</p>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
-                      <p className="text-base font-black text-indigo-700 break-all text-right">{pkr(inv.amount)}</p>
+                      <p className="text-base font-black text-indigo-700 break-all text-right">{fmt(inv.amount)}</p>
                       <button onClick={() => setCapitalModal({ type: 'investment', item: inv })}
                         className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors">
                         <Pencil size={13} />
@@ -434,17 +501,17 @@ export default function Financials() {
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-5">
               <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
                 <p className="text-xs font-semibold text-rose-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><HandCoins size={13} /> Total Borrowed</p>
-                <p className="text-xl sm:text-2xl font-bold text-slate-900 break-all">{pkr(totalBorrowed)}</p>
+                <p className="text-xl sm:text-2xl font-bold text-slate-900 break-all">{fmt(totalBorrowed)}</p>
                 <p className="text-xs text-slate-400 mt-1">{loans.length} loan{loans.length !== 1 ? 's' : ''}</p>
               </div>
               <div className="bg-white border border-rose-100 rounded-2xl p-5 shadow-sm">
                 <p className="text-xs font-semibold text-rose-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><AlertCircle size={13} /> Outstanding</p>
-                <p className="text-xl sm:text-2xl font-bold text-rose-600 break-all">{pkr(outstanding)}</p>
+                <p className="text-xl sm:text-2xl font-bold text-rose-600 break-all">{fmt(outstanding)}</p>
                 <p className="text-xs text-slate-400 mt-1">{activeLoans.length} active</p>
               </div>
               <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm col-span-2 sm:col-span-1">
                 <p className="text-xs font-semibold text-emerald-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><CheckCircle2 size={13} /> Paid Back</p>
-                <p className="text-xl sm:text-2xl font-bold text-emerald-600 break-all">{pkr(totalPaid)}</p>
+                <p className="text-xl sm:text-2xl font-bold text-emerald-600 break-all">{fmt(totalPaid)}</p>
                 <p className="text-xs text-slate-400 mt-1">{loans.length - activeLoans.length} fully paid</p>
               </div>
             </div>
@@ -480,8 +547,8 @@ export default function Financials() {
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
                           <div className="text-right">
-                            <p className="text-base font-black text-rose-600 break-all">{pkr(ln.amount)}</p>
-                            <p className="text-xs text-slate-400">Remaining: {pkr(remaining)}</p>
+                            <p className="text-base font-black text-rose-600 break-all">{fmt(ln.amount)}</p>
+                            <p className="text-xs text-slate-400">Remaining: {fmt(remaining)}</p>
                           </div>
                           <button onClick={() => setCapitalModal({ type: 'loan', item: ln })}
                             className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors">
@@ -497,7 +564,7 @@ export default function Financials() {
                         <div className="bg-emerald-500 h-1.5 rounded-full transition-all" style={{ width: `${pct}%` }} />
                       </div>
                       <div className="flex justify-between mt-1">
-                        <span className="text-2xs text-slate-400">Paid: {pkr(ln.paid_amount)}</span>
+                        <span className="text-2xs text-slate-400">Paid: {fmt(ln.paid_amount)}</span>
                         <span className="text-2xs text-slate-400">{pct.toFixed(0)}%</span>
                       </div>
                     </div>
