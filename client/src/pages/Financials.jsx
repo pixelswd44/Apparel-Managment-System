@@ -64,6 +64,29 @@ function makeFormatter(currencies, baseCurrCode) {
   return v => `${sym}${((parseFloat(v) || 0) / rate).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 }
 
+// Compact formatter: 11,704,779 → "₨11.7M", 496,129 → "₨496K"
+function makeCompactFormatter(currencies, baseCurrCode) {
+  const getSym = () => {
+    if (!baseCurrCode || baseCurrCode === 'PKR') return '₨';
+    const base = (currencies || []).find(c => c.code === baseCurrCode);
+    return base?.symbol || baseCurrCode;
+  };
+  const convert = v => {
+    const raw = parseFloat(v) || 0;
+    if (!baseCurrCode || baseCurrCode === 'PKR') return Math.abs(raw);
+    const base = (currencies || []).find(c => c.code === baseCurrCode);
+    const rate = parseFloat(base?.rate_to_pkr);
+    return rate > 0 ? Math.abs(raw) / rate : Math.abs(raw);
+  };
+  return v => {
+    const n = convert(v);
+    const sym = getSym();
+    if (n >= 1_000_000) return `${sym}${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+    if (n >= 1_000)     return `${sym}${(n / 1_000).toFixed(1).replace(/\.0$/, '')}K`;
+    return `${sym}${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+  };
+}
+
 // Also build a formatter for original-currency amounts (non-PKR payments)
 function makeOrigFormatter(currencies, currCode) {
   const c = (currencies || []).find(x => x.code === currCode);
@@ -116,13 +139,14 @@ function BarChart({ data, fmt = pkrFmt }) {
 }
 
 // ── Summary Card ───────────────────────────────────────────────────────────
-function SummaryCard({ label, value, sub, Icon, accent, negative }) {
+function SummaryCard({ label, value, full, sub, Icon, accent, negative }) {
   return (
-    <div className={`bg-white rounded-2xl p-5 shadow-sm border ${negative ? 'border-rose-200' : 'border-slate-100'}`}>
-      <div className={`flex items-center gap-2 text-xs font-semibold uppercase tracking-wider mb-3 ${accent || 'text-slate-400'}`}>
+    <div className={`bg-white rounded-2xl p-4 sm:p-5 shadow-sm border ${negative ? 'border-rose-200' : 'border-slate-100'}`}>
+      <div className={`flex items-center gap-2 text-xs font-semibold uppercase tracking-wider mb-2 ${accent || 'text-slate-400'}`}>
         <Icon size={13} /> {label}
       </div>
-      <p className={`text-lg sm:text-2xl font-bold break-all ${negative ? 'text-rose-600' : 'text-slate-900'}`}>{value}</p>
+      <p className={`text-2xl sm:text-3xl font-black tracking-tight leading-none ${negative ? 'text-rose-600' : 'text-slate-900'}`}>{value}</p>
+      {full && full !== value && <p className={`text-xs mt-1 font-medium ${negative ? 'text-rose-400' : 'text-slate-400'}`}>{full}</p>}
       {sub && <p className="text-xs text-slate-400 mt-1">{sub}</p>}
     </div>
   );
@@ -334,8 +358,9 @@ export default function Financials() {
     localStorage.setItem('financials_currency', code);
   };
 
-  // Active-currency formatter (PKR amounts → selected currency display)
-  const fmt = makeFormatter(currencies, activeCurrency);
+  // Active-currency formatters
+  const fmt  = makeFormatter(currencies, activeCurrency);        // full: ₨11,704,779
+  const fmtC = makeCompactFormatter(currencies, activeCurrency); // compact: ₨11.7M
   const baseSymbol = baseCurrency === 'PKR' ? '₨'
     : (currencies.find(c => c.code === baseCurrency)?.symbol || baseCurrency);
 
@@ -589,34 +614,36 @@ export default function Financials() {
       </div>
 
       {/* KPI Cards — Row 1 */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
         <SummaryCard
           label="Total Received"
-          value={fmt(invoiceRevenue)}
+          value={fmtC(invoiceRevenue)}
+          full={fmt(invoiceRevenue)}
           sub={revenueCCSub || 'Invoice payments collected'}
           Icon={TrendingUp}
           accent="text-emerald-500"
         />
         <SummaryCard
           label="Outstanding"
-          value={fmt(outstanding)}
+          value={fmtC(outstanding)}
+          full={fmt(outstanding)}
           sub="Due from clients — not yet received"
           Icon={Clock}
           accent="text-amber-500"
         />
-        {/* Out of Pocket — cash paid out vs cash received */}
         <SummaryCard
           label={outOfPocket > 0 ? 'Out of Pocket' : 'Cash Surplus'}
-          value={fmt(Math.abs(outOfPocket))}
+          value={fmtC(Math.abs(outOfPocket))}
+          full={fmt(Math.abs(outOfPocket))}
           sub={outOfPocket > 0 ? 'Cash paid exceeds cash received' : 'Received covers all paid costs'}
           Icon={outOfPocket > 0 ? TrendingDown : TrendingUp}
           accent={outOfPocket > 0 ? 'text-rose-500' : 'text-emerald-500'}
           negative={outOfPocket > 0}
         />
-        {/* Projected P&L — full picture when everything settles */}
         <SummaryCard
           label={projectedPL >= 0 ? 'Projected Profit' : 'Projected Loss'}
-          value={fmt(Math.abs(projectedPL))}
+          value={fmtC(Math.abs(projectedPL))}
+          full={fmt(Math.abs(projectedPL))}
           sub={projectedPL >= 0 ? '(Rcvd + Outstanding) − Full Project Costs' : 'Full costs exceed total revenue'}
           Icon={projectedPL >= 0 ? TrendingUp : TrendingDown}
           accent={projectedPL >= 0 ? 'text-indigo-500' : 'text-rose-500'}
@@ -628,55 +655,58 @@ export default function Financials() {
       {(() => {
         const inWallet = invoiceRevenue - totalExpenses;
         return (
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-3">
 
             {/* Total Paid (Projects) */}
-            <div className="bg-white rounded-2xl p-5 shadow-sm border border-rose-100">
-              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider mb-3 text-rose-500">
+            <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-rose-100">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider mb-2 text-rose-500">
                 <Package size={13} /> Total Paid (Projects)
               </div>
-              <p className="text-lg sm:text-2xl font-bold text-slate-900 break-all">{fmt(totalProjectsPaid)}</p>
-              <p className="text-xs text-slate-400 mt-1">All project costs paid out</p>
+              <p className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900">{fmtC(totalProjectsPaid)}</p>
+              <p className="text-xs text-slate-400 mt-1">{fmt(totalProjectsPaid)}</p>
+              <p className="text-xs text-slate-400 mt-0.5">All project costs paid out</p>
             </div>
 
             {/* Business Expenses + Salaries */}
-            <div className="bg-white rounded-2xl p-5 shadow-sm border border-orange-100">
-              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider mb-3 text-orange-500">
+            <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-orange-100">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider mb-2 text-orange-500">
                 <Receipt size={13} /> Other Expenses
               </div>
-              <p className="text-lg sm:text-2xl font-bold text-slate-900 break-all">{fmt(businessExpenses + salariesPaid)}</p>
-              <p className="text-xs text-slate-400 mt-1">
-                Business {fmt(businessExpenses)} · Salaries {fmt(salariesPaid)}
+              <p className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900">{fmtC(businessExpenses + salariesPaid)}</p>
+              <p className="text-xs text-slate-400 mt-1">{fmt(businessExpenses + salariesPaid)}</p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Business {fmtC(businessExpenses)} · Salaries {fmtC(salariesPaid)}
               </p>
             </div>
 
             {/* In Wallet */}
-            <div className={`rounded-2xl p-5 shadow-sm border-2 ${inWallet >= 0 ? 'bg-cyan-50 border-cyan-200' : 'bg-rose-50 border-rose-200'}`}>
+            <div className={`rounded-2xl p-4 sm:p-5 shadow-sm border-2 ${inWallet >= 0 ? 'bg-cyan-50 border-cyan-200' : 'bg-rose-50 border-rose-200'}`}>
               <div className={`flex items-center gap-2 text-xs font-semibold uppercase tracking-wider mb-2 ${inWallet >= 0 ? 'text-cyan-600' : 'text-rose-500'}`}>
                 <Wallet size={13} /> In Wallet
               </div>
-              <p className={`text-lg sm:text-2xl font-bold mb-3 break-all ${inWallet >= 0 ? 'text-cyan-700' : 'text-rose-600'}`}>
-                {inWallet >= 0 ? '' : '−'}{fmt(Math.abs(inWallet))}
+              <p className={`text-2xl sm:text-3xl font-black tracking-tight mb-1 ${inWallet >= 0 ? 'text-cyan-700' : 'text-rose-600'}`}>
+                {inWallet >= 0 ? '' : '−'}{fmtC(Math.abs(inWallet))}
               </p>
+              <p className={`text-xs mb-2 ${inWallet >= 0 ? 'text-cyan-500' : 'text-rose-400'}`}>{inWallet >= 0 ? '' : '−'}{fmt(Math.abs(inWallet))}</p>
               <div className="space-y-1 border-t border-cyan-200 pt-2">
                 <div className="flex justify-between text-xs">
                   <span className="text-slate-500">+ Received</span>
-                  <span className="text-emerald-600 font-medium">{fmt(invoiceRevenue)}</span>
+                  <span className="text-emerald-600 font-medium">{fmtC(invoiceRevenue)}</span>
                 </div>
                 <div className="flex justify-between text-xs">
                   <span className="text-slate-500">− Projects paid</span>
-                  <span className="text-rose-500">{fmt(totalProjectsPaid)}</span>
+                  <span className="text-rose-500">{fmtC(totalProjectsPaid)}</span>
                 </div>
                 {businessExpenses > 0 && (
                   <div className="flex justify-between text-xs">
                     <span className="text-slate-500">− Business exp.</span>
-                    <span className="text-rose-500">{fmt(businessExpenses)}</span>
+                    <span className="text-rose-500">{fmtC(businessExpenses)}</span>
                   </div>
                 )}
                 {salariesPaid > 0 && (
                   <div className="flex justify-between text-xs">
                     <span className="text-slate-500">− Salaries</span>
-                    <span className="text-rose-500">{fmt(salariesPaid)}</span>
+                    <span className="text-rose-500">{fmtC(salariesPaid)}</span>
                   </div>
                 )}
               </div>
@@ -702,29 +732,29 @@ export default function Financials() {
           <BarChart data={monthly} fmt={fmt} />
 
           {/* Monthly table strip */}
-          <div className="mt-3 border-t border-slate-100 pt-3">
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="text-slate-400">
-                    <th className="text-left pb-1 font-medium">Month</th>
-                    <th className="text-right pb-1 font-medium">Revenue</th>
-                    <th className="text-right pb-1 font-medium">Expenses</th>
-                    <th className="text-right pb-1 font-medium">Net</th>
+          <div className="mt-3 border-t border-slate-100 pt-3 overflow-x-auto">
+            <table className="w-full text-xs min-w-[280px]">
+              <thead>
+                <tr className="text-slate-400">
+                  <th className="text-left pb-1.5 font-medium">Month</th>
+                  <th className="text-right pb-1.5 font-medium">Revenue</th>
+                  <th className="text-right pb-1.5 font-medium">Expenses</th>
+                  <th className="text-right pb-1.5 font-medium">Net</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {monthly.slice(-6).reverse().map((m, i) => (
+                  <tr key={i} className="text-slate-600">
+                    <td className="py-1.5 whitespace-nowrap">{monthShort(m.month)} {m.month.slice(0, 4)}</td>
+                    <td className="py-1.5 text-right text-emerald-600 whitespace-nowrap">{fmtC(m.revenue)}</td>
+                    <td className="py-1.5 text-right text-rose-500 whitespace-nowrap">{fmtC(m.totalOut)}</td>
+                    <td className={`py-1.5 text-right font-bold whitespace-nowrap ${m.net >= 0 ? 'text-indigo-600' : 'text-rose-600'}`}>
+                      {m.net < 0 ? '−' : ''}{fmtC(Math.abs(m.net))}
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {monthly.slice(-6).reverse().map((m, i) => (
-                    <tr key={i} className="text-slate-600">
-                      <td className="py-1">{monthShort(m.month)} {m.month.slice(0, 4)}</td>
-                      <td className="py-1 text-right text-emerald-600">{fmt(m.revenue)}</td>
-                      <td className="py-1 text-right text-rose-500">{fmt(m.totalOut)}</td>
-                      <td className={`py-1 text-right font-semibold ${m.net >= 0 ? 'text-indigo-600' : 'text-rose-600'}`}>{fmt(Math.abs(m.net))}{m.net < 0 ? ' L' : ''}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
 
@@ -835,12 +865,12 @@ export default function Financials() {
 
         {/* Transactions */}
         <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <div className="px-5 py-4 border-b border-slate-100 space-y-3">
             <p className="text-sm font-semibold text-slate-800">Recent Transactions</p>
-            <div className="flex gap-1 bg-slate-100 rounded-xl p-1">
+            <div className="flex gap-1 bg-slate-100 rounded-xl p-1 overflow-x-auto scrollbar-hide">
               {['all','income','expense','vendor','salary'].map(t => (
                 <button key={t} onClick={() => setTxType(t)}
-                  className={`px-2.5 py-1 text-xs font-semibold rounded-lg capitalize transition-colors
+                  className={`px-2.5 py-1.5 text-xs font-semibold rounded-lg capitalize transition-colors whitespace-nowrap flex-shrink-0
                     ${txType === t ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
                   {t}
                 </button>
