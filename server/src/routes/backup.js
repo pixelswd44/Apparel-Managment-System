@@ -137,10 +137,18 @@ router.post('/import', (req, res) => {
     db.pragma('foreign_keys = OFF');
 
     const restore = db.transaction(() => {
+      // Fast path: use the underlying sql.js Database directly so we can prepare
+      // each INSERT once and reuse it per row (stmt.run = bind+step+reset). The
+      // compat wrapper re-prepares the statement — plus a SELECT last_insert_rowid()
+      // — on EVERY row, which makes a multi-thousand-row restore extremely slow.
+      const raw  = db._db;
+      const fast = raw && typeof raw.prepare === 'function';
+
       // 1. Wipe in reverse order (children before parents)
       for (const name of [...TABLES_ORDERED].reverse()) {
         try {
-          db.prepare(`DELETE FROM "${name}"`).run();
+          if (fast) raw.run(`DELETE FROM "${name}"`);
+          else      db.prepare(`DELETE FROM "${name}"`).run();
         } catch { /* table may not exist in older schema — skip */ }
       }
 
@@ -158,7 +166,7 @@ router.post('/import', (req, res) => {
 
         let stmt;
         try {
-          stmt = db.prepare(sql);
+          stmt = fast ? raw.prepare(sql) : db.prepare(sql);
         } catch (e) {
           stats.tables[name] = -1;
           stats.errors.push(`${name}: prepare failed — ${e.message}`);
@@ -168,6 +176,8 @@ router.post('/import', (req, res) => {
         let inserted = 0, skipped = 0;
         for (const row of rows) {
           try {
+            // Both raw sql.js Statement.run() and the compat wrapper accept an
+            // array of positional values; raw resets the statement for reuse.
             stmt.run(cols.map(c => row[c] ?? null));
             inserted++;
           } catch (e) {
@@ -175,6 +185,8 @@ router.post('/import', (req, res) => {
             if (skipped <= 3) stats.errors.push(`${name} row skip: ${e.message}`);
           }
         }
+        if (fast && typeof stmt.free === 'function') stmt.free();
+
         stats.tables[name] = inserted;
         if (skipped > 0) stats.errors.push(`${name}: skipped ${skipped} row(s)`);
       }
