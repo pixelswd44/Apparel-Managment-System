@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "client",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "set PATH=C:\\Program Files\\nodejs;%PATH% && node_modules\\.bin\\vite.cmd --port 5173"],
+      "cwd": "client",
+      "port": 5173
+    }
+  ]
+}
