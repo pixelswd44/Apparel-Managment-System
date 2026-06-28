@@ -27,6 +27,7 @@ import inventoryRouter from './routes/inventory.js';
 import employeesRouter from './routes/employees.js';
 import expensesRouter from './routes/expenses.js';
 import financialsRouter from './routes/financials.js';
+import loansRouter     from './routes/loans.js';
 import documentTemplatesRouter from './routes/document-templates.js';
 import backupRouter from './routes/backup.js';
 
@@ -72,6 +73,7 @@ app.use('/api/inventory',          inventoryRouter);
 app.use('/api/employees',          employeesRouter);
 app.use('/api/expenses',           expensesRouter);
 app.use('/api/financials',         financialsRouter);
+app.use('/api/loans',              loansRouter);
 app.use('/api/document-templates', documentTemplatesRouter);
 app.use('/api/backup',             backupRouter);
 

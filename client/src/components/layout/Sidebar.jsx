@@ -4,7 +4,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, FileText, Receipt,
   TrendingUp, Users, Layers, Settings, Box, AlertTriangle, Flame, Store, Archive,
-  UserCheck, Wallet, LayoutTemplate, LogOut, ChevronDown, KeyRound, Eye, EyeOff, Check, X, Menu, BookMarked,
+  UserCheck, Wallet, LayoutTemplate, LogOut, ChevronDown, KeyRound, Eye, EyeOff, Check, X, Menu, BookMarked, HandCoins,
 } from 'lucide-react';
 import { useDirty } from '../../lib/dirtyContext';
 import { useAuth } from '../../lib/authContext';
@@ -112,6 +112,7 @@ const ALL_NAV = [
   { to: '/projects',   icon: Flame,           label: 'Projects'   },
   { to: '/inventory',  icon: Archive,         label: 'Inventory'  },
   { to: '/expenses',   icon: Wallet,          label: 'Expenses'   },
+  { to: '/loans',      icon: HandCoins,       label: 'Loans'      },
   { to: '/vendors',    icon: Store,           label: 'Vendors'    },
   { to: '/payroll',    icon: UserCheck,       label: 'Employees'  },
   { to: '/templates',  icon: LayoutTemplate,  label: 'Templates'  },

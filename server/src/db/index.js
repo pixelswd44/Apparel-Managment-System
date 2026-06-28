@@ -700,6 +700,15 @@ const migrations = [
     created_at    TEXT    DEFAULT (datetime('now')),
     updated_at    TEXT    DEFAULT (datetime('now'))
   )`,
+  `ALTER TABLE capital_loans ADD COLUMN direction TEXT DEFAULT 'borrowed'`,
+  `CREATE TABLE IF NOT EXISTS loan_repayments (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    loan_id    INTEGER NOT NULL REFERENCES capital_loans(id) ON DELETE CASCADE,
+    amount     REAL    NOT NULL DEFAULT 0,
+    date       TEXT    NOT NULL,
+    notes      TEXT    DEFAULT '',
+    created_at TEXT    DEFAULT (datetime('now'))
+  )`,
 ];
 
 for (const sql of migrations) {
