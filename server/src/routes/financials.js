@@ -529,22 +529,32 @@ router.get('/ledger', (req, res) => {
       credit: 0, debit: parseFloat(a.amount) || 0, currency: 'PKR', amount_orig: parseFloat(a.amount) || 0 });
   }
 
+  // Final date filter — some sources (fabric/process/extra costs) build entries
+  // in JS from JSON fields and cannot be filtered in SQL, so we filter here to
+  // guarantee nothing outside the requested range leaks through.
+  const filtered = (from && to)
+    ? entries.filter(e => {
+        const d = (e.date || '').replace(' ', 'T').split('T')[0];
+        return d >= from && d <= to;
+      })
+    : entries;
+
   // Sort all entries by date ASC, compute running balance
-  entries.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  filtered.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
   let balance = 0;
-  const ledger = entries.map(e => {
+  const ledger = filtered.map(e => {
     balance += (e.credit - e.debit);
     return { ...e, balance };
   });
 
   // Summary
-  const totalCredit = entries.reduce((s, e) => s + e.credit, 0);
-  const totalDebit  = entries.reduce((s, e) => s + e.debit,  0);
+  const totalCredit = filtered.reduce((s, e) => s + e.credit, 0);
+  const totalDebit  = filtered.reduce((s, e) => s + e.debit,  0);
   const summary = {
     totalCredit, totalDebit, netBalance: totalCredit - totalDebit,
     bySection: {},
   };
-  for (const e of entries) {
+  for (const e of filtered) {
     if (!summary.bySection[e.section]) summary.bySection[e.section] = { credit: 0, debit: 0 };
     summary.bySection[e.section].credit += e.credit;
     summary.bySection[e.section].debit  += e.debit;
