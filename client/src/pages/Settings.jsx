@@ -1665,14 +1665,27 @@ function BackupRestore() {
   const [includeFiles,  setIncludeFiles]  = useState(true);
   // import steps: 'idle' | 'chosen' | 'confirm' | 'restoring' | 'done' | 'error'
   const [step,         setStep]         = useState('idle');
+  const [restoreSource, setRestoreSource] = useState(null); // 'upload' | 'snapshot'
   const [importFile,   setImportFile]   = useState(null);
   const [importMeta,   setImportMeta]   = useState(null);   // parsed backup header
   const [importResult, setImportResult] = useState(null);
-  const [restoreFiles, setRestoreFiles] = useState(false);  // OFF by default — images bloat upload
+  const [restoreFiles, setRestoreFiles] = useState(true);
   const [error,        setError]        = useState('');
   const [snapshotSaving,  setSnapshotSaving]  = useState(false);
   const [snapshotResult,  setSnapshotResult]  = useState(null);
+  const [snapshotMeta,    setSnapshotMeta]    = useState(null); // metadata from server snapshot
+  const [snapshotMetaLoading, setSnapshotMetaLoading] = useState(false);
   const fileRef = useRef(null);
+
+  // Load snapshot metadata once so we can show it in the restore picker
+  useEffect(() => {
+    setSnapshotMetaLoading(true);
+    apiFetch('/api/backup/snapshot-meta')
+      .then(r => r.json())
+      .then(d => setSnapshotMeta(d.exists ? d : null))
+      .catch(() => setSnapshotMeta(null))
+      .finally(() => setSnapshotMetaLoading(false));
+  }, [snapshotResult]); // re-check after saving a new snapshot
 
   async function handleSaveSnapshot() {
     setSnapshotSaving(true); setSnapshotResult(null);
@@ -1811,8 +1824,38 @@ function BackupRestore() {
   }
 
   function reset() {
-    setStep('idle'); setImportFile(null); setImportMeta(null);
-    setImportResult(null); setError('');
+    setStep('idle'); setRestoreSource(null); setImportFile(null);
+    setImportMeta(null); setImportResult(null); setError('');
+  }
+
+  async function handleRestoreSnapshot() {
+    if (!snapshotMeta) return;
+    setStep('restoring'); setError('');
+    try {
+      const controller = new AbortController();
+      const timeoutId  = setTimeout(() => controller.abort(), 120_000);
+      let r;
+      try {
+        r = await apiFetch('/api/backup/restore-snapshot', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ restore_files: restoreFiles }),
+          signal:  controller.signal,
+        });
+      } catch (fetchErr) {
+        if (fetchErr.name === 'AbortError') throw new Error('Restore timed out after 2 minutes.');
+        throw fetchErr;
+      } finally {
+        clearTimeout(timeoutId);
+      }
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || `Server returned ${r.status}`);
+      setImportResult(data);
+      setStep('done');
+    } catch (e) {
+      setError(e.message || 'Restore failed.');
+      setStep('error');
+    }
   }
 
   const totalBackupRows = importMeta
@@ -1932,12 +1975,54 @@ function BackupRestore() {
             <input ref={fileRef} type="file" accept=".json,.json.gz,application/json,application/gzip"
               onChange={pickFile} className="hidden" />
 
-            {/* ── Step: idle ── */}
+            {/* ── Step: idle — pick source ── */}
             {step === 'idle' && (
-              <button onClick={() => fileRef.current?.click()}
-                className="flex items-center gap-2 border border-slate-200 hover:border-rose-300 hover:bg-rose-50 text-slate-700 px-4 py-2 rounded-xl text-sm font-medium transition-colors">
-                <Upload size={13} /> Choose backup file…
-              </button>
+              <div className="space-y-2">
+                {/* Option 1: server snapshot */}
+                <button
+                  onClick={() => {
+                    if (!snapshotMeta) return;
+                    setRestoreSource('snapshot');
+                    setImportMeta(snapshotMeta);
+                    setImportFile(null);
+                    setStep('chosen');
+                  }}
+                  disabled={!snapshotMeta || snapshotMetaLoading}
+                  className="w-full flex items-start gap-3 border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/50 disabled:opacity-50 disabled:cursor-not-allowed text-left px-4 py-3 rounded-xl transition-colors group"
+                >
+                  <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <ShieldCheck size={15} className="text-indigo-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-slate-800 group-hover:text-indigo-700">
+                      Use saved snapshot
+                    </p>
+                    {snapshotMetaLoading ? (
+                      <p className="text-xs text-slate-400">Checking…</p>
+                    ) : snapshotMeta ? (
+                      <p className="text-xs text-slate-500">
+                        {snapshotMeta.exported_at?.slice(0, 19).replace('T', ' ')} · {snapshotMeta.row_count?.toLocaleString()} rows · {snapshotMeta.size_kb} KB
+                      </p>
+                    ) : (
+                      <p className="text-xs text-slate-400">No snapshot saved yet — use Save Snapshot above first.</p>
+                    )}
+                  </div>
+                </button>
+
+                {/* Option 2: upload file */}
+                <button
+                  onClick={() => { setRestoreSource('upload'); fileRef.current?.click(); }}
+                  className="w-full flex items-start gap-3 border border-slate-200 hover:border-rose-300 hover:bg-rose-50/50 text-left px-4 py-3 rounded-xl transition-colors group"
+                >
+                  <div className="w-8 h-8 bg-rose-100 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <Upload size={15} className="text-rose-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800 group-hover:text-rose-700">Upload backup file</p>
+                    <p className="text-xs text-slate-500">Choose a .json or .json.gz file from your device</p>
+                  </div>
+                </button>
+              </div>
             )}
 
             {/* ── Step: chosen — show file summary ── */}
@@ -1948,9 +2033,13 @@ function BackupRestore() {
                     <Save size={14} className="text-indigo-600" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-800 truncate">{importFile.name}</p>
+                    <p className="text-sm font-medium text-slate-800 truncate">
+                    {restoreSource === 'snapshot' ? 'Server snapshot' : importFile?.name}
+                  </p>
                     <p className="text-xs text-slate-400">
-                      {(importFile.size / 1024 / 1024).toFixed(2)} MB
+                      {restoreSource === 'snapshot'
+                        ? `${importMeta.size_kb} KB`
+                        : `${(importFile?.size / 1024 / 1024).toFixed(2)} MB`}
                       · {totalBackupRows.toLocaleString()} rows
                       · {importMeta.file_count ?? 0} uploaded files
                     </p>
@@ -2016,7 +2105,7 @@ function BackupRestore() {
                     className="flex-1 px-4 py-2 text-sm border border-slate-300 rounded-xl text-slate-700 hover:bg-white transition-colors font-medium">
                     Go Back
                   </button>
-                  <button onClick={handleImport}
+                  <button onClick={restoreSource === 'snapshot' ? handleRestoreSnapshot : handleImport}
                     className="flex-1 flex items-center justify-center gap-2 bg-rose-700 hover:bg-rose-800 text-white py-2 rounded-xl text-sm font-bold transition-colors">
                     <Check size={13} /> Yes, Restore Now
                   </button>

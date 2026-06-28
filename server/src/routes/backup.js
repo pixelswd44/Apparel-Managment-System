@@ -240,6 +240,106 @@ router.post('/import', (req, res) => {
   }
 });
 
+// ─── GET /api/backup/snapshot-meta ───────────────────────────────────────────
+// Returns metadata from the saved snapshot (if it exists), without sending the full file.
+router.get('/snapshot-meta', (req, res) => {
+  try {
+    const outPath = path.join(DATA_DIR, 'latest-backup.json.gz');
+    if (!fs.existsSync(outPath)) return res.json({ exists: false });
+    const compressed = fs.readFileSync(outPath);
+    const raw = zlib.gunzipSync(compressed);
+    const backup = JSON.parse(raw.toString());
+    const stat = fs.statSync(outPath);
+    res.json({
+      exists:      true,
+      exported_at: backup.exported_at,
+      row_count:   backup.row_count,
+      file_count:  backup.file_count ?? 0,
+      table_meta:  backup.table_meta,
+      size_kb:     Math.round(stat.size / 1024),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── POST /api/backup/restore-snapshot ───────────────────────────────────────
+// Restores directly from data/latest-backup.json.gz — no upload needed.
+router.post('/restore-snapshot', (req, res) => {
+  try {
+    const outPath = path.join(DATA_DIR, 'latest-backup.json.gz');
+    if (!fs.existsSync(outPath)) return res.status(404).json({ error: 'No snapshot found on server.' });
+
+    const compressed = fs.readFileSync(outPath);
+    const raw  = zlib.gunzipSync(compressed);
+    const backup = JSON.parse(raw.toString());
+
+    if (!backup || backup.app !== 'apparel-crm') return res.status(400).json({ error: 'Snapshot file is not valid.' });
+
+    const stats     = { tables: {}, files: 0, errors: [] };
+    const startedAt = Date.now();
+    const restoreFiles = req.body?.restore_files !== false; // default true for server-side restore
+
+    db.pragma('foreign_keys = OFF');
+    const restore = db.transaction(() => {
+      const raw2 = db._db;
+      const fast = raw2 && typeof raw2.prepare === 'function';
+
+      for (const name of [...TABLES_ORDERED].reverse()) {
+        try {
+          if (fast) raw2.run(`DELETE FROM "${name}"`);
+          else      db.prepare(`DELETE FROM "${name}"`).run();
+        } catch { /* skip */ }
+      }
+
+      for (const name of TABLES_ORDERED) {
+        const rows = Array.isArray(backup.tables[name]) ? backup.tables[name] : [];
+        if (rows.length === 0) { stats.tables[name] = 0; continue; }
+        const cols = Object.keys(rows[0]);
+        if (cols.length === 0) { stats.tables[name] = 0; continue; }
+        const sql  = `INSERT OR IGNORE INTO "${name}" (${cols.map(c => `"${c}"`).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`;
+        let stmt;
+        try { stmt = fast ? raw2.prepare(sql) : db.prepare(sql); }
+        catch (e) { stats.tables[name] = -1; stats.errors.push(`${name}: ${e.message}`); continue; }
+        let inserted = 0, skipped = 0;
+        for (const row of rows) {
+          try { stmt.run(cols.map(c => row[c] ?? null)); inserted++; }
+          catch (e) { skipped++; if (skipped <= 3) stats.errors.push(`${name} row: ${e.message}`); }
+        }
+        if (fast && typeof stmt.free === 'function') stmt.free();
+        stats.tables[name] = inserted;
+        if (skipped > 0) stats.errors.push(`${name}: skipped ${skipped} row(s)`);
+      }
+    });
+
+    restore();
+    db.pragma('foreign_keys = ON');
+
+    if (restoreFiles && backup.files && typeof backup.files === 'object') {
+      if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+      for (const [fname, payload] of Object.entries(backup.files)) {
+        try {
+          fs.writeFileSync(path.join(UPLOADS_DIR, fname), Buffer.from(payload.data, 'base64'));
+          stats.files++;
+        } catch (e) { stats.errors.push(`file "${fname}": ${e.message}`); }
+      }
+    }
+
+    const totalRows = Object.values(stats.tables).reduce((s, v) => s + Math.max(v, 0), 0);
+    res.json({
+      success:     true,
+      exported_at: backup.exported_at,
+      duration_ms: Date.now() - startedAt,
+      total_rows:  totalRows,
+      stats,
+      message:     'Restore complete. Reload the app to see your data.',
+    });
+  } catch (err) {
+    console.error('[backup/restore-snapshot]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── POST /api/backup/save-snapshot ──────────────────────────────────────────
 // Exports the live DB to data/latest-backup.json.gz so it can be committed to git.
 router.post('/save-snapshot', (req, res) => {
