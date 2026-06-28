@@ -258,15 +258,30 @@ router.post('/save-snapshot', (req, res) => {
     }
 
     const totalRows = Object.values(tableMeta).reduce((s, n) => s + n, 0);
+
+    // Read all uploaded files and base64-encode them
+    const files = {};
+    if (fs.existsSync(UPLOADS_DIR)) {
+      for (const fname of fs.readdirSync(UPLOADS_DIR)) {
+        if (fname.startsWith('.')) continue;
+        const fullPath = path.join(UPLOADS_DIR, fname);
+        try {
+          const stat = fs.statSync(fullPath);
+          if (!stat.isFile()) continue;
+          files[fname] = { data: fs.readFileSync(fullPath).toString('base64'), size: stat.size };
+        } catch { /* unreadable — skip */ }
+      }
+    }
+
     const backup = {
       app:         'apparel-crm',
       version:     2,
       exported_at: new Date().toISOString(),
       row_count:   totalRows,
       table_meta:  tableMeta,
-      file_count:  0,
+      file_count:  Object.keys(files).length,
       tables,
-      files:       {},
+      files,
     };
 
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -277,6 +292,7 @@ router.post('/save-snapshot', (req, res) => {
     res.json({
       success:    true,
       row_count:  totalRows,
+      file_count: Object.keys(files).length,
       size_kb:    Math.round(compressed.length / 1024),
       saved_at:   new Date().toISOString(),
       message:    'Snapshot saved to data/latest-backup.json.gz',

@@ -1907,7 +1907,7 @@ function BackupRestore() {
             </button>
             {snapshotResult && !snapshotResult.error && (
               <p className="mt-2 text-xs text-indigo-700 font-medium">
-                ✓ Saved {snapshotResult.row_count?.toLocaleString()} rows · {snapshotResult.size_kb} KB · {snapshotResult.saved_at?.slice(0, 19).replace('T', ' ')}
+                ✓ Saved {snapshotResult.row_count?.toLocaleString()} rows · {snapshotResult.file_count ?? 0} files · {snapshotResult.size_kb} KB · {snapshotResult.saved_at?.slice(0, 19).replace('T', ' ')}
               </p>
             )}
             {snapshotResult?.error && (
