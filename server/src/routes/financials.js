@@ -346,13 +346,19 @@ router.get('/ledger', (req, res) => {
   const openingAmt   = parseFloat(settingsMap.opening_balance) || 0;
   const openingDate  = settingsMap.opening_balance_date || null; // 'YYYY-MM-DD' or null
 
-  // Effective start date: the later of the requested `from` and the opening date
-  const effectiveFrom = [from, openingDate].filter(Boolean).sort().pop() || from;
-  const dateFilter = (col) => effectiveFrom && to
-    ? `AND date(${col}) >= '${effectiveFrom}' AND date(${col}) <= '${to}'`
-    : openingDate
-      ? `AND date(${col}) >= '${openingDate}'`
-      : '';
+  // Only apply the opening cutoff when the viewed period is on/after the opening date.
+  // If the user selects a period entirely before the opening date (e.g. June when
+  // opening is July 1), show normal historical data for that period.
+  const periodIsBeforeOpening = openingDate && to && to < openingDate;
+  const applyOpening = openingDate && !periodIsBeforeOpening;
+  const effectiveFrom = applyOpening ? ([from, openingDate].filter(Boolean).sort().pop() || from) : from;
+
+  const dateFilter = (col) => {
+    const parts = [];
+    if (effectiveFrom) parts.push(`date(${col}) >= '${effectiveFrom}'`);
+    if (to)            parts.push(`date(${col}) <= '${to}'`);
+    return parts.length ? 'AND ' + parts.join(' AND ') : '';
+  };
 
   const entries = [];
 
@@ -555,8 +561,8 @@ router.get('/ledger', (req, res) => {
   // Sort all entries by date ASC, compute running balance
   filtered.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
 
-  // Prepend opening balance entry if one is configured
-  const openingEntry = openingAmt > 0 && openingDate ? [{
+  // Prepend opening balance entry only when the period is on/after the opening date
+  const openingEntry = applyOpening && openingAmt > 0 && openingDate ? [{
     date: openingDate,
     section: 'Opening Balance',
     category: 'Opening Balance',
@@ -576,7 +582,7 @@ router.get('/ledger', (req, res) => {
   });
 
   // Summary
-  const totalCredit = filtered.reduce((s, e) => s + e.credit, 0) + openingAmt;
+  const totalCredit = filtered.reduce((s, e) => s + e.credit, 0) + (applyOpening ? openingAmt : 0);
   const totalDebit  = filtered.reduce((s, e) => s + e.debit,  0);
   const summary = {
     totalCredit, totalDebit, netBalance: totalCredit - totalDebit,
