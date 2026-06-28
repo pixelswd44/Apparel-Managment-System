@@ -1,5 +1,31 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Component } from 'react';
+
+class ErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="min-h-screen bg-[#0f0f11] flex items-center justify-center p-8">
+          <div className="bg-white rounded-2xl p-8 max-w-lg w-full shadow-xl">
+            <h2 className="text-lg font-bold text-rose-600 mb-2">Something went wrong</h2>
+            <pre className="text-xs text-slate-600 whitespace-pre-wrap bg-slate-50 rounded-xl p-4 overflow-auto max-h-60">
+              {this.state.error?.message}
+              {'\n\n'}
+              {this.state.error?.stack}
+            </pre>
+            <button onClick={() => window.location.reload()}
+              className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700">
+              Reload
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 import { DirtyProvider } from './lib/dirtyContext';
 import { AuthProvider, useAuth, canAccess } from './lib/authContext';
 import Layout from './components/layout/Layout';
@@ -122,7 +148,7 @@ export default function App() {
   const [needsWizard, setNeedsWizard]   = useState(false);
 
   useEffect(() => {
-    api.get('/setup/status')
+    api.get('/setup/status', { timeout: 8000 })
       .then(r => {
         setNeedsWizard(r.data.needs_wizard);
         setSetupChecked(true);
@@ -133,13 +159,15 @@ export default function App() {
   if (!setupChecked) return <Spinner />;
 
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <AppRoutes
-          needsWizard={needsWizard}
-          onWizardComplete={(stillNeeds) => setNeedsWizard(stillNeeds)}
-        />
-      </BrowserRouter>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <BrowserRouter>
+          <AppRoutes
+            needsWizard={needsWizard}
+            onWizardComplete={(stillNeeds) => setNeedsWizard(stillNeeds)}
+          />
+        </BrowserRouter>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
