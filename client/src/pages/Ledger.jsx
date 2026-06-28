@@ -24,6 +24,7 @@ const SECTION_COLORS = {
   'Project Costs':     'text-rose-600    bg-rose-50',
   'Business Expenses': 'text-orange-600  bg-orange-50',
   'Salaries':          'text-blue-600    bg-blue-50',
+  'Opening Balance':   'text-violet-600  bg-violet-50',
 };
 
 const SECTIONS = ['All', 'Income', 'Project Costs', 'Business Expenses', 'Salaries'];

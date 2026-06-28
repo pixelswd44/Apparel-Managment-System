@@ -3,7 +3,7 @@ import {
   Settings as SettingsIcon, GripVertical, Plus, RefreshCw,
   Save, Pencil, Trash2, Check, X, AlertTriangle, Calculator, DollarSign, Globe,
   Building2, Upload, Star, Palette, Layers, Users, KeyRound, Eye, EyeOff,
-  ShieldCheck, ShoppingBag, Package,
+  ShieldCheck, ShoppingBag, Package, Wallet,
 } from 'lucide-react';
 import api, { apiFetch, imgUrl } from '../lib/api';
 import { useAuth } from '../lib/authContext';
@@ -1643,9 +1643,26 @@ const BACKUP_INCLUDES = [
   'Settings & Branding', 'Uploaded Images', 'Users',
 ];
 
+// Module groups for selective export
+const EXPORT_MODULES = [
+  { key: 'clients',   label: 'Clients',             tables: ['clients'] },
+  { key: 'vendors',   label: 'Vendors',             tables: ['vendors'] },
+  { key: 'employees', label: 'Employees',           tables: ['employees'] },
+  { key: 'products',  label: 'Products & Inventory',tables: ['products','product_prices','product_sales','inventory_items','inventory','inventory_transactions'] },
+  { key: 'quotes',    label: 'Quotations',          tables: ['quotation_templates','quotations'] },
+  { key: 'invoices',  label: 'Invoices & Payments', tables: ['invoices','payments','purchases'] },
+  { key: 'projects',  label: 'Projects',            tables: ['projects','project_products','project_stages','project_boxes','project_vendors','project_shipping','project_vendor_payments','project_workers'] },
+  { key: 'expenses',  label: 'Expenses & Payroll',  tables: ['expenses','payroll_records','employee_advances','capital_investments','capital_loans'] },
+  { key: 'settings',  label: 'Settings & Config',   tables: ['settings','currencies','users','companies','categories','expense_categories','cost_breakdown_items','document_templates','calculator_templates'] },
+  { key: 'reminders', label: 'Reminders',           tables: ['reminders'] },
+];
+const ALL_MODULE_KEYS = EXPORT_MODULES.map(m => m.key);
+
 function BackupRestore() {
   const [exporting,    setExporting]    = useState(false);
   const [exportDone,   setExportDone]   = useState(false);
+  const [exportModules, setExportModules] = useState(new Set(ALL_MODULE_KEYS)); // all selected by default
+  const [includeFiles,  setIncludeFiles]  = useState(true);
   // import steps: 'idle' | 'chosen' | 'confirm' | 'restoring' | 'done' | 'error'
   const [step,         setStep]         = useState('idle');
   const [importFile,   setImportFile]   = useState(null);
@@ -1655,12 +1672,29 @@ function BackupRestore() {
   const [error,        setError]        = useState('');
   const fileRef = useRef(null);
 
+  function toggleModule(key) {
+    setExportModules(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  }
+
+  const isPartialExport = exportModules.size < ALL_MODULE_KEYS.length || !includeFiles;
+
   // ── Export ───────────────────────────────────────────────────────────────
   async function handleExport() {
     setExporting(true); setError(''); setExportDone(false);
     try {
       const token = localStorage.getItem('crm_token');
-      const r = await fetch('/api/backup/export', {
+      const selectedTables = EXPORT_MODULES
+        .filter(m => exportModules.has(m.key))
+        .flatMap(m => m.tables);
+      const params = new URLSearchParams();
+      if (exportModules.size < ALL_MODULE_KEYS.length) params.set('tables', selectedTables.join(','));
+      if (!includeFiles) params.set('files', '0');
+      const qs = params.toString();
+      const r = await fetch(`/api/backup/export${qs ? '?' + qs : ''}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!r.ok) throw new Error(`Server returned ${r.status}`);
@@ -1668,7 +1702,8 @@ function BackupRestore() {
       const url   = URL.createObjectURL(blob);
       const a     = document.createElement('a');
       const stamp = new Date().toISOString().slice(0, 10);
-      a.href = url; a.download = `apparel-crm-backup-${stamp}.json.gz`;
+      const suffix = isPartialExport ? '-partial' : '';
+      a.href = url; a.download = `apparel-crm-backup-${stamp}${suffix}.json.gz`;
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
       setExportDone(true);
@@ -1767,22 +1802,55 @@ function BackupRestore() {
             <Save size={18} className="text-emerald-700" />
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-slate-900 text-sm">Download a Full Backup</h3>
+            <h3 className="font-semibold text-slate-900 text-sm">Download Backup</h3>
             <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-              Creates one JSON file with every client, product, quotation, invoice, payment,
-              project, shipping record, expense and all uploaded images. Save it to a cloud
-              drive or email it to yourself — you can restore it any time on any machine.
+              Choose which modules to include, then download a compressed backup file.
+              Save it to a cloud drive — you can restore it any time on any machine.
             </p>
-            <button onClick={handleExport} disabled={exporting}
+
+            {/* Module selection */}
+            <div className="mt-3 border border-emerald-200 rounded-xl overflow-hidden">
+              <div className="flex items-center justify-between px-3 py-2 bg-emerald-100/60 border-b border-emerald-200">
+                <span className="text-xs font-semibold text-emerald-800">Select modules</span>
+                <div className="flex gap-3">
+                  <button onClick={() => setExportModules(new Set(ALL_MODULE_KEYS))}
+                    className="text-2xs text-emerald-700 hover:text-emerald-900 font-medium">All</button>
+                  <button onClick={() => setExportModules(new Set())}
+                    className="text-2xs text-emerald-700 hover:text-emerald-900 font-medium">None</button>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 p-3">
+                {EXPORT_MODULES.map(m => (
+                  <label key={m.key} className="flex items-center gap-2 cursor-pointer group">
+                    <input type="checkbox" checked={exportModules.has(m.key)}
+                      onChange={() => toggleModule(m.key)}
+                      className="rounded accent-emerald-600" />
+                    <span className="text-xs text-slate-700 group-hover:text-slate-900">{m.label}</span>
+                  </label>
+                ))}
+              </div>
+              <div className="px-3 pb-3 pt-0">
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <input type="checkbox" checked={includeFiles} onChange={e => setIncludeFiles(e.target.checked)}
+                    className="rounded accent-emerald-600" />
+                  <span className="text-xs text-slate-700 group-hover:text-slate-900">
+                    Include uploaded images &amp; logos
+                    <span className="text-slate-400 ml-1">(larger file)</span>
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <button onClick={handleExport} disabled={exporting || exportModules.size === 0}
               className={`mt-3 flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors text-white
                 ${exportDone ? 'bg-emerald-500' : 'bg-emerald-600 hover:bg-emerald-700'} disabled:opacity-60`}>
               {exporting
                 ? <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
                 : exportDone ? <Check size={13} /> : <Save size={13} />}
-              {exporting ? 'Preparing…' : exportDone ? 'Downloaded!' : 'Download Backup'}
+              {exporting ? 'Preparing…' : exportDone ? 'Downloaded!' : isPartialExport ? 'Download Partial Backup' : 'Download Full Backup'}
             </button>
             <p className="text-2xs text-slate-400 mt-2">
-              Tip: download a fresh backup before restoring, and after every major data-entry session.
+              Tip: download a full backup before restoring, and after every major data-entry session.
             </p>
           </div>
         </div>
@@ -1978,11 +2046,112 @@ function BackupRestore() {
 
 // ── Settings sections nav ─────────────────────────────────────────────────────
 
+// ── Opening Balance ────────────────────────────────────────────────────────────
+function OpeningBalance() {
+  const [amount,  setAmount]  = useState('');
+  const [date,    setDate]    = useState('');
+  const [current, setCurrent] = useState(null); // { amount, date } currently saved
+  const [saving,  setSaving]  = useState(false);
+  const [clearing,setClearing]= useState(false);
+  const [saved,   setSaved]   = useState(false);
+  const [error,   setError]   = useState('');
+
+  useEffect(() => {
+    api.get('/api/settings').then(r => r.json()).then(s => {
+      if (s.opening_balance) {
+        setCurrent({ amount: s.opening_balance, date: s.opening_balance_date });
+        setAmount(s.opening_balance);
+        setDate(s.opening_balance_date || '');
+      }
+    }).catch(() => {});
+  }, []);
+
+  async function handleSave() {
+    if (!amount || !date) { setError('Please enter both an amount and a date.'); return; }
+    setSaving(true); setError('');
+    try {
+      await api.put('/api/settings/opening_balance',        { value: String(amount) });
+      await api.put('/api/settings/opening_balance_date',   { value: date });
+      setCurrent({ amount: String(amount), date });
+      setSaved(true); setTimeout(() => setSaved(false), 3000);
+    } catch (e) { setError(e.message || 'Save failed'); }
+    finally { setSaving(false); }
+  }
+
+  async function handleClear() {
+    setClearing(true); setError('');
+    try {
+      await api.put('/api/settings/opening_balance',      { value: '' });
+      await api.put('/api/settings/opening_balance_date', { value: '' });
+      setCurrent(null); setAmount(''); setDate('');
+    } catch (e) { setError(e.message || 'Clear failed'); }
+    finally { setClearing(false); }
+  }
+
+  const fmtPKR = n => `Rs ${Number(n || 0).toLocaleString('en-PK', { minimumFractionDigits: 0 })}`;
+
+  return (
+    <div className="space-y-5 max-w-lg">
+      <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-4 text-xs text-indigo-700 leading-relaxed space-y-1">
+        <p className="font-semibold text-indigo-800">How it works</p>
+        <p>Set the balance you currently have in your account and a start date. The ledger will ignore all transactions before that date and begin its running balance from this amount — giving you a clean slate going forward.</p>
+        <p className="text-indigo-500">Your old data is not deleted — it stays in the system for reference.</p>
+      </div>
+
+      {current && (
+        <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
+          <Check size={15} className="text-emerald-600 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-emerald-800">Opening balance is active</p>
+            <p className="text-xs text-emerald-600 mt-0.5">
+              {fmtPKR(current.amount)} starting from {current.date || '—'}
+            </p>
+          </div>
+          <button onClick={handleClear} disabled={clearing}
+            className="text-xs text-rose-600 hover:text-rose-800 font-semibold px-2 py-1 rounded-lg hover:bg-rose-50 transition-colors disabled:opacity-50">
+            {clearing ? 'Clearing…' : 'Clear'}
+          </button>
+        </div>
+      )}
+
+      <div className="space-y-3">
+        <div>
+          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Opening Balance (PKR)</label>
+          <input
+            type="number" min="0" step="1" placeholder="e.g. 500000"
+            value={amount} onChange={e => setAmount(e.target.value)}
+            className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Start Date</label>
+          <input
+            type="date"
+            value={date} onChange={e => setDate(e.target.value)}
+            className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+          />
+          <p className="text-2xs text-slate-400 mt-1">Transactions before this date will be excluded from the ledger.</p>
+        </div>
+      </div>
+
+      {error && <p className="text-xs text-rose-600">{error}</p>}
+
+      <button onClick={handleSave} disabled={saving}
+        className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-colors disabled:opacity-60
+          ${saved ? 'bg-emerald-500' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
+        {saving ? <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" /> : saved ? <Check size={13} /> : <Wallet size={13} />}
+        {saving ? 'Saving…' : saved ? 'Saved!' : 'Set Opening Balance'}
+      </button>
+    </div>
+  );
+}
+
 const SECTIONS = [
   { id: 'app-branding',     label: 'App Branding',          icon: Palette,    description: 'Change the application name and logo shown in the sidebar' },
   { id: 'companies',        label: 'Companies',             icon: Building2,  description: 'Manage your companies — each with its own logo and details for quotations & invoices' },
   { id: 'currencies',       label: 'Currencies & Rates',    icon: Globe,      description: 'Manage currencies and exchange rates. Set your default currency — used across all quotations, invoices and conversions.' },
   { id: 'cost-breakdown',   label: 'Cost Breakdown Items',  icon: Calculator, description: 'Customize the cost categories used in the product price calculator' },
+  { id: 'opening-balance',  label: 'Opening Balance',       icon: Wallet,     description: 'Set a starting account balance and date so the ledger tracks from a clean slate' },
   { id: 'backup-restore',   label: 'Backup & Restore',      icon: Save,       description: 'Download a backup of all your data, or restore from a previous backup file' },
 ];
 
@@ -2033,8 +2202,9 @@ export default function Settings() {
           {activeSection === 'app-branding'   && <AppBranding />}
           {activeSection === 'companies'      && <Companies />}
           {activeSection === 'currencies'     && <Currencies />}
-          {activeSection === 'cost-breakdown' && <CostBreakdownItems />}
-          {activeSection === 'backup-restore' && <BackupRestore />}
+          {activeSection === 'cost-breakdown'  && <CostBreakdownItems />}
+          {activeSection === 'opening-balance' && <OpeningBalance />}
+          {activeSection === 'backup-restore'  && <BackupRestore />}
         </div>
       </div>
     </div>

@@ -339,7 +339,20 @@ router.get('/transactions', (req, res) => {
 router.get('/ledger', (req, res) => {
   const { from, to } = req.query;
   const rates = getRates();
-  const dateFilter = (col) => from && to ? `AND date(${col}) >= '${from}' AND date(${col}) <= '${to}'` : '';
+
+  // Opening balance setting — acts as the ledger floor date
+  const settingsRows = db.prepare("SELECT key, value FROM settings WHERE key IN ('opening_balance','opening_balance_date')").all();
+  const settingsMap  = Object.fromEntries(settingsRows.map(r => [r.key, r.value]));
+  const openingAmt   = parseFloat(settingsMap.opening_balance) || 0;
+  const openingDate  = settingsMap.opening_balance_date || null; // 'YYYY-MM-DD' or null
+
+  // Effective start date: the later of the requested `from` and the opening date
+  const effectiveFrom = [from, openingDate].filter(Boolean).sort().pop() || from;
+  const dateFilter = (col) => effectiveFrom && to
+    ? `AND date(${col}) >= '${effectiveFrom}' AND date(${col}) <= '${to}'`
+    : openingDate
+      ? `AND date(${col}) >= '${openingDate}'`
+      : '';
 
   const entries = [];
 
@@ -541,17 +554,33 @@ router.get('/ledger', (req, res) => {
 
   // Sort all entries by date ASC, compute running balance
   filtered.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+  // Prepend opening balance entry if one is configured
+  const openingEntry = openingAmt > 0 && openingDate ? [{
+    date: openingDate,
+    section: 'Opening Balance',
+    category: 'Opening Balance',
+    description: 'Opening Balance',
+    party: '',
+    credit: openingAmt,
+    debit: 0,
+    currency: 'PKR',
+    amount_orig: openingAmt,
+    isOpeningBalance: true,
+  }] : [];
+
   let balance = 0;
-  const ledger = filtered.map(e => {
+  const ledger = [...openingEntry, ...filtered].map(e => {
     balance += (e.credit - e.debit);
     return { ...e, balance };
   });
 
   // Summary
-  const totalCredit = filtered.reduce((s, e) => s + e.credit, 0);
+  const totalCredit = filtered.reduce((s, e) => s + e.credit, 0) + openingAmt;
   const totalDebit  = filtered.reduce((s, e) => s + e.debit,  0);
   const summary = {
     totalCredit, totalDebit, netBalance: totalCredit - totalDebit,
+    openingBalance: openingAmt, openingDate,
     bySection: {},
   };
   for (const e of filtered) {
