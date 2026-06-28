@@ -122,10 +122,40 @@ router.get('/:id/payroll', (req, res) => {
 
 router.post('/:id/payroll', (req, res) => {
   const { period, base_salary, bonus = 0, deductions = 0, net_pay, notes = '' } = req.body;
-  const result = db.prepare(`
-    INSERT INTO payroll_records (employee_id, period, base_salary, bonus, deductions, net_pay, status, notes)
-    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)
-  `).run(req.params.id, period, base_salary, bonus, deductions, net_pay, notes);
+
+  const save = db.transaction(() => {
+    const result = db.prepare(`
+      INSERT INTO payroll_records (employee_id, period, base_salary, bonus, deductions, net_pay, status, notes)
+      VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)
+    `).run(req.params.id, period, base_salary, bonus, deductions, net_pay, notes);
+
+    // Apply deduction against pending advances (oldest first)
+    let remaining = parseFloat(deductions) || 0;
+    if (remaining > 0) {
+      const pending = db.prepare(`
+        SELECT * FROM employee_advances
+        WHERE employee_id = ? AND status != 'cleared'
+        ORDER BY date ASC, id ASC
+      `).all(req.params.id);
+
+      for (const adv of pending) {
+        if (remaining <= 0) break;
+        const outstanding = parseFloat(adv.amount) - parseFloat(adv.repaid_amount || 0);
+        if (outstanding <= 0) continue;
+        const applying = Math.min(remaining, outstanding);
+        const newRepaid = parseFloat(adv.repaid_amount || 0) + applying;
+        const newStatus = newRepaid >= parseFloat(adv.amount) ? 'cleared' : 'partial';
+        db.prepare(`
+          UPDATE employee_advances SET repaid_amount = ?, status = ? WHERE id = ?
+        `).run(newRepaid, newStatus, adv.id);
+        remaining -= applying;
+      }
+    }
+
+    return result;
+  });
+
+  const result = save();
   res.json(db.prepare('SELECT * FROM payroll_records WHERE id=?').get(result.lastInsertRowid));
 });
 
