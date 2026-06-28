@@ -548,6 +548,46 @@ router.get('/ledger', (req, res) => {
       credit: 0, debit: parseFloat(a.amount) || 0, currency: 'PKR', amount_orig: parseFloat(a.amount) || 0 });
   }
 
+  // Loans — borrowed (credit) and repayments of borrowed (debit)
+  const borrowedLoans = db.prepare(`
+    SELECT cl.id, cl.date, cl.amount, cl.lender_name as party, cl.notes
+    FROM capital_loans cl WHERE cl.direction = 'borrowed' ${dateFilter('cl.date')}
+  `).all();
+  for (const l of borrowedLoans) {
+    entries.push({ date: l.date, section: 'Loans', category: 'Borrowed',
+      description: `Borrowed from ${l.party}${l.notes ? ` – ${l.notes}` : ''}`, party: l.party || '',
+      credit: parseFloat(l.amount) || 0, debit: 0, currency: 'PKR', amount_orig: parseFloat(l.amount) || 0 });
+  }
+
+  const lentLoans = db.prepare(`
+    SELECT cl.id, cl.date, cl.amount, cl.lender_name as party, cl.notes
+    FROM capital_loans cl WHERE cl.direction = 'lent' ${dateFilter('cl.date')}
+  `).all();
+  for (const l of lentLoans) {
+    entries.push({ date: l.date, section: 'Loans', category: 'Lent',
+      description: `Lent to ${l.party}${l.notes ? ` – ${l.notes}` : ''}`, party: l.party || '',
+      credit: 0, debit: parseFloat(l.amount) || 0, currency: 'PKR', amount_orig: parseFloat(l.amount) || 0 });
+  }
+
+  const loanRepayments = db.prepare(`
+    SELECT lr.id, lr.date, lr.amount, lr.notes,
+           cl.lender_name as party, cl.direction
+    FROM loan_repayments lr
+    JOIN capital_loans cl ON cl.id = lr.loan_id
+    WHERE 1=1 ${dateFilter('lr.date')}
+    ORDER BY lr.date ASC
+  `).all();
+  for (const r of loanRepayments) {
+    const isBorrowed = r.direction === 'borrowed';
+    entries.push({ date: r.date, section: 'Loans',
+      category: isBorrowed ? 'Repaid (Borrowed)' : 'Received Back (Lent)',
+      description: isBorrowed ? `Repaid to ${r.party}` : `Received back from ${r.party}`,
+      party: r.party || '',
+      credit: isBorrowed ? 0 : parseFloat(r.amount) || 0,
+      debit:  isBorrowed ? parseFloat(r.amount) || 0 : 0,
+      currency: 'PKR', amount_orig: parseFloat(r.amount) || 0 });
+  }
+
   // Final date filter — some sources (fabric/process/extra costs) build entries
   // in JS from JSON fields and cannot be filtered in SQL, so we filter here to
   // guarantee nothing outside the requested range leaks through.
