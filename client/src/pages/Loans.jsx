@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Plus, Trash2, ChevronDown, ChevronUp, Check, X, HandCoins } from 'lucide-react';
 import api from '../lib/api';
 
@@ -216,10 +217,10 @@ function LoanCard({ loan, color, onDelete, onRepaymentAdded, onRepaymentDeleted 
 }
 
 export default function Loans() {
+  const navigate = useNavigate();
   const [tab,    setTab]    = useState('borrowed');
   const [loans,  setLoans]  = useState([]);
   const [loading,setLoading]= useState(true);
-  const [showAdd,setShowAdd]= useState(false);
 
   async function load(dir) {
     setLoading(true);
@@ -232,8 +233,7 @@ export default function Loans() {
 
   useEffect(() => { load(tab); }, [tab]);
 
-  function handleSaved(loan) { setLoans(prev => [loan, ...prev]); setShowAdd(false); }
-  function handleDelete(id)  { setLoans(prev => prev.filter(l => l.id !== id)); }
+  function handleDelete(id) { setLoans(prev => prev.filter(l => l.id !== id)); }
 
   function handleRepaymentAdded(loanId, rep) {
     setLoans(prev => prev.map(l => l.id === loanId
@@ -262,7 +262,7 @@ export default function Loans() {
           <h1 className="text-2xl font-bold text-slate-900">Personal Loans</h1>
           <p className="text-sm text-slate-500 mt-0.5">Track money borrowed from friends and lent to friends</p>
         </div>
-        <button onClick={() => setShowAdd(true)}
+        <button onClick={() => navigate(`/loans/new?direction=${tab}`)}
           className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold transition-colors">
           <Plus size={15} /> Add Entry
         </button>
@@ -325,13 +325,6 @@ export default function Loans() {
         </div>
       )}
 
-      {showAdd && (
-        <AddLoanModal
-          direction={tab}
-          onSave={handleSaved}
-          onClose={() => setShowAdd(false)}
-        />
-      )}
     </div>
   );
 }

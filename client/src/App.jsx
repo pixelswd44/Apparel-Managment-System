@@ -30,6 +30,7 @@ import VendorDetail from './pages/VendorDetail';
 import Templates from './pages/Templates';
 import ResetPassword from './pages/ResetPassword';
 import Loans from './pages/Loans';
+import LoanForm from './pages/LoanForm';
 import api from './lib/api';
 
 // Full-screen spinner
@@ -104,6 +105,7 @@ function AppRoutes({ needsWizard, onWizardComplete }) {
           <Route path="/clients/:id/edit"   element={<ProtectedRoute path="/clients"><ClientForm /></ProtectedRoute>} />
           <Route path="/payroll"            element={<ProtectedRoute path="/payroll"><Payroll /></ProtectedRoute>} />
           <Route path="/loans"              element={<ProtectedRoute path="/financials"><Loans /></ProtectedRoute>} />
+          <Route path="/loans/new"          element={<ProtectedRoute path="/financials"><LoanForm /></ProtectedRoute>} />
           <Route path="/mockup-generator"   element={<MockupGenerator />} />
           <Route path="/templates"          element={<ProtectedRoute path="/templates"><Templates /></ProtectedRoute>} />
           <Route path="/settings"           element={<ProtectedRoute path="/settings"><Settings /></ProtectedRoute>} />
