@@ -422,7 +422,7 @@ router.get('/ledger', (req, res) => {
   // Fabric/process/external costs — emit one row per item using item.date if set
   const allPP = db.prepare(`
     SELECT pp.fabrics, pp.costs, pp.external_costs, proj.title as project_title,
-           proj.updated_at, proj.created_at
+           proj.created_at
     FROM project_products pp
     LEFT JOIN projects proj ON proj.id = pp.project_id
   `).all();
@@ -435,7 +435,7 @@ router.get('/ledger', (req, res) => {
 
   for (const pp of allPP) {
     try {
-      const fallbackDate = normDate(pp.updated_at) || normDate(pp.created_at);
+      const fallbackDate = normDate(pp.created_at);
       const fabs = JSON.parse(pp.fabrics || '[]');
       const cs   = JSON.parse(pp.costs   || '[]');
       const exts = JSON.parse(pp.external_costs || '[]');

@@ -3887,20 +3887,25 @@ function CostsTab({ project, onReload, fmt = pkr, view = 'all' }) {
     try {
       const paid = ppPaid[pp.id] || {};
       const fabs = migrateFabrics(pp);
+      const today = new Date().toISOString().split('T')[0];
       const updatedForm = {
         ...pp,
-        fabrics: fabs.map((f, i) => ({
-          ...f,
-          amount_paid: paid.fabrics?.[String(i)] ?? f.amount_paid ?? '',
-        })),
-        costs: (pp.costs || []).map((c, i) => ({
-          ...c,
-          amount_paid: paid.costs?.[String(c.key ?? i)] ?? c.amount_paid ?? '',
-        })),
-        external_costs: (pp.external_costs || []).map((e, i) => ({
-          ...e,
-          amount_paid: paid.external?.[String(i)] ?? e.amount_paid ?? '',
-        })),
+        fabrics: fabs.map((f, i) => {
+          const amount_paid = paid.fabrics?.[String(i)] ?? f.amount_paid ?? '';
+          // Stamp today as the payment date the first time amount_paid is recorded
+          const date = f.date || (parseFloat(amount_paid) > 0 ? today : undefined);
+          return { ...f, amount_paid, ...(date ? { date } : {}) };
+        }),
+        costs: (pp.costs || []).map((c, i) => {
+          const amount_paid = paid.costs?.[String(c.key ?? i)] ?? c.amount_paid ?? '';
+          const date = c.date || (parseFloat(amount_paid) > 0 ? today : undefined);
+          return { ...c, amount_paid, ...(date ? { date } : {}) };
+        }),
+        external_costs: (pp.external_costs || []).map((e, i) => {
+          const amount_paid = paid.external?.[String(i)] ?? e.amount_paid ?? '';
+          const date = e.date || (parseFloat(amount_paid) > 0 ? today : undefined);
+          return { ...e, amount_paid, ...(date ? { date } : {}) };
+        }),
       };
       await api.put(`/projects/${pid}/products/${pp.id}`, updatedForm);
       onReload();

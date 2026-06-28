@@ -706,6 +706,40 @@ for (const sql of migrations) {
   try { db.exec(sql); } catch { /* column already exists */ }
 }
 
+// ── Backfill dates on fabric/cost/external_cost items ──────────────────────
+// Items added before date-stamping was introduced have no `date` field.
+// Set their date to the project's created_at so the ledger filter works.
+try {
+  const ppRows = db.prepare(`
+    SELECT pp.id, pp.fabrics, pp.costs, pp.external_costs, proj.created_at
+    FROM project_products pp
+    LEFT JOIN projects proj ON proj.id = pp.project_id
+  `).all();
+
+  const normD = d => d ? d.replace(' ', 'T').split('T')[0] : null;
+
+  for (const r of ppRows) {
+    const projectDate = normD(r.created_at);
+    if (!projectDate) continue;
+
+    const fabs  = JSON.parse(r.fabrics         || '[]');
+    const costs = JSON.parse(r.costs           || '[]');
+    const exts  = JSON.parse(r.external_costs  || '[]');
+
+    let changed = false;
+    const newFabs  = fabs.map(f  => { if (!f.date)  { changed = true; return { ...f,  date: projectDate }; } return f;  });
+    const newCosts = costs.map(c => { if (!c.date)  { changed = true; return { ...c,  date: projectDate }; } return c;  });
+    const newExts  = exts.map(e  => { if (!e.date)  { changed = true; return { ...e,  date: projectDate }; } return e;  });
+
+    if (changed) {
+      db.prepare('UPDATE project_products SET fabrics=?, costs=?, external_costs=? WHERE id=?')
+        .run(JSON.stringify(newFabs), JSON.stringify(newCosts), JSON.stringify(newExts), r.id);
+    }
+  }
+} catch (e) {
+  console.error('[DB] fabric/cost date backfill error:', e.message);
+}
+
 // ── Fix: make project_vendor_payments.project_vendor_id nullable ───────────
 // Shipping payments have no project_vendor row, so the FK constraint breaks.
 // We recreate the table if the column is still NOT NULL.
