@@ -78,9 +78,11 @@ app.use('/api/backup',             backupRouter);
 // ── Serve React build in production ───────────────────────────────────────────
 const clientDist = join(__dirname, '../../client/dist');
 if (existsSync(clientDist)) {
-  app.use(express.static(clientDist));
-  // Catch-all: return index.html for client-side routing
+  // Hashed assets (JS/CSS) can be cached long-term; index.html must never be cached
+  // so browsers always fetch the latest bundle references after a deploy.
+  app.use(express.static(clientDist, { index: false }));
   app.get('*', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
     res.sendFile(join(clientDist, 'index.html'));
   });
 }
