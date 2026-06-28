@@ -2,6 +2,7 @@ import { Router } from 'express';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import zlib from 'zlib';
 import db from '../db/index.js';
 
 const router = Router();
@@ -106,9 +107,11 @@ router.get('/export', (req, res) => {
     };
 
     const stamp = new Date().toISOString().slice(0, 10);
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Content-Disposition', `attachment; filename="apparel-crm-backup-${stamp}.json"`);
-    res.send(JSON.stringify(backup, null, 2));
+    const compressed = zlib.gzipSync(JSON.stringify(backup));
+    res.setHeader('Content-Type', 'application/gzip');
+    res.setHeader('Content-Encoding', 'identity'); // prevent Express from double-decompressing
+    res.setHeader('Content-Disposition', `attachment; filename="apparel-crm-backup-${stamp}.json.gz"`);
+    res.send(compressed);
   } catch (err) {
     console.error('[backup/export]', err);
     res.status(500).json({ error: err.message });

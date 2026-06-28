@@ -1668,7 +1668,7 @@ function BackupRestore() {
       const url   = URL.createObjectURL(blob);
       const a     = document.createElement('a');
       const stamp = new Date().toISOString().slice(0, 10);
-      a.href = url; a.download = `apparel-crm-backup-${stamp}.json`;
+      a.href = url; a.download = `apparel-crm-backup-${stamp}.json.gz`;
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
       setExportDone(true);
@@ -1689,7 +1689,14 @@ function BackupRestore() {
     setError(''); setImportResult(null);
     // Parse the file header immediately so we can show a preview
     try {
-      const text = await f.text();
+      let text;
+      if (f.name.endsWith('.gz')) {
+        const ds = new DecompressionStream('gzip');
+        const decompressed = f.stream().pipeThrough(ds);
+        text = await new Response(decompressed).text();
+      } else {
+        text = await f.text();
+      }
       let parsed;
       try { parsed = JSON.parse(text); }
       catch { throw new Error('File is not valid JSON.'); }
@@ -1793,7 +1800,7 @@ function BackupRestore() {
               Replace all current data with a previous backup file.
             </p>
 
-            <input ref={fileRef} type="file" accept=".json,application/json"
+            <input ref={fileRef} type="file" accept=".json,.json.gz,application/json,application/gzip"
               onChange={pickFile} className="hidden" />
 
             {/* ── Step: idle ── */}
