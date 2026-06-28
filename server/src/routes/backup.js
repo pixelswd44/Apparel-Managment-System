@@ -55,6 +55,7 @@ const TABLES_ORDERED = [
   'employee_advances',
   'capital_investments',
   'capital_loans',
+  'loan_repayments',
   // ── Other ───────────────────────────────────────────────────────────────
   'reminders',
 ];
