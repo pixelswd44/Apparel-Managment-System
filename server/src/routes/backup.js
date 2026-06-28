@@ -7,8 +7,9 @@ import db from '../db/index.js';
 
 const router = Router();
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const __dirname  = path.dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = path.join(__dirname, '..', '..', 'uploads');
+const DATA_DIR    = path.join(__dirname, '..', '..', '..', 'data');
 
 // Tables in dependency-safe insertion order (parents before children).
 // IMPORTANT: keep project_shipping BEFORE project_vendor_payments — pvp has a FK → shipping.
@@ -235,6 +236,53 @@ router.post('/import', (req, res) => {
     });
   } catch (err) {
     console.error('[backup/import]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── POST /api/backup/save-snapshot ──────────────────────────────────────────
+// Exports the live DB to data/latest-backup.json.gz so it can be committed to git.
+router.post('/save-snapshot', (req, res) => {
+  try {
+    const tables    = {};
+    const tableMeta = {};
+    for (const name of TABLES_ORDERED) {
+      try {
+        const rows      = db.prepare(`SELECT * FROM "${name}"`).all();
+        tables[name]    = rows;
+        tableMeta[name] = rows.length;
+      } catch {
+        tables[name]    = [];
+        tableMeta[name] = 0;
+      }
+    }
+
+    const totalRows = Object.values(tableMeta).reduce((s, n) => s + n, 0);
+    const backup = {
+      app:         'apparel-crm',
+      version:     2,
+      exported_at: new Date().toISOString(),
+      row_count:   totalRows,
+      table_meta:  tableMeta,
+      file_count:  0,
+      tables,
+      files:       {},
+    };
+
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    const outPath    = path.join(DATA_DIR, 'latest-backup.json.gz');
+    const compressed = zlib.gzipSync(JSON.stringify(backup));
+    fs.writeFileSync(outPath, compressed);
+
+    res.json({
+      success:    true,
+      row_count:  totalRows,
+      size_kb:    Math.round(compressed.length / 1024),
+      saved_at:   new Date().toISOString(),
+      message:    'Snapshot saved to data/latest-backup.json.gz',
+    });
+  } catch (err) {
+    console.error('[backup/save-snapshot]', err);
     res.status(500).json({ error: err.message });
   }
 });
