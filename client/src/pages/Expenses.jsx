@@ -571,7 +571,7 @@ export default function Expenses() {
       <div className="flex-1 min-h-0 flex flex-col lg:flex-row rounded-2xl border border-slate-200 shadow-sm overflow-hidden bg-white">
 
         {/* ── LEFT: filters + list ── */}
-        <div className={`w-full lg:w-72 flex-shrink-0 flex flex-col border-b lg:border-b-0 lg:border-r border-slate-200 bg-white ${selected ? 'hidden lg:flex' : ''}`}>
+        <div className={`w-full lg:w-72 flex-1 min-h-0 lg:flex-none flex flex-col border-b lg:border-b-0 lg:border-r border-slate-200 bg-white ${selected ? 'hidden lg:flex' : ''}`}>
 
           {/* Search */}
           <div className="px-4 pt-4 pb-3 border-b border-slate-100">
