@@ -1834,8 +1834,8 @@ function BackupRestore() {
                   <input type="checkbox" checked={includeFiles} onChange={e => setIncludeFiles(e.target.checked)}
                     className="rounded accent-emerald-600" />
                   <span className="text-xs text-slate-700 group-hover:text-slate-900">
-                    Include uploaded images &amp; logos
-                    <span className="text-slate-400 ml-1">(larger file)</span>
+                    Include uploaded files
+                    <span className="text-slate-400 ml-1">(images, PDFs &amp; logos — larger file)</span>
                   </span>
                 </label>
               </div>
@@ -2057,7 +2057,8 @@ function OpeningBalance() {
   const [error,   setError]   = useState('');
 
   useEffect(() => {
-    api.get('/api/settings').then(r => r.json()).then(s => {
+    api.get('/settings').then(r => {
+      const s = r.data;
       if (s.opening_balance) {
         setCurrent({ amount: s.opening_balance, date: s.opening_balance_date });
         setAmount(s.opening_balance);
@@ -2070,8 +2071,8 @@ function OpeningBalance() {
     if (!amount || !date) { setError('Please enter both an amount and a date.'); return; }
     setSaving(true); setError('');
     try {
-      await api.put('/api/settings/opening_balance',        { value: String(amount) });
-      await api.put('/api/settings/opening_balance_date',   { value: date });
+      await api.put('/settings/opening_balance',      { value: String(amount) });
+      await api.put('/settings/opening_balance_date', { value: date });
       setCurrent({ amount: String(amount), date });
       setSaved(true); setTimeout(() => setSaved(false), 3000);
     } catch (e) { setError(e.message || 'Save failed'); }
@@ -2081,8 +2082,8 @@ function OpeningBalance() {
   async function handleClear() {
     setClearing(true); setError('');
     try {
-      await api.put('/api/settings/opening_balance',      { value: '' });
-      await api.put('/api/settings/opening_balance_date', { value: '' });
+      await api.put('/settings/opening_balance',      { value: '' });
+      await api.put('/settings/opening_balance_date', { value: '' });
       setCurrent(null); setAmount(''); setDate('');
     } catch (e) { setError(e.message || 'Clear failed'); }
     finally { setClearing(false); }
