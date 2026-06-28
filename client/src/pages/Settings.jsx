@@ -1715,15 +1715,22 @@ function BackupRestore() {
         delete payload.files;
         payload.file_count = 0;
       }
-      const token = localStorage.getItem('crm_token');
-      const r = await fetch('/api/backup/import', {
+      const r = await apiFetch('/api/backup/import', {
         method:  'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
+
+      // Guard: if the server (or a proxy) returned an HTML error page instead
+      // of JSON (e.g. nginx 413 "Request Entity Too Large"), give a clear message.
+      const ct = r.headers.get('content-type') || '';
+      if (!ct.includes('application/json')) {
+        const hint = r.status === 413
+          ? 'The backup file is too large for the server to accept. Try restoring without the "Also restore images" option, or ask your host to increase the upload size limit.'
+          : `Server returned an unexpected response (HTTP ${r.status}). The file may be too large for the server.`;
+        throw new Error(hint);
+      }
+
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || `Server returned ${r.status}`);
       setImportResult(data);
