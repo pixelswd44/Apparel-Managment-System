@@ -161,10 +161,44 @@ router.post('/:id/payroll', (req, res) => {
 
 router.put('/:id/payroll/:recId', (req, res) => {
   const { period, base_salary, bonus = 0, deductions = 0, net_pay, status = 'pending', paid_at = null, notes = '' } = req.body;
-  db.prepare(`
-    UPDATE payroll_records SET period=?, base_salary=?, bonus=?, deductions=?, net_pay=?, status=?, paid_at=?, notes=?
-    WHERE id=? AND employee_id=?
-  `).run(period, base_salary, bonus, deductions, net_pay, status, paid_at, notes, req.params.recId, req.params.id);
+
+  const save = db.transaction(() => {
+    // How much was previously deducted on this record?
+    const prev = db.prepare('SELECT deductions FROM payroll_records WHERE id=?').get(req.params.recId);
+    const prevDed = parseFloat(prev?.deductions || 0);
+    const newDed  = parseFloat(deductions) || 0;
+    const delta   = newDed - prevDed; // positive = more deduction applied this edit
+
+    db.prepare(`
+      UPDATE payroll_records SET period=?, base_salary=?, bonus=?, deductions=?, net_pay=?, status=?, paid_at=?, notes=?
+      WHERE id=? AND employee_id=?
+    `).run(period, base_salary, bonus, deductions, net_pay, status, paid_at, notes, req.params.recId, req.params.id);
+
+    // Apply the incremental deduction delta against pending advances (oldest first)
+    if (delta > 0) {
+      let remaining = delta;
+      const pending = db.prepare(`
+        SELECT * FROM employee_advances
+        WHERE employee_id = ? AND status != 'cleared'
+        ORDER BY date ASC, id ASC
+      `).all(req.params.id);
+
+      for (const adv of pending) {
+        if (remaining <= 0) break;
+        const outstanding = parseFloat(adv.amount) - parseFloat(adv.repaid_amount || 0);
+        if (outstanding <= 0) continue;
+        const applying   = Math.min(remaining, outstanding);
+        const newRepaid  = parseFloat(adv.repaid_amount || 0) + applying;
+        const newStatus  = newRepaid >= parseFloat(adv.amount) ? 'cleared' : 'partial';
+        db.prepare(`
+          UPDATE employee_advances SET repaid_amount = ?, status = ? WHERE id = ?
+        `).run(newRepaid, newStatus, adv.id);
+        remaining -= applying;
+      }
+    }
+  });
+
+  save();
   res.json(db.prepare('SELECT * FROM payroll_records WHERE id=?').get(req.params.recId));
 });
 
