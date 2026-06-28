@@ -237,12 +237,24 @@ export default function Ledger() {
 
       {/* Summary Cards */}
       {data && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+        <div className={`grid gap-4 mb-5 ${summary.openingBalance > 0 ? 'grid-cols-2 lg:grid-cols-5' : 'grid-cols-2 lg:grid-cols-4'}`}>
+
+          {/* Opening Balance card — only shown when one is configured */}
+          {summary.openingBalance > 0 && (
+            <div className="bg-violet-50 border border-violet-200 rounded-2xl p-4">
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-violet-600 mb-2">
+                <Wallet size={13} /> Opening Balance
+              </div>
+              <p className="text-lg sm:text-2xl font-black text-violet-700 break-all">{pkr(summary.openingBalance)}</p>
+              <p className="text-xs text-violet-400 mt-1">Starting balance{summary.openingDate ? ` · ${summary.openingDate}` : ''}</p>
+            </div>
+          )}
+
           <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-emerald-600 mb-2">
               <TrendingUp size={13} /> Total Income
             </div>
-            <p className="text-lg sm:text-2xl font-black text-emerald-700 break-all">{pkr(summary.totalCredit)}</p>
+            <p className="text-lg sm:text-2xl font-black text-emerald-700 break-all">{pkr(summary.totalCredit - (summary.openingBalance || 0))}</p>
             <p className="text-xs text-emerald-500 mt-1">All payments received</p>
           </div>
 
@@ -261,7 +273,7 @@ export default function Ledger() {
             <p className={`text-lg sm:text-2xl font-black break-all ${(summary.netBalance||0) >= 0 ? 'text-indigo-700' : 'text-rose-700'}`}>
               {(summary.netBalance||0) >= 0 ? '' : '−'}{pkr(Math.abs(summary.netBalance||0))}
             </p>
-            <p className="text-xs text-slate-400 mt-1">Income − Expenses</p>
+            <p className="text-xs text-slate-400 mt-1">{summary.openingBalance > 0 ? 'Opening + Income − Expenses' : 'Income − Expenses'}</p>
           </div>
 
           {/* Section breakdown mini-card */}
