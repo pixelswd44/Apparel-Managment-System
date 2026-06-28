@@ -1651,6 +1651,7 @@ function BackupRestore() {
   const [importFile,   setImportFile]   = useState(null);
   const [importMeta,   setImportMeta]   = useState(null);   // parsed backup header
   const [importResult, setImportResult] = useState(null);
+  const [restoreFiles, setRestoreFiles] = useState(false);  // OFF by default — images bloat upload
   const [error,        setError]        = useState('');
   const fileRef = useRef(null);
 
@@ -1704,10 +1705,16 @@ function BackupRestore() {
 
   // ── Restore ──────────────────────────────────────────────────────────────
   async function handleImport() {
-    if (!importFile || !importMeta) return;
+    if (!importMeta) return;
     setStep('restoring'); setError('');
     try {
-      const text  = await importFile.text();
+      // Strip base64 image files from the payload unless the user opted in —
+      // they can be 10–200 MB and make the upload/parse take minutes.
+      const payload = { ...importMeta };
+      if (!restoreFiles) {
+        delete payload.files;
+        payload.file_count = 0;
+      }
       const token = localStorage.getItem('crm_token');
       const r = await fetch('/api/backup/import', {
         method:  'POST',
@@ -1715,7 +1722,7 @@ function BackupRestore() {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: text,
+        body: JSON.stringify(payload),
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || `Server returned ${r.status}`);
@@ -1822,6 +1829,16 @@ function BackupRestore() {
                       There is no undo. Download the current data first if needed.
                     </span>
                   </div>
+                  <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer select-none mt-1">
+                    <input
+                      type="checkbox"
+                      checked={restoreFiles}
+                      onChange={e => setRestoreFiles(e.target.checked)}
+                      className="rounded"
+                    />
+                    Also restore uploaded images &amp; logos
+                    <span className="text-slate-400">(makes upload larger / slower)</span>
+                  </label>
                   <div className="flex gap-2 pt-2">
                     <button onClick={reset}
                       className="px-4 py-2 text-sm border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-colors">
