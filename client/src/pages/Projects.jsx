@@ -11,7 +11,7 @@ import {
   Store, Phone, Star, CreditCard, Truck, User, Building2,
   ImagePlus, FileImage,
 } from 'lucide-react';
-import api, { apiFetch } from '../lib/api';
+import api, { apiFetch, imgUrl } from '../lib/api';
 import { printDoc } from '../lib/printDoc';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
@@ -1247,7 +1247,7 @@ function PrintSummary({ project, fin = {} }) {
           <div className="flex flex-wrap gap-3">
             {images.map((img, i) => (
               <div key={i} className="border border-slate-200 rounded overflow-hidden">
-                <img src={img.url} alt={img.originalName || `Image ${i+1}`}
+                <img src={imgUrl(img.url)} alt={img.originalName || `Image ${i+1}`}
                   className="h-28 w-auto object-contain" style={{ maxWidth: 200 }} />
                 {img.originalName && (
                   <p className="text-2xs text-slate-400 px-1 py-0.5 truncate max-w-[200px]">{img.originalName}</p>
@@ -1507,7 +1507,7 @@ function PrintCutting({ project }) {
           <div className="flex flex-wrap gap-4">
             {images.map((img, i) => (
               <div key={i} className="border border-slate-200 rounded overflow-hidden">
-                <img src={img.url} alt={img.originalName || `Image ${i+1}`}
+                <img src={imgUrl(img.url)} alt={img.originalName || `Image ${i+1}`}
                   className="h-40 w-auto object-contain" style={{ maxWidth: 280 }} />
                 {img.originalName && (
                   <p className="text-2xs text-slate-400 px-2 py-1 truncate max-w-[280px]">{img.originalName}</p>
@@ -1572,7 +1572,7 @@ function PrintStitching({ project }) {
           <div className="flex flex-wrap gap-4">
             {images.map((img, i) => (
               <div key={i} className="border border-slate-200 rounded overflow-hidden">
-                <img src={img.url} alt={img.originalName || `Image ${i+1}`}
+                <img src={imgUrl(img.url)} alt={img.originalName || `Image ${i+1}`}
                   className="h-40 w-auto object-contain" style={{ maxWidth: 280 }} />
                 {img.originalName && (
                   <p className="text-2xs text-slate-400 px-2 py-1 truncate max-w-[280px]">{img.originalName}</p>
@@ -1762,7 +1762,7 @@ function ProjectImageUploader({ images, onSave }) {
             <div className="flex flex-wrap gap-3 mb-4">
               {images.map((img, i) => (
                 <div key={img.filename || i} className="relative group rounded-xl overflow-hidden border border-slate-200 bg-slate-50" style={{ width: 120, height: 120 }}>
-                  <img src={img.url} alt={img.originalName}
+                  <img src={imgUrl(img.url)} alt={img.originalName}
                     className="w-full h-full object-contain" />
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
                     <button
@@ -3216,7 +3216,7 @@ function PaymentForm({ pvId, projectId, onSaved, onCancel }) {
           isImage ? (
             <a href={form.receipt_url} target="_blank" rel="noreferrer"
               className="flex items-center gap-1">
-              <img src={form.receipt_url} alt="receipt"
+              <img src={imgUrl(form.receipt_url)} alt="receipt"
                 className="h-8 w-8 object-cover rounded border border-slate-200" />
               <span className="text-2xs text-slate-400">Receipt attached</span>
             </a>
@@ -3370,7 +3370,7 @@ function VendorPaymentReceipt({ payment, pv, project, settings }) {
       <div style={S.header}>
         <div>
           {settings?.company_logo
-            ? <img src={settings.company_logo} alt="logo" style={{ height:'36px', objectFit:'contain', display:'block', marginBottom:'4px' }} />
+            ? <img src={imgUrl(settings.company_logo)} alt="logo" style={{ height:'36px', objectFit:'contain', display:'block', marginBottom:'4px' }} />
             : <p style={S.coName}>{companyName}</p>
           }
           {companyLocation && <p style={S.coSub}>{companyLocation}</p>}
@@ -4575,7 +4575,7 @@ function CostsTab({ project, onReload, fmt = pkr, view = 'all' }) {
                                       {hasReceipt && (
                                         isImg ? (
                                           <a href={p.receipt_url} target="_blank" rel="noreferrer">
-                                            <img src={p.receipt_url} alt="receipt"
+                                            <img src={imgUrl(p.receipt_url)} alt="receipt"
                                               className="h-6 w-6 object-cover rounded border border-slate-200" />
                                           </a>
                                         ) : (

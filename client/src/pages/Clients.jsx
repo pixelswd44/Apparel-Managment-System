@@ -7,7 +7,7 @@ import {
   User, CreditCard, Clock, DollarSign, Package,
   ChevronDown, Receipt, Users,
 } from 'lucide-react';
-import api from '../lib/api';
+import api, { imgUrl } from '../lib/api';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -120,7 +120,7 @@ function ClientListItem({ client, isSelected, onClick }) {
       <div className={`w-9 h-9 rounded-xl flex-shrink-0 overflow-hidden
         ${!client.avatar ? (isSelected ? 'bg-indigo-600' : 'bg-slate-100') : ''}`}>
         {client.avatar
-          ? <img src={client.avatar} alt={label} className="w-full h-full object-cover" />
+          ? <img src={imgUrl(client.avatar)} alt={label} className="w-full h-full object-cover" />
           : <span className={`w-full h-full flex items-center justify-center text-xs font-bold ${isSelected ? 'text-white' : 'text-slate-600'}`}>{initials || '?'}</span>
         }
       </div>
@@ -179,7 +179,7 @@ function ClientDetailPanel({ client, stats, statsLoading, onEdit, onDelete, onCl
           )}
           <div className="w-10 h-10 rounded-xl flex-shrink-0 overflow-hidden bg-indigo-100">
             {client.avatar
-              ? <img src={client.avatar} alt={client.display_name || client.name} className="w-full h-full object-cover" />
+              ? <img src={imgUrl(client.avatar)} alt={client.display_name || client.name} className="w-full h-full object-cover" />
               : <span className="w-full h-full flex items-center justify-center text-sm font-bold text-indigo-700">
                   {(client.display_name || client.name || '?').split(' ').slice(0, 2).map(w => w[0]?.toUpperCase()).join('')}
                 </span>

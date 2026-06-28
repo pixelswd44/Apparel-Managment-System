@@ -7,7 +7,7 @@ import {
   Landmark, MessageSquare, FileCheck, Receipt,
   Check, Download, Copy,
 } from 'lucide-react';
-import api from '../lib/api';
+import api, { imgUrl } from '../lib/api';
 import { printDoc, downloadDoc } from '../lib/printDoc';
 import TemplatePicker from '../components/TemplatePicker';
 
@@ -316,7 +316,7 @@ function QuotationView({ quotationId, onClose, onEdit, onConverted, embedded = f
               {/* Logo only — clean */}
               <div>
                 {co.logo
-                  ? <img src={co.logo} alt="logo"
+                  ? <img src={imgUrl(co.logo)} alt="logo"
                       className="w-auto object-contain"
                       style={{ height: `${co.logo_size || 40}px` }} />
                   : co.name

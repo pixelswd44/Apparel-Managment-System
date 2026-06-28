@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { useDirty } from '../../lib/dirtyContext';
 import { useAuth } from '../../lib/authContext';
-import api, { apiFetch } from '../../lib/api';
+import api, { apiFetch, imgUrl } from '../../lib/api';
 
 // ── Change Password Modal ─────────────────────────────────────────────────────
 function ChangePasswordModal({ onClose }) {
@@ -172,7 +172,7 @@ export default function Sidebar({ isOpen = false, onClose = () => {} }) {
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-md overflow-hidden flex-shrink-0 flex items-center justify-center">
             {appLogo ? (
-              <img src={appLogo} alt="logo" className="w-full h-full object-contain" />
+              <img src={imgUrl(appLogo)} alt="logo" className="w-full h-full object-contain" />
             ) : (
               <div className="w-full h-full bg-gradient-to-br from-indigo-500 to-violet-600 rounded-md flex items-center justify-center shadow-lg shadow-indigo-500/25">
                 <Layers size={15} className="text-white" />

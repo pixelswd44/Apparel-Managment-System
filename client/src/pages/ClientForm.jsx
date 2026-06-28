@@ -4,7 +4,7 @@ import {
   ArrowLeft, Save, Check, User, Building2, MapPin, Truck, FileText,
   Upload, File, XCircle, Package, Clock, Loader2, AlertTriangle,
 } from 'lucide-react';
-import api from '../lib/api';
+import api, { imgUrl } from '../lib/api';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -126,7 +126,7 @@ function AvatarUploader({ avatar, initials, onChange }) {
         className="w-20 h-20 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/40 transition-all flex-shrink-0 group relative"
       >
         {avatar ? (
-          <img src={avatar} alt="avatar" className="w-full h-full object-cover" />
+          <img src={imgUrl(avatar)} alt="avatar" className="w-full h-full object-cover" />
         ) : (
           <span className="text-xl font-bold text-slate-300 group-hover:text-indigo-300 transition-colors">
             {initials || <User size={24} className="text-slate-200" />}

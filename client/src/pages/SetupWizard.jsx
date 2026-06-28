@@ -5,7 +5,7 @@ import {
   Zap, Shield, Globe, BarChart2, FileText, Package,
   Sparkles, ArrowRight, Play,
 } from 'lucide-react';
-import api from '../lib/api';
+import api, { imgUrl } from '../lib/api';
 
 // ── Step indicator ─────────────────────────────────────────────────────────
 function StepDot({ n, current, label }) {
@@ -142,7 +142,7 @@ function StepCompany({ data, onChange }) {
       <div className="flex items-center gap-4">
         <div className="w-16 h-16 rounded-2xl border-2 border-dashed border-white/15 flex items-center justify-center overflow-hidden bg-white/[0.04] flex-shrink-0">
           {data.company_logo
-            ? <img src={data.company_logo} alt="logo" className="w-full h-full object-contain" />
+            ? <img src={imgUrl(data.company_logo)} alt="logo" className="w-full h-full object-contain" />
             : <Layers size={22} className="text-white/20" />}
         </div>
         <div>

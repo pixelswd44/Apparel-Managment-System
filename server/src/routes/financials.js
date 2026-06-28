@@ -515,6 +515,20 @@ router.get('/ledger', (req, res) => {
       credit: 0, debit: parseFloat(s.amount) || 0, currency: 'PKR', amount_orig: parseFloat(s.amount) || 0 });
   }
 
+  // Employee advances
+  const advances = db.prepare(`
+    SELECT ea.id, ea.date, ea.amount, ea.reason, emp.name as party
+    FROM employee_advances ea
+    LEFT JOIN employees emp ON emp.id = ea.employee_id
+    WHERE 1=1 ${dateFilter('ea.date')}
+    ORDER BY ea.date ASC
+  `).all();
+  for (const a of advances) {
+    entries.push({ date: a.date, section: 'Salaries', category: 'Advance',
+      description: `Advance${a.reason ? ` – ${a.reason}` : ''}`, party: a.party || '',
+      credit: 0, debit: parseFloat(a.amount) || 0, currency: 'PKR', amount_orig: parseFloat(a.amount) || 0 });
+  }
+
   // Sort all entries by date ASC, compute running balance
   entries.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
   let balance = 0;

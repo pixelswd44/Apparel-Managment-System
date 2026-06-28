@@ -5,7 +5,7 @@ import {
   MessageSquare, FileCheck, Tag, Plus, X, Check,
   ChevronDown, AlertTriangle, User, Loader2, Building2,
 } from 'lucide-react';
-import api from '../lib/api';
+import api, { imgUrl } from '../lib/api';
 import { useDirty } from '../lib/dirtyContext';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -736,7 +736,7 @@ export default function InvoiceForm() {
                     }`}>
                     <div className="w-9 h-9 rounded-lg border border-slate-200 bg-white flex items-center justify-center overflow-hidden flex-shrink-0">
                       {co.logo
-                        ? <img src={co.logo} alt={co.name} className="w-full h-full object-contain p-1" />
+                        ? <img src={imgUrl(co.logo)} alt={co.name} className="w-full h-full object-contain p-1" />
                         : <span className="text-xs font-bold text-slate-400">{co.name.slice(0,2).toUpperCase()}</span>}
                     </div>
                     <div>
@@ -758,7 +758,7 @@ export default function InvoiceForm() {
                 {/* Logo */}
                 <div className="w-14 h-14 rounded-xl border border-slate-200 bg-white flex items-center justify-center overflow-hidden flex-shrink-0 shadow-sm">
                   {selectedCo.logo
-                    ? <img src={selectedCo.logo} alt={selectedCo.name} className="w-full h-full object-contain p-1.5" />
+                    ? <img src={imgUrl(selectedCo.logo)} alt={selectedCo.name} className="w-full h-full object-contain p-1.5" />
                     : <span className="text-lg font-bold text-slate-300">{selectedCo.name.slice(0,2).toUpperCase()}</span>}
                 </div>
 

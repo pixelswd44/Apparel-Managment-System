@@ -6,7 +6,7 @@ import {
   CreditCard, Smartphone, ListChecks, Download,
   Copy, Landmark,
 } from 'lucide-react';
-import api from '../lib/api';
+import api, { imgUrl } from '../lib/api';
 import { printDoc, downloadDoc } from '../lib/printDoc';
 import TemplatePicker from '../components/TemplatePicker';
 
@@ -255,7 +255,7 @@ function ReceiptVoucher({ invoice, payment, settings, onClose, templates = [], a
               {/* Logo / company */}
               <div>
                 {receiptLogo
-                  ? <img src={receiptLogo} alt="logo"
+                  ? <img src={imgUrl(receiptLogo)} alt="logo"
                       className="w-auto object-contain"
                       style={{ height: `${receiptLogoSize}px` }} />
                   : receiptCoName
@@ -616,7 +616,7 @@ function InvoiceView({ invoiceId, onClose, onConverted, embedded = false }) {
                 {/* Logo only — clean */}
                 <div>
                   {co.logo
-                    ? <img src={co.logo} alt="logo"
+                    ? <img src={imgUrl(co.logo)} alt="logo"
                         className="w-auto object-contain"
                         style={{ height: `${co.logo_size || 40}px` }} />
                     : co.name

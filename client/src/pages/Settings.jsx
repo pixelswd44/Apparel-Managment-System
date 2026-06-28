@@ -5,7 +5,7 @@ import {
   Building2, Upload, Star, Palette, Layers, Users, KeyRound, Eye, EyeOff,
   ShieldCheck, ShoppingBag, Package,
 } from 'lucide-react';
-import api, { apiFetch } from '../lib/api';
+import api, { apiFetch, imgUrl } from '../lib/api';
 import { useAuth } from '../lib/authContext';
 
 // ── Shared primitives ─────────────────────────────────────────────────────────
@@ -810,7 +810,7 @@ function CompanyForm({ initial = EMPTY_CO, onSave, onCancel, saving, error }) {
           <div onClick={() => fileRef.current?.click()}
             className="w-20 h-20 border-2 border-dashed border-slate-200 rounded-2xl flex items-center justify-center bg-slate-50 overflow-hidden flex-shrink-0 cursor-pointer hover:border-indigo-300 transition-colors">
             {form.logo
-              ? <img src={form.logo} alt="logo" className="w-full h-full object-contain p-2" />
+              ? <img src={imgUrl(form.logo)} alt="logo" className="w-full h-full object-contain p-2" />
               : <Building2 size={22} className="text-slate-300" />}
           </div>
           <div className="space-y-1.5">
@@ -868,7 +868,7 @@ function CompanyForm({ initial = EMPTY_CO, onSave, onCancel, saving, error }) {
           {/* Live preview */}
           <div className="mt-3 bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-4">
             <span className="text-2xs font-semibold text-slate-400 uppercase tracking-wider">Preview:</span>
-            <img src={form.logo} alt="logo preview"
+            <img src={imgUrl(form.logo)} alt="logo preview"
               className="w-auto object-contain"
               style={{ height: `${form.logo_size || 40}px` }} />
           </div>
@@ -1081,7 +1081,7 @@ function Companies() {
               {/* Logo */}
               <div className="w-14 h-14 rounded-xl border border-slate-200 bg-white flex items-center justify-center overflow-hidden flex-shrink-0">
                 {co.logo
-                  ? <img src={co.logo} alt={co.name} className="w-full h-full object-contain p-1.5" />
+                  ? <img src={imgUrl(co.logo)} alt={co.name} className="w-full h-full object-contain p-1.5" />
                   : <Building2 size={20} className="text-slate-300" />}
               </div>
 
@@ -1219,7 +1219,7 @@ function AppBranding() {
             className="w-20 h-20 border-2 border-dashed border-slate-200 rounded-2xl overflow-hidden bg-slate-50 flex items-center justify-center cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/40 transition-all flex-shrink-0"
           >
             {appLogo ? (
-              <img src={appLogo} alt="logo" className="w-full h-full object-contain p-2" />
+              <img src={imgUrl(appLogo)} alt="logo" className="w-full h-full object-contain p-2" />
             ) : (
               <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-violet-600 rounded-xl flex items-center justify-center">
                 <Layers size={20} className="text-white" />
@@ -1266,7 +1266,7 @@ function AppBranding() {
         <div className="bg-[#1c1c1e] rounded-2xl p-4 inline-flex items-center gap-3 border border-white/5">
           <div className="w-8 h-8 rounded-md overflow-hidden flex-shrink-0">
             {appLogo ? (
-              <img src={appLogo} alt="logo" className="w-full h-full object-contain" />
+              <img src={imgUrl(appLogo)} alt="logo" className="w-full h-full object-contain" />
             ) : (
               <div className="w-full h-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center rounded-md">
                 <Layers size={14} className="text-white" />

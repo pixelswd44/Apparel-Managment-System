@@ -1,7 +1,7 @@
 import { Outlet, useLocation } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import Sidebar from './Sidebar';
-import api, { apiFetch } from '../../lib/api';
+import api, { apiFetch, imgUrl } from '../../lib/api';
 import { useAuth } from '../../lib/authContext';
 import { Zap, X, Menu, Layers } from 'lucide-react';
 
@@ -92,7 +92,7 @@ export default function Layout() {
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <div className="w-7 h-7 rounded-lg overflow-hidden flex-shrink-0">
               {appLogo
-                ? <img src={appLogo} alt="logo" className="w-full h-full object-contain" />
+                ? <img src={imgUrl(appLogo)} alt="logo" className="w-full h-full object-contain" />
                 : <div className="w-full h-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center"><Layers size={13} className="text-white" /></div>
               }
             </div>

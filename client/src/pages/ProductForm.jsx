@@ -5,7 +5,7 @@ import {
   AlertCircle, Calculator, Trash2, Loader2, AlertTriangle,
   ChevronDown, Plus, Pencil,
 } from 'lucide-react';
-import api, { apiFetch } from '../lib/api';
+import api, { apiFetch, imgUrl } from '../lib/api';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -82,7 +82,7 @@ function ImageUploader({ images, onChange }) {
         <div className="grid grid-cols-3 gap-2 mb-3">
           {images.map(img => (
             <div key={img.filename} className="relative group aspect-square rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
-              <img src={img.url} alt={img.originalName} className="w-full h-full object-cover" />
+              <img src={imgUrl(img.url)} alt={img.originalName} className="w-full h-full object-cover" />
               <button type="button" onClick={() => remove(img)}
                 className="absolute top-1 right-1 bg-black/50 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                 <X size={12} />
