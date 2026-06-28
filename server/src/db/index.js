@@ -711,7 +711,8 @@ for (const sql of migrations) {
 // Set their date to the project's created_at so the ledger filter works.
 try {
   const ppRows = db.prepare(`
-    SELECT pp.id, pp.fabrics, pp.costs, pp.external_costs, proj.created_at
+    SELECT pp.id, pp.fabrics, pp.costs, pp.external_costs,
+           COALESCE(proj.created_at, pp.created_at) as best_date
     FROM project_products pp
     LEFT JOIN projects proj ON proj.id = pp.project_id
   `).all();
@@ -719,7 +720,7 @@ try {
   const normD = d => d ? d.replace(' ', 'T').split('T')[0] : null;
 
   for (const r of ppRows) {
-    const projectDate = normD(r.created_at);
+    const projectDate = normD(r.best_date);
     if (!projectDate) continue;
 
     const fabs  = JSON.parse(r.fabrics         || '[]');
