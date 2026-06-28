@@ -4,8 +4,9 @@
     {
       "name": "client",
       "runtimeExecutable": "cmd",
-      "runtimeArgs": ["/c", "set PATH=C:\\Program Files\\nodejs;%PATH% && node_modules\\.bin\\vite.cmd --port 5173"],
+      "runtimeArgs": ["/c", "set PATH=C:\\Program Files\\nodejs;%PATH% && node_modules\\.bin\\vite.cmd"],
       "cwd": "client",
+      "autoPort": true,
       "port": 5173
     }
   ]

@@ -62,10 +62,20 @@ const TABLES_ORDERED = [
 // ─── GET /api/backup/export ───────────────────────────────────────────────────
 router.get('/export', (req, res) => {
   try {
-    // 1. Snapshot every table
+    // Optional filters: ?tables=clients,invoices&files=0
+    const tableFilter = req.query.tables
+      ? new Set(req.query.tables.split(',').map(t => t.trim()).filter(Boolean))
+      : null; // null = all tables
+    const includeFiles = req.query.files !== '0';
+
+    // 1. Snapshot selected tables
+    const tablesToExport = tableFilter
+      ? TABLES_ORDERED.filter(t => tableFilter.has(t))
+      : TABLES_ORDERED;
+
     const tables = {};
     const tableMeta = {};
-    for (const name of TABLES_ORDERED) {
+    for (const name of tablesToExport) {
       try {
         const rows = db.prepare(`SELECT * FROM ${name}`).all();
         tables[name]    = rows;
@@ -78,7 +88,7 @@ router.get('/export', (req, res) => {
 
     // 2. Read every file under uploads/ and base64-encode it
     const files = {};
-    if (fs.existsSync(UPLOADS_DIR)) {
+    if (includeFiles && fs.existsSync(UPLOADS_DIR)) {
       for (const fname of fs.readdirSync(UPLOADS_DIR)) {
         if (fname.startsWith('.')) continue;
         const fullPath = path.join(UPLOADS_DIR, fname);
