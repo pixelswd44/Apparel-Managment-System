@@ -5,7 +5,7 @@ import {
   ArrowLeft, FileText, Package, MapPin, Landmark,
   MessageSquare, FileCheck, Tag, Plus, X, Check,
   ChevronDown, AlertTriangle, User, Search,
-  Loader2, Save, Building2,
+  Loader2, Save,
 } from 'lucide-react';
 import api, { imgUrl } from '../lib/api';
 import { printDoc, downloadDoc } from '../lib/printDoc';
@@ -62,24 +62,16 @@ function SectionCard({ id, icon: Icon, title, iconColor = 'text-indigo-600', ico
 
 // ── Constants for the new-client drawer ──────────────────────────────────────
 
-const CLIENT_CURRENCIES = [
-  { code: 'USD', name: 'US Dollar' }, { code: 'AED', name: 'UAE Dirham' },
-  { code: 'PKR', name: 'Pakistani Rupee' }, { code: 'EUR', name: 'Euro' },
-  { code: 'GBP', name: 'British Pound' }, { code: 'SAR', name: 'Saudi Riyal' },
-];
-const CLIENT_LANGUAGES    = ['English', 'Arabic', 'Urdu', 'French', 'German', 'Spanish'];
-const CLIENT_PAYMENT_TERMS = ['Due on Receipt', 'Net 7', 'Net 15', 'Net 30', 'Net 45', 'Net 60'];
 const EMPTY_NEW_CLIENT = {
-  customer_type: 'business', name: '', company: '', display_name: '',
-  customer_number: '', email: '', phone: '', customer_language: 'English',
+  customer_type: 'individual', name: '', company: '', display_name: '',
+  email: '', phone: '', customer_language: 'English',
   currency: 'USD', products_origin: 'Pakistan', payment_terms: 'Net 30',
-  customer_owner: '', address: '', city: '', zip: '', country: '',
-  shipping_receiver_name: '', shipping_receiver_phone: '',
-  shipping_address: '', shipping_city: '', shipping_zip: '', shipping_country: '',
-  notes: '', status: 'active',
+  status: 'active',
 };
 
 // ── New Client Drawer ─────────────────────────────────────────────────────────
+// Quick-add: just enough to pick this client on the quotation. Everything else
+// (address, notes, currency, etc.) gets filled in later from the Clients module.
 
 function NewClientDrawer({ prefill = '', onSaved, onClose }) {
   const [saving, setSaving] = useState(false);
@@ -89,15 +81,13 @@ function NewClientDrawer({ prefill = '', onSaved, onClose }) {
 
   async function handleSave() {
     if (!form.name?.trim() && !form.company?.trim()) {
-      setErr('Full name or company is required.'); return;
+      setErr('Name or company is required.'); return;
     }
     setSaving(true); setErr('');
     try {
-      const display_name = form.display_name ||
-        (form.customer_type === 'business' && form.company?.trim()
-          ? form.company.trim()
-          : form.name?.trim() || form.company?.trim());
-      const { data } = await api.post('/clients', { ...form, display_name });
+      const customer_type = form.company?.trim() ? 'business' : 'individual';
+      const display_name  = form.company?.trim() || form.name?.trim();
+      const { data } = await api.post('/clients', { ...form, customer_type, display_name });
       onSaved(data);
     } catch (e) {
       setErr(e?.response?.data?.error ?? 'Failed to create client.');
@@ -124,7 +114,7 @@ function NewClientDrawer({ prefill = '', onSaved, onClose }) {
             </div>
             <div>
               <h2 className="font-bold text-white text-sm">Add New Client</h2>
-              <p className="text-xs text-indigo-200">Saved directly to your clients list</p>
+              <p className="text-xs text-indigo-200">Add full details later in Clients</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -145,127 +135,27 @@ function NewClientDrawer({ prefill = '', onSaved, onClose }) {
           </div>
         )}
 
-        {/* ── Scrollable body ── */}
-        <div className="flex-1 min-h-0 overflow-y-auto">
-
-          {/* Section: Identity */}
-          <div className="px-5 pt-4 pb-3 border-b border-slate-100">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Identity</p>
-
-            {/* Type toggle */}
-            <div className="flex gap-2 mb-3">
-              {['business', 'individual'].map(t => (
-                <button key={t} type="button" onClick={() => set('customer_type', t)}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold border transition-all capitalize ${
-                    form.customer_type === t ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-slate-200 text-slate-600 hover:border-indigo-300'
-                  }`}>
-                  {t === 'business' ? <Building2 size={12} /> : <User size={12} />}{t}
-                </button>
-              ))}
-            </div>
-
-            <div className="grid grid-cols-2 gap-2.5">
-              <div className={form.customer_type === 'business' ? '' : 'col-span-2'}>
-                {lbl(<>Full Name <span className="text-rose-400">*</span></>)}
-                <input value={form.name} onChange={e => set('name', e.target.value)}
-                  className={inputCls} placeholder="Contact name" autoFocus />
-              </div>
-              {form.customer_type === 'business' && (
-                <div>
-                  {lbl('Company')}
-                  <input value={form.company} onChange={e => set('company', e.target.value)}
-                    className={inputCls} placeholder="Company name" />
-                </div>
-              )}
-              <div>
-                {lbl('Email')}
-                <input type="email" value={form.email} onChange={e => set('email', e.target.value)}
-                  className={inputCls} placeholder="email@example.com" />
-              </div>
-              <div>
-                {lbl('Phone')}
-                <input value={form.phone} onChange={e => set('phone', e.target.value)}
-                  className={inputCls} placeholder="+92 300 …" />
-              </div>
-              {form.customer_type === 'business' && form.company?.trim() && (
-                <div className="col-span-2">
-                  {lbl('Display Name')}
-                  <select value={form.display_name} onChange={e => set('display_name', e.target.value)}
-                    className={`${inputCls} cursor-pointer`}>
-                    <option value="">— Select —</option>
-                    {form.name?.trim() && <option value={form.name.trim()}>{form.name.trim()}</option>}
-                    <option value={form.company.trim()}>{form.company.trim()}</option>
-                    {form.name?.trim() && <option value={`${form.name.trim()} (${form.company.trim()})`}>{form.name.trim()} ({form.company.trim()})</option>}
-                  </select>
-                </div>
-              )}
-            </div>
+        {/* ── Body ── */}
+        <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-3">
+          <div>
+            {lbl(<>Name <span className="text-rose-400">*</span></>)}
+            <input value={form.name} onChange={e => set('name', e.target.value)}
+              className={inputCls} placeholder="Contact name" autoFocus />
           </div>
-
-          {/* Section: Settings */}
-          <div className="px-5 pt-4 pb-3 border-b border-slate-100">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Settings</p>
-            <div className="grid grid-cols-2 gap-2.5">
-              <div>
-                {lbl('Currency')}
-                <select value={form.currency} onChange={e => set('currency', e.target.value)}
-                  className={`${inputCls} cursor-pointer`}>
-                  {CLIENT_CURRENCIES.map(({ code, name }) => <option key={code} value={code}>{code} — {name}</option>)}
-                </select>
-              </div>
-              <div>
-                {lbl('Payment Terms')}
-                <select value={form.payment_terms} onChange={e => set('payment_terms', e.target.value)}
-                  className={`${inputCls} cursor-pointer`}>
-                  {CLIENT_PAYMENT_TERMS.map(t => <option key={t}>{t}</option>)}
-                </select>
-              </div>
-              <div>
-                {lbl('Language')}
-                <select value={form.customer_language} onChange={e => set('customer_language', e.target.value)}
-                  className={`${inputCls} cursor-pointer`}>
-                  {CLIENT_LANGUAGES.map(l => <option key={l}>{l}</option>)}
-                </select>
-              </div>
-              <div>
-                {lbl('Status')}
-                <select value={form.status} onChange={e => set('status', e.target.value)}
-                  className={`${inputCls} cursor-pointer`}>
-                  <option value="active">Active</option>
-                  <option value="lead">Lead</option>
-                  <option value="inactive">Inactive</option>
-                </select>
-              </div>
-            </div>
+          <div>
+            {lbl('Company')}
+            <input value={form.company} onChange={e => set('company', e.target.value)}
+              className={inputCls} placeholder="Company name (optional)" />
           </div>
-
-          {/* Section: Address */}
-          <div className="px-5 pt-4 pb-3 border-b border-slate-100">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Address <span className="font-normal text-slate-300">(optional)</span></p>
-            <div className="grid grid-cols-2 gap-2.5">
-              <div className="col-span-2">
-                {lbl('Street')}
-                <input value={form.address} onChange={e => set('address', e.target.value)}
-                  className={inputCls} placeholder="Street / Area" />
-              </div>
-              <div>
-                {lbl('City')}
-                <input value={form.city} onChange={e => set('city', e.target.value)}
-                  className={inputCls} placeholder="City" />
-              </div>
-              <div>
-                {lbl('Country')}
-                <input value={form.country} onChange={e => set('country', e.target.value)}
-                  className={inputCls} placeholder="Country" />
-              </div>
-            </div>
+          <div>
+            {lbl('Phone')}
+            <input value={form.phone} onChange={e => set('phone', e.target.value)}
+              className={inputCls} placeholder="+92 300 …" />
           </div>
-
-          {/* Section: Notes */}
-          <div className="px-5 pt-4 pb-5">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Notes <span className="font-normal text-slate-300">(optional)</span></p>
-            <textarea rows={3} value={form.notes} onChange={e => set('notes', e.target.value)}
-              className={`${inputCls} resize-none`} placeholder="Internal notes about this client…" />
+          <div>
+            {lbl('Email')}
+            <input type="email" value={form.email} onChange={e => set('email', e.target.value)}
+              className={inputCls} placeholder="email@example.com" />
           </div>
         </div>
       </div>
