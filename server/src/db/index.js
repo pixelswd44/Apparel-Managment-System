@@ -660,6 +660,9 @@ const migrations = [
   // Custom pricing fields (e.g. "Pattern Cost") — JSON array of {label, amount}
   `ALTER TABLE quotations ADD COLUMN custom_fields TEXT DEFAULT '[]'`,
   `ALTER TABLE invoices   ADD COLUMN custom_fields TEXT DEFAULT '[]'`,
+  // Tracks when a project's status was actually set to 'completed', separate
+  // from updated_at (which changes on every edit, not just completion)
+  `ALTER TABLE projects ADD COLUMN completed_at TEXT`,
   `ALTER TABLE invoices   ADD COLUMN issued_at DATE`,
   `CREATE TABLE IF NOT EXISTS project_shipping (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -757,6 +760,15 @@ try {
   }
 } catch (e) {
   console.error('[DB] fabric/cost date backfill error:', e.message);
+}
+
+// ── Backfill completed_at for projects already marked completed ────────────
+// Best guess for pre-existing data: use updated_at, since that's the closest
+// signal we have to "when this was last touched while completed".
+try {
+  db.exec(`UPDATE projects SET completed_at = updated_at WHERE status = 'completed' AND completed_at IS NULL`);
+} catch (e) {
+  console.error('[DB] completed_at backfill error:', e.message);
 }
 
 // ── Fix: make project_vendor_payments.project_vendor_id nullable ───────────

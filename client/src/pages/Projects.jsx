@@ -9,7 +9,7 @@ import {
   ToggleLeft, ToggleRight, Flame, Shirt, Wand2,
   MoreHorizontal, Banknote, Eye, GripVertical,
   Store, Phone, Star, CreditCard, Truck, User, Building2,
-  ImagePlus, FileImage,
+  ImagePlus, FileImage, Calendar,
 } from 'lucide-react';
 import api, { apiFetch, imgUrl } from '../lib/api';
 import { printDoc } from '../lib/printDoc';
@@ -5322,6 +5322,51 @@ function ProjectCard({ project, onClick }) {
   return <ProjectRow project={project} onClick={onClick} />;
 }
 
+// Row for a completed project — shows the full cost/expense/received/profit
+// breakdown instead of just Exp/Paid, since that's the whole point of looking
+// back at a finished project.
+// completed_at is a full "YYYY-MM-DD HH:MM:SS" timestamp, not a plain date —
+// fmtDateShort's "+'T00:00:00'" trick doesn't apply here, so parse it directly.
+const fmtCompletedDate = d => {
+  if (!d) return '—';
+  const dt = new Date(d.includes('T') ? d : d.replace(' ', 'T'));
+  return isNaN(dt.getTime()) ? '—' : dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+
+function CompletedProjectRow({ project, onClick }) {
+  const pkr = n => `₨${Number(n || 0).toLocaleString()}`;
+  const cost     = project.fin_total_expense ?? 0;
+  const expenses = project.fin_paid          ?? 0;
+  const received = project.fin_received      ?? 0;
+  const profit   = project.fin_net           ?? 0;
+
+  return (
+    <div onClick={onClick}
+      className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 px-4 py-3 border-b border-slate-100 hover:bg-slate-50 cursor-pointer group transition-colors last:border-b-0">
+
+      {/* Title + client + completion date */}
+      <div className="flex items-center gap-2 flex-1 min-w-0">
+        <div className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-slate-900 group-hover:text-indigo-700 transition-colors truncate">{project.title}</p>
+          <p className="text-xs text-slate-400 truncate">
+            {project.client_name ?? 'No client'}{project.client_company ? ` · ${project.client_company}` : ''}
+            {' · '}Completed {fmtCompletedDate(project.completed_at)}
+          </p>
+        </div>
+      </div>
+
+      {/* Cost / Expenses / Received / Profit */}
+      <div className="grid grid-cols-2 sm:flex sm:items-center gap-x-4 gap-y-1 text-xs flex-shrink-0">
+        <span className="text-slate-400">Cost <span className="font-semibold text-slate-700">{pkr(cost)}</span></span>
+        <span className="text-slate-400">Expenses <span className="font-semibold text-rose-500">{pkr(expenses)}</span></span>
+        <span className="text-slate-400">Received <span className="font-semibold text-emerald-600">{pkr(received)}</span></span>
+        <span className="text-slate-400">Profit <span className={`font-bold ${profit >= 0 ? 'text-indigo-600' : 'text-rose-600'}`}>{pkr(profit)}</span></span>
+      </div>
+    </div>
+  );
+}
+
 // ─── Shipping Tab ─────────────────────────────────────────────────────────────
 
 const pkrFmt = n => `₨${Number(n || 0).toLocaleString()}`;
@@ -5888,13 +5933,59 @@ export default function Projects() {
                     {showCompleted ? '▲ Hide' : '▼ Show'}
                   </span>
                 </button>
-                {showCompleted && (
-                  <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-                    {completedProjects.map(p => (
-                      <ProjectRow key={p.id} project={p} onClick={() => openCard(p)} />
-                    ))}
-                  </div>
-                )}
+                {showCompleted && (() => {
+                  // Group by the month each project was actually completed in.
+                  // Falls back to updated_at for older rows saved before completed_at existed.
+                  const groups = {};
+                  for (const p of completedProjects) {
+                    const d   = p.completed_at || p.updated_at;
+                    const key = d ? d.slice(0, 7) : 'unknown';
+                    (groups[key] ??= []).push(p);
+                  }
+                  const monthKeys = Object.keys(groups).sort((a, b) => b.localeCompare(a));
+                  const pkr = n => `₨${Number(n || 0).toLocaleString()}`;
+
+                  return (
+                    <div className="space-y-4">
+                      {monthKeys.map(key => {
+                        const monthProjects = groups[key];
+                        const label = key === 'unknown'
+                          ? 'Completion date unknown'
+                          : new Date(`${key}-01T00:00:00`).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+                        const totals = monthProjects.reduce((acc, p) => ({
+                          cost:     acc.cost     + (p.fin_total_expense || 0),
+                          expenses: acc.expenses + (p.fin_paid          || 0),
+                          received: acc.received + (p.fin_received      || 0),
+                          profit:   acc.profit   + (p.fin_net           || 0),
+                        }), { cost: 0, expenses: 0, received: 0, profit: 0 });
+
+                        return (
+                          <div key={key} className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+                            {/* Month header + overview */}
+                            <div className="px-4 py-3 bg-slate-50/70 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <Calendar size={14} className="text-slate-400 flex-shrink-0" />
+                                <span className="font-bold text-slate-800 text-sm">{label}</span>
+                                <span className="text-2xs bg-slate-200 text-slate-600 font-semibold px-2 py-0.5 rounded-full">
+                                  {monthProjects.length} project{monthProjects.length !== 1 ? 's' : ''}
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-2 sm:flex sm:items-center gap-x-4 gap-y-1 text-xs">
+                                <span className="text-slate-400">Cost <span className="font-semibold text-slate-700">{pkr(totals.cost)}</span></span>
+                                <span className="text-slate-400">Expenses <span className="font-semibold text-rose-500">{pkr(totals.expenses)}</span></span>
+                                <span className="text-slate-400">Received <span className="font-semibold text-emerald-600">{pkr(totals.received)}</span></span>
+                                <span className="text-slate-400">Profit <span className={`font-bold ${totals.profit >= 0 ? 'text-indigo-600' : 'text-rose-600'}`}>{pkr(totals.profit)}</span></span>
+                              </div>
+                            </div>
+                            {monthProjects.map(p => (
+                              <CompletedProjectRow key={p.id} project={p} onClick={() => openCard(p)} />
+                            ))}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
               </div>
             )}
 

@@ -239,15 +239,26 @@ router.put('/:id', (req, res) => {
     const { title, client_id, invoice_id, currency, amount_received, exchange_rate_actual = 0, status, notes, images } = req.body;
     if (!title?.trim()) return res.status(400).json({ error: 'Project title is required.' });
     const imagesStr = images ? (typeof images === 'string' ? images : JSON.stringify(images)) : '[]';
+    const newStatus = status || 'planning';
+
+    // completed_at tracks when status actually became 'completed' — separate from
+    // updated_at, which changes on every edit. Set it the moment status first
+    // becomes 'completed'; clear it if the project is moved off 'completed'.
+    const existing = db.prepare('SELECT status, completed_at FROM projects WHERE id = ?').get(req.params.id);
+    let completedAt = existing?.completed_at ?? null;
+    // Match SQLite's own datetime('now') format ("YYYY-MM-DD HH:MM:SS") so every
+    // timestamp column in this table stays consistent.
+    if (newStatus === 'completed' && existing?.status !== 'completed') completedAt = new Date().toISOString().slice(0, 19).replace('T', ' ');
+    else if (newStatus !== 'completed') completedAt = null;
 
     db.prepare(`
       UPDATE projects
       SET title=?, client_id=?, invoice_id=?, currency=?, amount_received=?, exchange_rate_actual=?, status=?, notes=?, images=?,
-          updated_at=datetime('now')
+          completed_at=?, updated_at=datetime('now')
       WHERE id=?
     `).run(title.trim(), client_id || null, invoice_id || null, currency || 'PKR',
            parseFloat(amount_received) || 0, parseFloat(exchange_rate_actual) || 0,
-           status || 'planning', notes || '', imagesStr,
+           newStatus, notes || '', imagesStr, completedAt,
            req.params.id);
 
     const project = db.prepare(`${PROJECT_WITH_CLIENT} WHERE p.id = ?`).get(req.params.id);
