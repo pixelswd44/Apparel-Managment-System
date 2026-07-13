@@ -663,6 +663,19 @@ const migrations = [
   // Tracks when a project's status was actually set to 'completed', separate
   // from updated_at (which changes on every edit, not just completion)
   `ALTER TABLE projects ADD COLUMN completed_at TEXT`,
+  // Miscellaneous income outside the main invoice flow — e.g. selling scrap
+  // fabric cuttings locally
+  `CREATE TABLE IF NOT EXISTS other_income (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    title          TEXT    NOT NULL,
+    category       TEXT    DEFAULT '',
+    amount         REAL    NOT NULL DEFAULT 0,
+    received_by    TEXT    DEFAULT '',
+    payment_method TEXT    DEFAULT 'cash',
+    income_date    TEXT    NOT NULL,
+    notes          TEXT    DEFAULT '',
+    created_at     TEXT    DEFAULT (datetime('now'))
+  )`,
   `ALTER TABLE invoices   ADD COLUMN issued_at DATE`,
   `CREATE TABLE IF NOT EXISTS project_shipping (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,

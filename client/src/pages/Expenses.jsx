@@ -4,7 +4,7 @@ import {
   Receipt, Plus, Search, X, Edit2, Trash2, RefreshCw, ArrowLeft,
   Tag, Calendar, Repeat, ChevronDown, Check,
   Home, Zap, Droplets, Truck, Coffee, Package, MoreHorizontal,
-  BarChart2, AlertTriangle,
+  BarChart2, AlertTriangle, TrendingUp, TrendingDown, Banknote,
 } from 'lucide-react';
 import PeriodPicker from '../components/PeriodPicker';
 import Drawer from '../components/Drawer';
@@ -43,6 +43,17 @@ const DEFAULT_CATEGORIES = [
   { name: 'Staff Meals', color: '#f97316' },
   { name: 'Maintenance', color: '#14b8a6' },
   { name: 'Miscellaneous', color: '#94a3b8' },
+];
+
+// Quick-pick presets for miscellaneous income — selling scrap fabric, cuttings,
+// old equipment, etc. outside the normal invoice flow.
+const INCOME_PRESETS = [
+  { label: 'Fabric Cuttings',  icon: '🧵', category: 'Fabric Scraps' },
+  { label: 'Fabric Scraps',    icon: '🪡', category: 'Fabric Scraps' },
+  { label: 'Old Machinery',    icon: '⚙️', category: 'Old Equipment' },
+  { label: 'Packaging Waste',  icon: '📦', category: 'Scrap Materials' },
+  { label: 'Scrap Sale',       icon: '♻️', category: 'Scrap Materials' },
+  { label: 'Other Income',     icon: '💰', category: 'Miscellaneous' },
 ];
 
 // ── CategoryModal ──────────────────────────────────────────────────────────
@@ -254,6 +265,122 @@ function ExpenseModal({ expense, categories, onClose, onSave }) {
   );
 }
 
+// ── IncomeModal ────────────────────────────────────────────────────────────
+function IncomeModal({ income, onClose, onSave }) {
+  const blank = {
+    title: '', category: '', amount: '', received_by: '',
+    income_date: today(), payment_method: 'cash', notes: '',
+  };
+  const [form, setForm] = useState(income ? { ...blank, ...income } : blank);
+  const [saving, setSaving] = useState(false);
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  function applyPreset(preset) {
+    setForm(f => ({ ...f, title: preset.label, category: preset.category }));
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const payload = { ...form, amount: parseFloat(form.amount) || 0 };
+      const res = income
+        ? await api.put(`/income/${income.id}`, payload)
+        : await api.post('/income', payload);
+      onSave(res.data);
+      onClose();
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <Drawer open={true} onClose={onClose} title={income ? 'Edit Income' : 'New Income'} width="max-w-md">
+      <form onSubmit={handleSubmit} className="p-6 space-y-4">
+
+        {/* ── Quick-pick presets ── */}
+        <div>
+          <label className="block text-xs font-semibold text-slate-500 mb-2">Quick Pick</label>
+          <div className="flex flex-wrap gap-1.5">
+            {INCOME_PRESETS.map(p => {
+              const active = form.title === p.label;
+              return (
+                <button key={p.label} type="button" onClick={() => applyPreset(p)}
+                  className={`flex items-center gap-1 px-2.5 py-1 text-xs rounded-lg border font-medium transition-all
+                    ${active
+                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                      : 'bg-white border-slate-200 text-slate-600 hover:border-emerald-300 hover:text-emerald-700 hover:bg-emerald-50'
+                    }`}>
+                  <span>{p.icon}</span>
+                  <span>{p.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-slate-500 mb-1">
+            Title * <span className="font-normal text-slate-400 ml-1">or type your own</span>
+          </label>
+          <input type="text" value={form.title} onChange={e => set('title', e.target.value)} required
+            placeholder="e.g. Sold fabric cuttings"
+            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20" />
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 mb-1">Amount (PKR) *</label>
+            <input type="number" value={form.amount} onChange={e => set('amount', e.target.value)} required
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20" />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 mb-1">Date</label>
+            <input type="date" value={form.income_date} onChange={e => set('income_date', e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20" />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 mb-1">Category / Source</label>
+            <input type="text" value={form.category} onChange={e => set('category', e.target.value)}
+              placeholder="e.g. Fabric Scraps"
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20" />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 mb-1">Payment Method</label>
+            <select value={form.payment_method} onChange={e => set('payment_method', e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20">
+              {PAYMENT_METHODS.map(m => <option key={m} value={m} className="capitalize">{m}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-slate-500 mb-1">Received By</label>
+          <input type="text" value={form.received_by} onChange={e => set('received_by', e.target.value)}
+            placeholder="Person or account"
+            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20" />
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-slate-500 mb-1">Notes</label>
+          <textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={2}
+            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 resize-none" />
+        </div>
+
+        <div className="flex gap-3 pt-2">
+          <button type="button" onClick={onClose}
+            className="flex-1 px-4 py-2.5 text-sm border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 font-medium">Cancel</button>
+          <button type="submit" disabled={saving || !form.title}
+            className="flex-1 px-4 py-2.5 text-sm bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 font-medium disabled:opacity-50">
+            {saving ? 'Saving…' : income ? 'Save Changes' : 'Add Income'}
+          </button>
+        </div>
+      </form>
+    </Drawer>
+  );
+}
+
 // ── DetailReport ──────────────────────────────────────────────────────────
 function DetailReport({ expenses, summary, month }) {
   const total = expenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
@@ -413,6 +540,42 @@ export default function Expenses() {
   // Period filter: { from, to, label } — null from/to means "all time" / use month
   const [periodRange, setPeriodRange] = useState({ from: null, to: null, label: 'All Time' });
 
+  // ── Income tab ──────────────────────────────────────────────────────────
+  const [activeTab, setActiveTab] = useState('expenses'); // 'expenses' | 'income'
+  const [income, setIncome] = useState([]);
+  const [incomeSummary, setIncomeSummary] = useState({ thisMonth: 0, bySource: [] });
+  const [incomeLoading, setIncomeLoading] = useState(true);
+  const [incomeSearch, setIncomeSearch] = useState('');
+  const [incomeModal, setIncomeModal] = useState(null);
+  const [incomeDelTarget, setIncomeDelTarget] = useState(null);
+  const [incomePeriodRange, setIncomePeriodRange] = useState({ from: null, to: null, label: 'All Time' });
+
+  const loadIncome = useCallback(async () => {
+    setIncomeLoading(true);
+    const dateParams = incomePeriodRange.from ? { from: incomePeriodRange.from, to: incomePeriodRange.to } : {};
+    const [incRes, sumRes] = await Promise.all([
+      api.get('/income', { params: dateParams }),
+      api.get('/income/summary', { params: dateParams }),
+    ]);
+    setIncome(incRes.data);
+    setIncomeSummary(sumRes.data);
+    setIncomeLoading(false);
+  }, [incomePeriodRange.from, incomePeriodRange.to]);
+
+  useEffect(() => { loadIncome(); }, [loadIncome]);
+
+  async function confirmDeleteIncome() {
+    await api.delete(`/income/${incomeDelTarget}`);
+    setIncome(p => p.filter(i => i.id !== incomeDelTarget));
+    setIncomeDelTarget(null);
+    loadIncome();
+  }
+
+  const filteredIncome = income.filter(i =>
+    !incomeSearch || i.title.toLowerCase().includes(incomeSearch.toLowerCase())
+  );
+  const filteredIncomeTotal = filteredIncome.reduce((s, i) => s + parseFloat(i.amount || 0), 0);
+
   const load = useCallback(async () => {
     setLoading(true);
     // Build date params: quarter range takes priority over month picker
@@ -467,30 +630,59 @@ export default function Expenses() {
     <div className="flex flex-col" style={{ height: 'calc(100vh - 8.5rem)' }}>
 
       {/* ── Header ── */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4 flex-shrink-0">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-3 flex-shrink-0">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Expenses</h1>
+          <h1 className="text-2xl font-bold text-slate-900">{activeTab === 'income' ? 'Other Income' : 'Expenses'}</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            {pkr(summary.thisMonth || 0)} this period
-            {(summary.recurringMonthly || 0) > 0 && ` · ${pkr(summary.recurringMonthly)}/mo recurring`}
+            {activeTab === 'income'
+              ? <>{pkr(incomeSummary.thisMonth || 0)} this period</>
+              : <>
+                  {pkr(summary.thisMonth || 0)} this period
+                  {(summary.recurringMonthly || 0) > 0 && ` · ${pkr(summary.recurringMonthly)}/mo recurring`}
+                </>}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => setShowCats(v => !v)}
-            className={`flex items-center gap-1.5 px-3 py-2 text-sm border rounded-xl font-medium transition-colors ${
-              showCats ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-300'
-            }`}>
-            <Tag size={14} /> Categories
-          </button>
-          <button onClick={() => setModal('new')}
-            className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 font-semibold text-sm shadow-sm transition-colors">
-            <Plus size={16} /> Add Expense
-          </button>
+          {activeTab === 'expenses' && (
+            <button onClick={() => setShowCats(v => !v)}
+              className={`flex items-center gap-1.5 px-3 py-2 text-sm border rounded-xl font-medium transition-colors ${
+                showCats ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-300'
+              }`}>
+              <Tag size={14} /> Categories
+            </button>
+          )}
+          {activeTab === 'income' ? (
+            <button onClick={() => setIncomeModal('new')}
+              className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 font-semibold text-sm shadow-sm transition-colors">
+              <Plus size={16} /> Add Income
+            </button>
+          ) : (
+            <button onClick={() => setModal('new')}
+              className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 font-semibold text-sm shadow-sm transition-colors">
+              <Plus size={16} /> Add Expense
+            </button>
+          )}
         </div>
       </div>
 
+      {/* ── Tab switcher ── */}
+      <div className="flex gap-1 bg-slate-100 rounded-xl p-1 mb-4 w-fit flex-shrink-0">
+        <button onClick={() => setActiveTab('expenses')}
+          className={`flex items-center gap-1.5 px-4 py-1.5 text-sm rounded-lg font-semibold transition-all ${
+            activeTab === 'expenses' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+          }`}>
+          <TrendingDown size={14} /> Expenses
+        </button>
+        <button onClick={() => setActiveTab('income')}
+          className={`flex items-center gap-1.5 px-4 py-1.5 text-sm rounded-lg font-semibold transition-all ${
+            activeTab === 'income' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+          }`}>
+          <TrendingUp size={14} /> Income
+        </button>
+      </div>
+
       {/* ── Categories panel (collapsible) ── */}
-      {showCats && (
+      {activeTab === 'expenses' && showCats && (
         <div className="bg-white rounded-2xl px-5 py-4 shadow-sm border border-slate-200 mb-3 flex-shrink-0">
           <div className="flex items-center justify-between mb-3">
             <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Manage Categories</p>
@@ -533,6 +725,7 @@ export default function Expenses() {
         </div>
       )}
 
+      {activeTab === 'expenses' && (<>
       {/* ── Top filter bar (desktop) ── */}
       <div className="hidden lg:flex items-center gap-3 mb-3 flex-shrink-0 flex-wrap">
         {/* Period picker */}
@@ -796,6 +989,100 @@ export default function Expenses() {
           )}
         </div>
       </div>
+      </>)}
+
+      {activeTab === 'income' && (
+        <div className="flex-1 min-h-0 flex flex-col">
+          {/* Period picker */}
+          <div className="mb-3 flex-shrink-0">
+            <PeriodPicker onChange={range => setIncomePeriodRange(range)} />
+          </div>
+
+          {/* Summary cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3 flex-shrink-0">
+            <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-emerald-600 mb-1">Total Income</p>
+              <p className="text-lg sm:text-2xl font-bold text-emerald-700 break-all">{pkr(filteredIncomeTotal)}</p>
+            </div>
+            <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Entries</p>
+              <p className="text-lg sm:text-2xl font-bold text-slate-900">{filteredIncome.length}</p>
+            </div>
+            <div className="hidden sm:block bg-slate-50 border border-slate-100 rounded-2xl p-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Top Source</p>
+              <p className="text-sm font-bold text-slate-900 truncate">{incomeSummary.bySource?.[0]?.category || '—'}</p>
+            </div>
+          </div>
+
+          {/* Search */}
+          <div className="relative mb-3 flex-shrink-0">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input placeholder="Search income…" value={incomeSearch} onChange={e => setIncomeSearch(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 transition-all" />
+          </div>
+
+          {/* Inline delete confirmation */}
+          {incomeDelTarget && (
+            <div className="flex items-center gap-2 px-4 py-2.5 mb-3 bg-rose-50 border border-rose-200 rounded-xl text-xs flex-shrink-0">
+              <AlertTriangle size={13} className="text-rose-500 flex-shrink-0" />
+              <span className="flex-1 text-rose-700 font-medium">Delete this income entry?</span>
+              <button onClick={() => setIncomeDelTarget(null)}
+                className="px-2 py-1 border border-rose-200 rounded-lg text-rose-600 hover:bg-rose-100 font-medium">Cancel</button>
+              <button onClick={confirmDeleteIncome}
+                className="px-2 py-1 bg-rose-600 text-white rounded-lg hover:bg-rose-700 font-medium">Delete</button>
+            </div>
+          )}
+
+          {/* Income list */}
+          <div className="flex-1 min-h-0 overflow-y-auto bg-white border border-slate-200 rounded-2xl shadow-sm">
+            {incomeLoading ? (
+              <div className="flex flex-col items-center justify-center py-16 gap-2">
+                <div className="w-5 h-5 border-2 border-emerald-200 border-t-emerald-600 rounded-full animate-spin" />
+                <p className="text-xs text-slate-400">Loading…</p>
+              </div>
+            ) : filteredIncome.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 text-center px-6">
+                <Banknote size={28} className="mb-3 text-slate-300" />
+                <p className="text-sm font-medium text-slate-400">No income recorded</p>
+                <button onClick={() => setIncomeModal('new')}
+                  className="mt-3 text-xs text-emerald-600 hover:underline font-medium">
+                  Record first income
+                </button>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-50">
+                {filteredIncome.map(inc => (
+                  <div key={inc.id} className="group flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
+                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-emerald-400 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-800 truncate">{inc.title}</p>
+                      <p className="text-xs text-slate-400 mt-0.5 truncate">
+                        {fmtDate(inc.income_date)}
+                        {inc.category && ` · ${inc.category}`}
+                        {inc.received_by && ` · ${inc.received_by}`}
+                      </p>
+                      {inc.notes && (
+                        <p className="text-xs text-slate-500 mt-0.5 truncate italic">{inc.notes}</p>
+                      )}
+                    </div>
+                    <span className="text-sm font-bold text-emerald-600 flex-shrink-0">+{pkr(inc.amount)}</span>
+                    <div className="flex gap-0.5 flex-shrink-0">
+                      <button onClick={() => setIncomeModal(inc)} title="Edit"
+                        className="p-1.5 rounded-lg bg-slate-100 hover:bg-emerald-100 text-slate-400 hover:text-emerald-600 transition-colors">
+                        <Edit2 size={13} />
+                      </button>
+                      <button onClick={() => setIncomeDelTarget(inc.id)} title="Delete"
+                        className="p-1.5 rounded-lg bg-slate-100 hover:bg-rose-100 text-slate-400 hover:text-rose-500 transition-colors">
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Modals ── */}
       {modal && (
@@ -811,6 +1098,13 @@ export default function Expenses() {
           category={catModal === 'new' ? null : catModal}
           onClose={() => setCatModal(null)}
           onSave={() => { setCatModal(null); load(); }}
+        />
+      )}
+      {incomeModal && (
+        <IncomeModal
+          income={incomeModal === 'new' ? null : incomeModal}
+          onClose={() => setIncomeModal(null)}
+          onSave={() => { setIncomeModal(null); loadIncome(); }}
         />
       )}
     </div>

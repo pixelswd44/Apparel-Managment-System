@@ -32,6 +32,12 @@ router.get('/summary', (req, res) => {
     : db.prepare(`SELECT amount, COALESCE(currency,'PKR') as currency FROM payments`).all();
   const invoiceRevenue = rawPayments.reduce((s, p) => s + toPKR(p.amount, p.currency, rates), 0);
 
+  // Other income — e.g. selling scrap fabric locally, outside the invoice flow. Stored in PKR.
+  const otherIncome = hasRange
+    ? db.prepare(`SELECT COALESCE(SUM(amount),0) as total FROM other_income WHERE income_date >= ? AND income_date <= ?`).get(from, to).total
+    : db.prepare(`SELECT COALESCE(SUM(amount),0) as total FROM other_income`).get().total;
+  const totalRevenue = invoiceRevenue + otherIncome;
+
   // Outstanding invoices — always real-time (status-based, not date-filtered)
   const rawOutstanding = db.prepare(`
     SELECT (total - amount_paid) as balance, COALESCE(currency,'PKR') as currency
@@ -113,10 +119,10 @@ router.get('/summary', (req, res) => {
   const totalExpenses = totalProjectsPaid + businessExpenses + salariesPaid;
 
   // Out of Pocket = cash already paid out minus cash received (positive = money from your pocket)
-  const outOfPocket = totalExpenses - invoiceRevenue;
+  const outOfPocket = totalExpenses - totalRevenue;
 
   // Projected P&L = (received + outstanding) minus full projected costs
-  const projectedPL = (invoiceRevenue + outstanding) - (totalProjectsExpense + businessExpenses + salariesPaid);
+  const projectedPL = (totalRevenue + outstanding) - (totalProjectsExpense + businessExpenses + salariesPaid);
 
   // Legacy netProfit kept for compatibility (same as projectedPL)
   const netProfit = projectedPL;
@@ -128,7 +134,7 @@ router.get('/summary', (req, res) => {
     revenueByCC[cc] = (revenueByCC[cc] || 0) + (parseFloat(p.amount) || 0);
   }
 
-  res.json({ invoiceRevenue, outstanding, businessExpenses, salariesPaid, totalProjectsPaid, totalProjectsExpense, totalExpenses, outOfPocket, projectedPL, netProfit, revenueByCC });
+  res.json({ invoiceRevenue, otherIncome, totalRevenue, outstanding, businessExpenses, salariesPaid, totalProjectsPaid, totalProjectsExpense, totalExpenses, outOfPocket, projectedPL, netProfit, revenueByCC });
 });
 
 // ── Monthly P&L (last 12 months, or within a date range) ──────────────────
@@ -161,7 +167,12 @@ router.get('/monthly', (req, res) => {
       FROM payments
       WHERE strftime('%Y-%m', paid_at) = ?
     `).all(month);
-    const revenue = monthPayments.reduce((s, p) => s + toPKR(p.amount, p.currency, rates), 0);
+    const invoiceRevenue = monthPayments.reduce((s, p) => s + toPKR(p.amount, p.currency, rates), 0);
+
+    const otherIncome = db.prepare(
+      `SELECT COALESCE(SUM(amount), 0) as total FROM other_income WHERE strftime('%Y-%m', income_date) = ?`
+    ).get(month).total;
+    const revenue = invoiceRevenue + otherIncome;
 
     // Expenses in PKR
     const expenses = db.prepare(
@@ -202,7 +213,7 @@ router.get('/monthly', (req, res) => {
     }, 0);
 
     const totalOut = expenses + salaries + vendorPay + workerPay + shippingPay + fabricPay + extraPay;
-    return { month, revenue, expenses, salaries, vendorPay, workerPay, shippingPay, fabricPay, extraPay, totalOut, net: revenue - totalOut };
+    return { month, revenue, invoiceRevenue, otherIncome, expenses, salaries, vendorPay, workerPay, shippingPay, fabricPay, extraPay, totalOut, net: revenue - totalOut };
   });
 
   res.json(result);
@@ -369,6 +380,20 @@ router.get('/ledger', (req, res) => {
       description: `Invoice ${p.reference || ''}`, party: p.party || '',
       credit: toPKR(p.amount, p.currency, rates), debit: 0,
       currency: p.currency, amount_orig: parseFloat(p.amount) });
+  }
+
+  // Other income — e.g. selling scrap fabric locally, outside the invoice flow
+  const otherIncome = db.prepare(`
+    SELECT id, income_date as date, amount, title, category, received_by
+    FROM other_income
+    WHERE 1=1 ${dateFilter('income_date')}
+    ORDER BY income_date ASC
+  `).all();
+  for (const inc of otherIncome) {
+    entries.push({ date: inc.date, section: 'Income', category: inc.category || 'Other Income',
+      description: inc.title, party: inc.received_by || '',
+      credit: parseFloat(inc.amount) || 0, debit: 0,
+      currency: 'PKR', amount_orig: parseFloat(inc.amount) || 0 });
   }
 
   // ── DEBITS (Expenses) ──────────────────────────────────────────────────────
