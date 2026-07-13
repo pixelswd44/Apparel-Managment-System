@@ -271,7 +271,7 @@ function LineItems({ items, onChange, products, sym, currencies, docCurrency }) 
   return (
     <>
       {items.length > 0 && (
-        <div className="grid grid-cols-[1fr_80px_140px_80px_36px] gap-3 px-1 mb-1">
+        <div className="hidden lg:grid grid-cols-[1fr_80px_140px_80px_36px] gap-3 px-1 mb-1">
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Product & Description</p>
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider text-center">Qty</p>
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider text-right">Unit Price</p>
@@ -282,10 +282,16 @@ function LineItems({ items, onChange, products, sym, currencies, docCurrency }) 
 
       <div className="space-y-3">
         {items.map((item, idx) => (
-          <div key={idx} className="group border border-slate-200 rounded-xl bg-slate-50/40 hover:border-indigo-200 hover:bg-indigo-50/20 transition-all">
-            <div className="grid grid-cols-[1fr_80px_140px_80px_36px] gap-3 p-4 items-start">
+          <div key={idx} className="group relative border border-slate-200 rounded-xl bg-slate-50/40 hover:border-indigo-200 hover:bg-indigo-50/20 transition-all">
+            {/* Remove — floating top-right on mobile, own grid column on desktop */}
+            <button type="button" onClick={() => remove(idx)}
+              className="absolute top-2.5 right-2.5 z-10 p-1 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-all lg:hidden">
+              <X size={16} />
+            </button>
 
-              {/* Left: name autocomplete + description */}
+            <div className="p-4 pr-11 space-y-3 lg:pr-4 lg:space-y-0 lg:grid lg:grid-cols-[1fr_80px_140px_80px_36px] lg:gap-3 lg:items-start">
+
+              {/* Name autocomplete + description */}
               <div className="space-y-2">
                 <ProductNameInput
                   value={item.name || ''}
@@ -304,32 +310,40 @@ function LineItems({ items, onChange, products, sym, currencies, docCurrency }) 
                 />
               </div>
 
-              {/* Qty */}
-              <input type="number" min="0" step="any"
-                value={item.quantity}
-                onChange={e => update(idx, 'quantity', e.target.value)}
-                className="w-full border border-slate-200 rounded-lg px-2 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 bg-white text-center transition-all"
-              />
+              {/* Qty + Unit Price — side by side on mobile, own columns on desktop */}
+              <div className="grid grid-cols-2 gap-3 lg:contents">
+                <div>
+                  <label className="block text-2xs font-semibold text-slate-400 uppercase tracking-wider mb-1 lg:hidden">Qty</label>
+                  <input type="number" min="0" step="any"
+                    value={item.quantity}
+                    onChange={e => update(idx, 'quantity', e.target.value)}
+                    className="w-full border border-slate-200 rounded-lg px-2 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 bg-white text-center transition-all"
+                  />
+                </div>
 
-              {/* Unit Price */}
-              <div className="relative">
-                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none">{sym}</span>
-                <input type="number" min="0" step="any"
-                  value={item.unit_price}
-                  onChange={e => update(idx, 'unit_price', e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg pl-6 pr-2.5 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 bg-white text-right transition-all"
-                />
+                <div>
+                  <label className="block text-2xs font-semibold text-slate-400 uppercase tracking-wider mb-1 lg:hidden">Unit Price</label>
+                  <div className="relative">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none">{sym}</span>
+                    <input type="number" min="0" step="any"
+                      value={item.unit_price}
+                      onChange={e => update(idx, 'unit_price', e.target.value)}
+                      className="w-full border border-slate-200 rounded-lg pl-6 pr-2.5 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 bg-white text-right transition-all"
+                    />
+                  </div>
+                </div>
               </div>
 
               {/* Total */}
-              <div className="flex items-center justify-end pt-1">
+              <div className="flex items-center justify-between lg:justify-end lg:pt-1 pt-1 border-t border-slate-200/70 lg:border-t-0 mt-1 lg:mt-0">
+                <span className="text-2xs font-semibold text-slate-400 uppercase tracking-wider lg:hidden">Total</span>
                 <span className="font-bold text-slate-800 text-sm tabular-nums">
                   {sym}{(parseFloat(item.total) || 0).toFixed(2)}
                 </span>
               </div>
 
-              {/* Remove */}
-              <div className="flex items-start justify-center pt-1">
+              {/* Remove — desktop only */}
+              <div className="hidden lg:flex items-start justify-center pt-1">
                 <button type="button" onClick={() => remove(idx)}
                   className="p-1 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-all opacity-0 group-hover:opacity-100">
                   <X size={14} />
