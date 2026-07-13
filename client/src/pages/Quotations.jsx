@@ -700,8 +700,9 @@ export default function Quotations() {
           </div>
         </div>
 
-        {/* RIGHT: Quotation preview */}
-        <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
+        {/* RIGHT: Quotation preview — full-height when a doc is open, a compact
+            banner above the list (not a competing half-screen block) when empty */}
+        <div className={`min-w-0 min-h-0 flex flex-col overflow-hidden lg:flex-1 lg:order-none ${viewId ? 'flex-1' : 'flex-shrink-0 order-first'}`}>
           {viewId ? (
             <QuotationView
               embedded
@@ -711,14 +712,17 @@ export default function Quotations() {
               onEdit={() => { const id = viewId; setViewId(null); navigate(`/quotations/${id}/edit`); }}
             />
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
-              <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center mb-4">
-                <FileText size={28} className="text-indigo-300" />
+            <div className="flex flex-row lg:flex-1 lg:flex-col items-center justify-center text-center gap-3 lg:gap-0 p-3 lg:p-8 border-b lg:border-b-0 border-slate-100">
+              <div className="w-9 h-9 lg:w-16 lg:h-16 bg-indigo-50 rounded-xl lg:rounded-2xl flex items-center justify-center flex-shrink-0 lg:mb-4">
+                <FileText size={16} className="text-indigo-300 lg:hidden" />
+                <FileText size={28} className="text-indigo-300 hidden lg:block" />
               </div>
-              <p className="font-semibold text-slate-600">Select a quotation to preview</p>
-              <p className="text-sm text-slate-400 mt-1">Click any quotation on the left to view its document</p>
+              <div className="text-left lg:text-center">
+                <p className="font-semibold text-slate-600 text-sm lg:text-base">Select a quotation to preview</p>
+                <p className="text-xs lg:text-sm text-slate-400 mt-0.5 lg:mt-1">Click any quotation on the left to view its document</p>
+              </div>
               <button onClick={() => navigate('/quotations/new')}
-                className="mt-5 flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 transition-colors">
+                className="hidden lg:flex mt-5 items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 transition-colors">
                 <Plus size={14} /> New Quotation
               </button>
             </div>
