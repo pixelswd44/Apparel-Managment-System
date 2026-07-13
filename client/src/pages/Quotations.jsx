@@ -249,18 +249,20 @@ function QuotationView({ quotationId, onClose, onEdit, onConverted, embedded = f
         {/* Right: actions */}
         <div className="flex items-center gap-1 flex-shrink-0">
           {quotation.has_invoice ? (
-            <span className="inline-flex items-center gap-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1.5 rounded-lg font-semibold">
-              <Check size={11} /> Invoiced
+            <span className="inline-flex items-center gap-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 sm:px-2.5 py-1.5 rounded-lg font-semibold whitespace-nowrap">
+              <Check size={11} /> <span className="hidden sm:inline">Invoiced</span>
             </span>
           ) : (
-            <button onClick={convertToInvoice} disabled={converting}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-lg transition-colors font-semibold whitespace-nowrap">
-              <Receipt size={12} /> {converting ? 'Converting…' : 'Convert to Invoice'}
+            <button onClick={convertToInvoice} disabled={converting} title="Convert to Invoice"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-lg transition-colors font-semibold whitespace-nowrap">
+              <Receipt size={12} />
+              <span className="hidden sm:inline">{converting ? 'Converting…' : 'Convert to Invoice'}</span>
+              <span className="sm:hidden">{converting ? '…' : 'Convert'}</span>
             </button>
           )}
-          <button onClick={onEdit}
-            className="flex items-center gap-1 px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold">
-            <Pencil size={12} /> Edit
+          <button title="Edit" onClick={onEdit}
+            className="p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">
+            <Pencil size={14} />
           </button>
           <div className="w-px h-4 bg-slate-200 mx-0.5" />
           <TemplatePicker
