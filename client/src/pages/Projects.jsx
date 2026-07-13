@@ -5686,6 +5686,7 @@ export default function Projects() {
   const [baseCurrency, setBaseCurrency] = useState('PKR');
   const [showActive,    setShowActive]    = useState(true);
   const [showCompleted, setShowCompleted] = useState(true);
+  const [collapsedMonths, setCollapsedMonths] = useState(() => new Set());
   const [finSummary,    setFinSummary]    = useState(null);
 
   const loadProjects = useCallback(async () => {
@@ -5959,11 +5960,20 @@ export default function Projects() {
                           profit:   acc.profit   + (p.fin_net           || 0),
                         }), { cost: 0, expenses: 0, received: 0, profit: 0 });
 
+                        const isCollapsed = collapsedMonths.has(key);
+                        const toggleMonth = () => setCollapsedMonths(prev => {
+                          const next = new Set(prev);
+                          next.has(key) ? next.delete(key) : next.add(key);
+                          return next;
+                        });
+
                         return (
                           <div key={key} className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-                            {/* Month header + overview */}
-                            <div className="px-4 py-3 bg-slate-50/70 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            {/* Month header + overview — click to collapse/expand this month */}
+                            <button type="button" onClick={toggleMonth}
+                              className="w-full px-4 py-3 bg-slate-50/70 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-left hover:bg-slate-100/70 transition-colors">
                               <div className="flex items-center gap-2">
+                                <ChevronDown size={14} className={`text-slate-400 flex-shrink-0 transition-transform ${isCollapsed ? '-rotate-90' : ''}`} />
                                 <Calendar size={14} className="text-slate-400 flex-shrink-0" />
                                 <span className="font-bold text-slate-800 text-sm">{label}</span>
                                 <span className="text-2xs bg-slate-200 text-slate-600 font-semibold px-2 py-0.5 rounded-full">
@@ -5976,8 +5986,8 @@ export default function Projects() {
                                 <span className="text-slate-400">Received <span className="font-semibold text-emerald-600">{pkr(totals.received)}</span></span>
                                 <span className="text-slate-400">Profit <span className={`font-bold ${totals.profit >= 0 ? 'text-indigo-600' : 'text-rose-600'}`}>{pkr(totals.profit)}</span></span>
                               </div>
-                            </div>
-                            {monthProjects.map(p => (
+                            </button>
+                            {!isCollapsed && monthProjects.map(p => (
                               <CompletedProjectRow key={p.id} project={p} onClick={() => openCard(p)} />
                             ))}
                           </div>

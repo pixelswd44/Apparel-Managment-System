@@ -100,7 +100,7 @@ router.get('/', (req, res) => {
       SELECT p.*,
         c.name as client_name, c.company as client_company,
         i.number as invoice_number, i.amount_paid as invoice_amount_paid,
-        i.total as invoice_total,
+        i.total as invoice_total, i.currency as invoice_currency,
         (SELECT COUNT(*) FROM project_products WHERE project_id = p.id)                    as product_count,
         (SELECT COUNT(*) FROM project_stages  WHERE project_id = p.id AND enabled = 1)     as stages_total,
         (SELECT COUNT(*) FROM project_stages  WHERE project_id = p.id AND enabled = 1 AND status = 'done') as stages_done,
