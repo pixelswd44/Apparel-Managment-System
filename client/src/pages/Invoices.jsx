@@ -478,6 +478,8 @@ function InvoiceView({ invoiceId, onClose, onConverted, embedded = false }) {
   const items    = (() => { try { return JSON.parse(invoice.items || '[]'); } catch { return []; } })();
   const payments = invoice.payments || [];
   const balance  = parseFloat(invoice.total) - parseFloat(invoice.amount_paid || 0);
+  const customFields = (() => { try { return JSON.parse(invoice.custom_fields || '[]'); } catch { return []; } })();
+  const validCustomFields = customFields.filter(c => c.label?.trim() && parseFloat(c.amount) > 0);
 
   const companies = settings._companies || [];
   const selectedCo = (invoice.company_id && companies.find(c => c.id === invoice.company_id))
@@ -749,6 +751,12 @@ function InvoiceView({ invoiceId, onClose, onConverted, embedded = false }) {
                       <span className="font-medium text-slate-700">+ {fmtMoney(invoice.shipping_cost, sym)}</span>
                     </div>
                   )}
+                  {validCustomFields.map((c, i) => (
+                    <div key={i} className="flex justify-between py-1.5 border-t border-slate-100 text-xs">
+                      <span className="text-slate-500 truncate pr-2">{c.label}</span>
+                      <span className="font-medium text-slate-700 flex-shrink-0">+ {fmtMoney(c.amount, sym)}</span>
+                    </div>
+                  ))}
                   <div className="border-t-2 border-slate-300 mt-1 py-2 flex justify-between items-center">
                     <span className="font-bold text-slate-900 text-sm">Total</span>
                     <span className="font-bold text-slate-900 text-base tabular-nums">{fmtMoney(invoice.total, sym)}</span>

@@ -606,13 +606,15 @@ function LineItems({ items, onChange, products, setProducts, sym, currencies, do
 
 // ── Totals panel ──────────────────────────────────────────────────────────────
 
-function TotalsPanel({ items, taxRate, discount, shippingCost, sym }) {
-  const subtotal = items.reduce((s, i) => s + (parseFloat(i.total) || 0), 0);
-  const disc     = parseFloat(discount)     || 0;
-  const ship     = parseFloat(shippingCost) || 0;
-  const taxable  = subtotal - disc;
-  const taxAmt   = taxable * ((parseFloat(taxRate) || 0) / 100);
-  const total    = taxable + taxAmt + ship;
+function TotalsPanel({ items, taxRate, discount, shippingCost, customFields = [], sym }) {
+  const subtotal    = items.reduce((s, i) => s + (parseFloat(i.total) || 0), 0);
+  const disc        = parseFloat(discount)     || 0;
+  const ship        = parseFloat(shippingCost) || 0;
+  const validFields = customFields.filter(c => c.label?.trim() && parseFloat(c.amount) > 0);
+  const customTotal = validFields.reduce((s, c) => s + (parseFloat(c.amount) || 0), 0);
+  const taxable      = subtotal - disc;
+  const taxAmt       = taxable * ((parseFloat(taxRate) || 0) / 100);
+  const total        = taxable + taxAmt + ship + customTotal;
 
   return (
     <div className="bg-indigo-50/60 border border-indigo-100 rounded-xl p-5 min-w-[260px] space-y-2.5">
@@ -638,6 +640,12 @@ function TotalsPanel({ items, taxRate, discount, shippingCost, sym }) {
           <span className="font-semibold text-slate-700">+ {fmtMoney(ship, sym)}</span>
         </div>
       )}
+      {validFields.map((c, i) => (
+        <div key={i} className="flex justify-between text-sm">
+          <span className="text-slate-500 truncate pr-2">{c.label}</span>
+          <span className="font-semibold text-slate-700 flex-shrink-0">+ {fmtMoney(c.amount, sym)}</span>
+        </div>
+      ))}
       <div className="border-t border-indigo-200 pt-2.5 flex justify-between items-center">
         <span className="font-bold text-slate-800">Total</span>
         <span className="font-bold text-indigo-700 text-2xl tabular-nums">{fmtMoney(total, sym)}</span>
@@ -679,6 +687,7 @@ export default function QuotationForm() {
     tax_rate:         '',
     discount:         '',
     shipping_cost:    '',
+    custom_fields:    [],
     notes:            '',
     valid_until:      addDays(today(), 20),
     currency:         'USD',
@@ -728,6 +737,8 @@ export default function QuotationForm() {
 
         if (isEdit) {
           const { data: q } = await api.get(`/quotations/${id}`);
+          let customFields = [];
+          try { customFields = JSON.parse(q.custom_fields || '[]'); } catch {}
           setForm({
             number:           q.number           || '',
             subject:          q.subject          || '',
@@ -736,6 +747,7 @@ export default function QuotationForm() {
             tax_rate:         q.tax_rate         || '',
             discount:         q.discount         || '',
             shipping_cost:    q.shipping_cost    || '',
+            custom_fields:    customFields,
             notes:            q.notes            || '',
             valid_until:      q.valid_until      || addDays(today(), 20),
             currency:         q.currency         || baseCurrCode,
@@ -854,6 +866,16 @@ export default function QuotationForm() {
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  function addCustomField() {
+    set('custom_fields', [...form.custom_fields, { label: '', amount: '' }]);
+  }
+  function updateCustomField(idx, field, val) {
+    set('custom_fields', form.custom_fields.map((c, i) => i === idx ? { ...c, [field]: val } : c));
+  }
+  function removeCustomField(idx) {
+    set('custom_fields', form.custom_fields.filter((_, i) => i !== idx));
+  }
 
   const sym         = getSym(form.currency, currencies);
   const selectedCo  = companies.find(c => c.id === form.company_id) ?? null;
@@ -1194,33 +1216,66 @@ export default function QuotationForm() {
         {/* ── 3. Pricing ── */}
         <SectionCard id="sec-pricing" icon={FileCheck} title="Pricing Summary" iconColor="text-emerald-600" iconBg="bg-emerald-50">
           <div className="flex gap-8 items-start justify-between flex-wrap">
-            <div className="grid grid-cols-3 gap-4 flex-1 min-w-[280px] max-w-md">
-              <Field label={`Discount (${sym})`}>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none">{sym}</span>
-                  <input type="number" min="0" step="any" value={form.discount}
-                    onChange={e => set('discount', e.target.value)}
-                    className={`${inputCls} pl-6`} placeholder="0.00" />
+            <div className="flex-1 min-w-[280px] max-w-md space-y-4">
+              <div className="grid grid-cols-3 gap-4">
+                <Field label={`Discount (${sym})`}>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none">{sym}</span>
+                    <input type="number" min="0" step="any" value={form.discount}
+                      onChange={e => set('discount', e.target.value)}
+                      className={`${inputCls} pl-6`} placeholder="0.00" />
+                  </div>
+                </Field>
+                <Field label="Tax Rate (%)">
+                  <div className="relative">
+                    <input type="number" min="0" max="100" step="any" value={form.tax_rate}
+                      onChange={e => set('tax_rate', e.target.value)}
+                      className={`${inputCls} pr-7`} placeholder="0" />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none">%</span>
+                  </div>
+                </Field>
+                <Field label={`Shipping (${sym})`}>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none">{sym}</span>
+                    <input type="number" min="0" step="any" value={form.shipping_cost}
+                      onChange={e => set('shipping_cost', e.target.value)}
+                      className={`${inputCls} pl-6`} placeholder="0.00" />
+                  </div>
+                </Field>
+              </div>
+
+              {/* Custom fields — e.g. Pattern Cost, Sample Fee */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Custom Fields</p>
+                  <button type="button" onClick={addCustomField}
+                    className="flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition-colors">
+                    <Plus size={12} /> Add Custom Field
+                  </button>
                 </div>
-              </Field>
-              <Field label="Tax Rate (%)">
-                <div className="relative">
-                  <input type="number" min="0" max="100" step="any" value={form.tax_rate}
-                    onChange={e => set('tax_rate', e.target.value)}
-                    className={`${inputCls} pr-7`} placeholder="0" />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none">%</span>
-                </div>
-              </Field>
-              <Field label={`Shipping (${sym})`}>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none">{sym}</span>
-                  <input type="number" min="0" step="any" value={form.shipping_cost}
-                    onChange={e => set('shipping_cost', e.target.value)}
-                    className={`${inputCls} pl-6`} placeholder="0.00" />
-                </div>
-              </Field>
+                {form.custom_fields.length > 0 && (
+                  <div className="space-y-2">
+                    {form.custom_fields.map((cf, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <input value={cf.label} onChange={e => updateCustomField(i, 'label', e.target.value)}
+                          placeholder="e.g. Pattern Cost" className={`${smInput} flex-1 min-w-0`} />
+                        <div className="relative w-32 flex-shrink-0">
+                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none">{sym}</span>
+                          <input type="number" min="0" step="any" value={cf.amount}
+                            onChange={e => updateCustomField(i, 'amount', e.target.value)}
+                            className={`${smInput} pl-6`} placeholder="0.00" />
+                        </div>
+                        <button type="button" onClick={() => removeCustomField(i)}
+                          className="p-1.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors flex-shrink-0">
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-            <TotalsPanel items={items} taxRate={form.tax_rate} discount={form.discount} shippingCost={form.shipping_cost} sym={sym} />
+            <TotalsPanel items={items} taxRate={form.tax_rate} discount={form.discount} shippingCost={form.shipping_cost} customFields={form.custom_fields} sym={sym} />
           </div>
         </SectionCard>
 

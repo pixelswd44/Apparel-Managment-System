@@ -12,13 +12,14 @@ function genNumber() {
   return `QT-${year}-${String(seq).padStart(4, '0')}`;
 }
 
-function calcTotals(items, taxRate, discount, shippingCost = 0) {
+function calcTotals(items, taxRate, discount, shippingCost = 0, customFields = []) {
   const subtotal    = items.reduce((s, i) => s + (parseFloat(i.total) || 0), 0);
   const discountAmt = parseFloat(discount)     || 0;
   const shipping    = parseFloat(shippingCost) || 0;
+  const customTotal = (Array.isArray(customFields) ? customFields : []).reduce((s, c) => s + (parseFloat(c.amount) || 0), 0);
   const taxable     = subtotal - discountAmt;
   const taxAmount   = taxable * ((parseFloat(taxRate) || 0) / 100);
-  const total       = taxable + taxAmount + shipping;
+  const total       = taxable + taxAmount + shipping + customTotal;
   return { subtotal, tax_amount: taxAmount, total };
 }
 
@@ -66,26 +67,27 @@ router.post('/', (req, res) => {
   try {
     const {
       client_id, company_id, status = 'draft', items = [], tax_rate = 0, discount = 0,
-      shipping_cost = 0,
+      shipping_cost = 0, custom_fields = [],
       notes, valid_until, is_sampling = 0,
       currency = 'USD', shipping_name, shipping_address, shipping_city, shipping_country,
       shipping_phone, bank_details, customer_notes, terms_conditions, subject,
     } = req.body;
     const number      = req.body.number?.trim() || genNumber();
     const parsedItems = typeof items === 'string' ? JSON.parse(items) : items;
+    const parsedCustomFields = typeof custom_fields === 'string' ? JSON.parse(custom_fields) : custom_fields;
     const shipping    = parseFloat(shipping_cost) || 0;
-    const { subtotal, tax_amount, total } = calcTotals(parsedItems, tax_rate, discount, shipping);
+    const { subtotal, tax_amount, total } = calcTotals(parsedItems, tax_rate, discount, shipping, parsedCustomFields);
 
     const result = db.prepare(`
       INSERT INTO quotations (
-        number, client_id, company_id, status, items, subtotal, tax_rate, tax_amount, discount, shipping_cost, total,
+        number, client_id, company_id, status, items, subtotal, tax_rate, tax_amount, discount, shipping_cost, custom_fields, total,
         notes, valid_until, is_sampling,
         currency, shipping_name, shipping_address, shipping_city, shipping_country,
         shipping_phone, bank_details, customer_notes, terms_conditions, subject
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `).run(
       number, client_id || null, company_id || null, status, JSON.stringify(parsedItems),
-      subtotal, parseFloat(tax_rate) || 0, tax_amount, parseFloat(discount) || 0, shipping, total,
+      subtotal, parseFloat(tax_rate) || 0, tax_amount, parseFloat(discount) || 0, shipping, JSON.stringify(parsedCustomFields), total,
       notes || null, valid_until || null, is_sampling ? 1 : 0,
       currency, shipping_name || null, shipping_address || null,
       shipping_city || null, shipping_country || null,
@@ -103,19 +105,20 @@ router.put('/:id', (req, res) => {
   try {
     const {
       client_id, company_id, status, items = [], tax_rate = 0, discount = 0,
-      shipping_cost = 0,
+      shipping_cost = 0, custom_fields = [],
       notes, valid_until, number, is_sampling = 0,
       currency = 'USD', shipping_name, shipping_address, shipping_city, shipping_country,
       shipping_phone, bank_details, customer_notes, terms_conditions, subject,
     } = req.body;
     const parsedItems = typeof items === 'string' ? JSON.parse(items) : items;
+    const parsedCustomFields = typeof custom_fields === 'string' ? JSON.parse(custom_fields) : custom_fields;
     const shipping    = parseFloat(shipping_cost) || 0;
-    const { subtotal, tax_amount, total } = calcTotals(parsedItems, tax_rate, discount, shipping);
+    const { subtotal, tax_amount, total } = calcTotals(parsedItems, tax_rate, discount, shipping, parsedCustomFields);
 
     db.prepare(`
       UPDATE quotations SET
         number=?, client_id=?, company_id=?, status=?, items=?,
-        subtotal=?, tax_rate=?, tax_amount=?, discount=?, shipping_cost=?, total=?,
+        subtotal=?, tax_rate=?, tax_amount=?, discount=?, shipping_cost=?, custom_fields=?, total=?,
         notes=?, valid_until=?, is_sampling=?,
         currency=?, shipping_name=?, shipping_address=?, shipping_city=?, shipping_country=?,
         shipping_phone=?, bank_details=?, customer_notes=?, terms_conditions=?, subject=?,
@@ -123,7 +126,7 @@ router.put('/:id', (req, res) => {
       WHERE id=?
     `).run(
       number, client_id || null, company_id || null, status, JSON.stringify(parsedItems),
-      subtotal, parseFloat(tax_rate) || 0, tax_amount, parseFloat(discount) || 0, shipping, total,
+      subtotal, parseFloat(tax_rate) || 0, tax_amount, parseFloat(discount) || 0, shipping, JSON.stringify(parsedCustomFields), total,
       notes || null, valid_until || null, is_sampling ? 1 : 0,
       currency, shipping_name || null, shipping_address || null,
       shipping_city || null, shipping_country || null,
@@ -152,14 +155,14 @@ router.post('/:id/duplicate', (req, res) => {
     const number = genNumber();
     const result = db.prepare(`
       INSERT INTO quotations (
-        number, client_id, company_id, status, items, subtotal, tax_rate, tax_amount, discount, total,
+        number, client_id, company_id, status, items, subtotal, tax_rate, tax_amount, discount, shipping_cost, custom_fields, total,
         notes, valid_until, is_sampling,
         currency, shipping_name, shipping_address, shipping_city, shipping_country,
         shipping_phone, bank_details, customer_notes, terms_conditions, subject
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `).run(
       number, orig.client_id, orig.company_id || null, 'draft', orig.items,
-      orig.subtotal, orig.tax_rate, orig.tax_amount, orig.discount, orig.total,
+      orig.subtotal, orig.tax_rate, orig.tax_amount, orig.discount, orig.shipping_cost || 0, orig.custom_fields || '[]', orig.total,
       orig.notes, null, orig.is_sampling,
       orig.currency, orig.shipping_name, orig.shipping_address, orig.shipping_city,
       orig.shipping_country, orig.shipping_phone, orig.bank_details,

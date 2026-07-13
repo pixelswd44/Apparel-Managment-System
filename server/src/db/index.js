@@ -657,6 +657,9 @@ const migrations = [
   // Shipping cost on quotations & invoices (added to subtotal before tax)
   `ALTER TABLE quotations ADD COLUMN shipping_cost REAL DEFAULT 0`,
   `ALTER TABLE invoices   ADD COLUMN shipping_cost REAL DEFAULT 0`,
+  // Custom pricing fields (e.g. "Pattern Cost") — JSON array of {label, amount}
+  `ALTER TABLE quotations ADD COLUMN custom_fields TEXT DEFAULT '[]'`,
+  `ALTER TABLE invoices   ADD COLUMN custom_fields TEXT DEFAULT '[]'`,
   `ALTER TABLE invoices   ADD COLUMN issued_at DATE`,
   `CREATE TABLE IF NOT EXISTS project_shipping (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,

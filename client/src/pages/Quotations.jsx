@@ -126,6 +126,7 @@ function QuotationView({ quotationId, onClose, onEdit, onConverted, embedded = f
         tax_rate:         quotation.tax_rate,
         discount:         quotation.discount,
         shipping_cost:    quotation.shipping_cost,
+        custom_fields:    quotation.custom_fields,
         notes:            quotation.notes,
         due_date:         quotation.due_date,
         issued_at:        quotation.issued_at || new Date().toISOString().slice(0, 10),
@@ -184,12 +185,17 @@ function QuotationView({ quotationId, onClose, onEdit, onConverted, embedded = f
   let   items = [];
   try { items = JSON.parse(quotation.items || '[]'); } catch {}
 
+  let customFields = [];
+  try { customFields = JSON.parse(quotation.custom_fields || '[]'); } catch {}
+  const validCustomFields = customFields.filter(c => c.label?.trim() && parseFloat(c.amount) > 0);
+  const customTotal = validCustomFields.reduce((s, c) => s + (parseFloat(c.amount) || 0), 0);
+
   const subtotal  = items.reduce((s, i) => s + (parseFloat(i.total) || 0), 0);
   const disc      = parseFloat(quotation.discount)      || 0;
   const ship      = parseFloat(quotation.shipping_cost) || 0;
   const taxable   = subtotal - disc;
   const taxAmt    = taxable * ((parseFloat(quotation.tax_rate) || 0) / 100);
-  const total     = taxable + taxAmt + ship;
+  const total     = taxable + taxAmt + ship + customTotal;
   const itemCount = items.length;
   const totalQty  = items.reduce((s, i) => s + (parseFloat(i.quantity) || 0), 0);
 
@@ -450,6 +456,12 @@ function QuotationView({ quotationId, onClose, onEdit, onConverted, embedded = f
                     <span className="font-medium text-slate-700">+ {fmtMoney(ship, sym)}</span>
                   </div>
                 )}
+                {validCustomFields.map((c, i) => (
+                  <div key={i} className="flex justify-between py-1.5 border-t border-slate-100 text-xs">
+                    <span className="text-slate-500 truncate pr-2">{c.label}</span>
+                    <span className="font-medium text-slate-700 flex-shrink-0">+ {fmtMoney(c.amount, sym)}</span>
+                  </div>
+                ))}
                 <div className="border-t-2 border-slate-300 mt-1 py-2 flex justify-between items-center">
                   <span className="font-bold text-slate-900 text-sm">Total</span>
                   <span className="font-bold text-slate-900 text-base tabular-nums">{fmtMoney(total, sym)}</span>
