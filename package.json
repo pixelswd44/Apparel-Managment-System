@@ -4,7 +4,7 @@
   "type": "module",
   "description": "Apparel Management CRM",
   "scripts": {
-    "build": "cd server && npm install && cd ../client && npm install && npm run build",
+    "build": "cd server && npm install && cd ../client && npm install --include=dev && npm run build",
     "start": "node app.js",
     "save-data": "node scripts/save-data.mjs"
   },
