@@ -49,18 +49,28 @@ function currentQ() {
   return `Q${Math.ceil((new Date().getMonth() + 1) / 3)}`;
 }
 
+// Range for the current calendar month — used as the Ledger's default period.
+export function currentMonthRange() {
+  const now   = new Date();
+  const year  = now.getFullYear();
+  const month = now.getMonth() + 1;
+  const days  = daysInMonth(year, month);
+  const label = `${MONTHS[month - 1].full} ${year}`;
+  return { from: `${year}-${pad(month)}-01`, to: `${year}-${pad(month)}-${pad(days)}`, label };
+}
+
 // ── PeriodPicker ─────────────────────────────────────────────────────────────
-export default function PeriodPicker({ onChange }) {
+export default function PeriodPicker({ onChange, defaultMode = 'all' }) {
   const now      = new Date();
   const thisYear = now.getFullYear();
   const thisQ    = currentQ();
   const thisMonth = now.getMonth() + 1;
 
   // mode: 'all' | 'quarter' | 'month' | 'custom'
-  const [mode,      setMode]      = useState('all');
+  const [mode,      setMode]      = useState(defaultMode === 'month' ? 'month' : 'all');
   const [year,      setYear]      = useState(thisYear);
   const [period,    setPeriod]    = useState('all');   // quarter key
-  const [selMonth,  setSelMonth]  = useState(null);    // 1-12
+  const [selMonth,  setSelMonth]  = useState(defaultMode === 'month' ? thisMonth : null);    // 1-12
   const [customFrom, setCustomFrom] = useState('');
   const [customTo,   setCustomTo]   = useState('');
   const [showCustom, setShowCustom] = useState(false);

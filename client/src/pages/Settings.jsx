@@ -2223,6 +2223,7 @@ function OpeningBalance() {
     try {
       await api.put('/settings/opening_balance',      { value: String(amount) });
       await api.put('/settings/opening_balance_date', { value: date });
+      await api.put(`/financials/monthly-opening-balances/${date.slice(0, 7)}`, { amount });
       setCurrent({ amount: String(amount), date });
       setSaved(true); setTimeout(() => setSaved(false), 3000);
     } catch (e) { setError(e.message || 'Save failed'); }
@@ -2234,6 +2235,7 @@ function OpeningBalance() {
     try {
       await api.put('/settings/opening_balance',      { value: '' });
       await api.put('/settings/opening_balance_date', { value: '' });
+      if (current?.date) await api.delete(`/financials/monthly-opening-balances/${current.date.slice(0, 7)}`);
       setCurrent(null); setAmount(''); setDate('');
     } catch (e) { setError(e.message || 'Clear failed'); }
     finally { setClearing(false); }
@@ -2245,8 +2247,8 @@ function OpeningBalance() {
     <div className="space-y-5 max-w-lg">
       <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-4 text-xs text-indigo-700 leading-relaxed space-y-1">
         <p className="font-semibold text-indigo-800">How it works</p>
-        <p>Set the balance you currently have in your account and a start date. The ledger will ignore all transactions before that date and begin its running balance from this amount — giving you a clean slate going forward.</p>
-        <p className="text-indigo-500">Your old data is not deleted — it stays in the system for reference.</p>
+        <p>Set the balance you had at the start of a given month. The ledger resets to this amount at that month and carries it forward into every month after — months before it keep carrying forward normally from whatever came before them.</p>
+        <p className="text-indigo-500">You can also set or change a month's opening balance directly from the Ledger page.</p>
       </div>
 
       {current && (

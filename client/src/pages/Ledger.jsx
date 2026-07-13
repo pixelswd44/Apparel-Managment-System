@@ -4,10 +4,10 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import {
   Download, FileSpreadsheet, FileText, RefreshCw,
-  TrendingUp, TrendingDown, Wallet, Filter,
+  TrendingUp, TrendingDown, Wallet, Filter, Pencil, Check, X,
 } from 'lucide-react';
 import api from '../lib/api';
-import PeriodPicker from '../components/PeriodPicker';
+import PeriodPicker, { currentMonthRange } from '../components/PeriodPicker';
 
 const pkr  = n => `Rs${Number(n || 0).toLocaleString('en-PK', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 const fmtD = d => {
@@ -30,13 +30,27 @@ const SECTION_COLORS = {
 
 const SECTIONS = ['All', 'Income', 'Project Costs', 'Business Expenses', 'Salaries'];
 
+// Returns 'YYYY-MM' when the range is exactly one full calendar month, else null.
+function monthKeyOf({ from, to }) {
+  if (!from || !to) return null;
+  const d = new Date(from + 'T00:00:00');
+  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  const expectedTo = `${from.slice(0, 7)}-${String(lastDay).padStart(2, '0')}`;
+  return (from.slice(8) === '01' && to === expectedTo) ? from.slice(0, 7) : null;
+}
+
 export default function Ledger() {
   const [data,        setData]        = useState(null);
   const [loading,     setLoading]     = useState(true);
   const [section,     setSection]     = useState('All');
   const [search,      setSearch]      = useState('');
-  const [periodRange, setPeriodRange] = useState({ from: null, to: null, label: 'All Time' });
+  const [periodRange, setPeriodRange] = useState(currentMonthRange());
+  const [editingOpening, setEditingOpening] = useState(false);
+  const [openingInput,   setOpeningInput]   = useState('');
+  const [savingOpening,  setSavingOpening]  = useState(false);
   const tableRef = useRef();
+
+  const monthKey = monthKeyOf(periodRange);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -47,6 +61,28 @@ export default function Ledger() {
     } catch {}
     finally { setLoading(false); }
   }, [periodRange.from, periodRange.to]);
+
+  useEffect(() => { setEditingOpening(false); }, [periodRange.from, periodRange.to]);
+
+  async function saveOpening() {
+    if (!monthKey || openingInput === '') return;
+    setSavingOpening(true);
+    try {
+      await api.put(`/financials/monthly-opening-balances/${monthKey}`, { amount: openingInput });
+      setEditingOpening(false);
+      await load();
+    } catch {} finally { setSavingOpening(false); }
+  }
+
+  async function clearOpening() {
+    if (!monthKey) return;
+    setSavingOpening(true);
+    try {
+      await api.delete(`/financials/monthly-opening-balances/${monthKey}`);
+      setEditingOpening(false);
+      await load();
+    } catch {} finally { setSavingOpening(false); }
+  }
 
   useEffect(() => { load(); }, [load]);
 
@@ -233,21 +269,61 @@ export default function Ledger() {
 
       {/* Period Picker */}
       <div className="mb-5">
-        <PeriodPicker onChange={range => setPeriodRange(range)} />
+        <PeriodPicker defaultMode="month" onChange={range => setPeriodRange(range)} />
       </div>
 
       {/* Summary Cards */}
       {data && (
-        <div className={`grid gap-4 mb-5 ${summary.openingBalance > 0 ? 'grid-cols-2 lg:grid-cols-5' : 'grid-cols-2 lg:grid-cols-4'}`}>
+        <div className={`grid gap-4 mb-5 ${(monthKey || summary.openingBalance) ? 'grid-cols-2 lg:grid-cols-5' : 'grid-cols-2 lg:grid-cols-4'}`}>
 
-          {/* Opening Balance card — only shown when one is configured */}
-          {summary.openingBalance > 0 && (
+          {/* Opening Balance card — shown whenever one applies, or a month is being viewed (so it can be set) */}
+          {(monthKey || summary.openingBalance) && (
             <div className="bg-violet-50 border border-violet-200 rounded-2xl p-4">
-              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-violet-600 mb-2">
-                <Wallet size={13} /> Opening Balance
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-violet-600">
+                  <Wallet size={13} /> Opening Balance
+                </div>
+                {monthKey && !editingOpening && (
+                  <button onClick={() => { setOpeningInput(summary.openingBalance ? String(summary.openingBalance) : ''); setEditingOpening(true); }}
+                    className="text-violet-400 hover:text-violet-700" title="Set opening balance for this month">
+                    <Pencil size={13} />
+                  </button>
+                )}
               </div>
-              <p className="text-lg sm:text-2xl font-black text-violet-700 break-all">{pkr(summary.openingBalance)}</p>
-              <p className="text-xs text-violet-400 mt-1">Starting balance{summary.openingDate ? ` · ${summary.openingDate}` : ''}</p>
+
+              {editingOpening ? (
+                <div className="space-y-2">
+                  <input type="number" step="1" autoFocus value={openingInput} onChange={e => setOpeningInput(e.target.value)}
+                    placeholder="Amount"
+                    className="w-full border border-violet-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300" />
+                  <div className="flex items-center gap-2">
+                    <button onClick={saveOpening} disabled={savingOpening || openingInput === ''}
+                      className="flex items-center gap-1 px-2.5 py-1 text-xs bg-violet-600 hover:bg-violet-700 text-white rounded-lg font-semibold disabled:opacity-50">
+                      <Check size={11} /> Save
+                    </button>
+                    <button onClick={() => setEditingOpening(false)}
+                      className="flex items-center gap-1 px-2.5 py-1 text-xs border border-violet-200 text-violet-600 rounded-lg hover:bg-violet-100">
+                      <X size={11} /> Cancel
+                    </button>
+                    {summary.openingManual && (
+                      <button onClick={clearOpening} disabled={savingOpening}
+                        className="ml-auto text-xs text-rose-500 hover:text-rose-700 font-semibold">
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <p className="text-lg sm:text-2xl font-black text-violet-700 break-all">
+                    {(summary.openingBalance || 0) >= 0 ? '' : '−'}{pkr(Math.abs(summary.openingBalance || 0))}
+                  </p>
+                  <p className="text-xs text-violet-400 mt-1">
+                    {summary.openingManual ? 'Manually set' : summary.openingCarried ? 'Carried forward' : 'Starting balance'}
+                    {summary.openingDate ? ` · ${summary.openingDate}` : ''}
+                  </p>
+                </>
+              )}
             </div>
           )}
 

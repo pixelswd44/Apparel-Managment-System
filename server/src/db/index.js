@@ -709,6 +709,12 @@ const migrations = [
     notes      TEXT    DEFAULT '',
     created_at TEXT    DEFAULT (datetime('now'))
   )`,
+  // Per-month opening-balance overrides for the Ledger (one per calendar month)
+  `CREATE TABLE IF NOT EXISTS monthly_opening_balances (
+    month      TEXT PRIMARY KEY,
+    amount     REAL NOT NULL,
+    updated_at TEXT DEFAULT (datetime('now'))
+  )`,
 ];
 
 for (const sql of migrations) {
@@ -875,6 +881,20 @@ export function seedCompanies() {
   }
 }
 seedCompanies();
+
+// ── Seed monthly_opening_balances from the old single opening-balance setting ──
+export function seedMonthlyOpeningBalance() {
+  const count = db.prepare('SELECT COUNT(*) as n FROM monthly_opening_balances').get().n;
+  if (count > 0) return;
+  const rows = db.prepare("SELECT key, value FROM settings WHERE key IN ('opening_balance','opening_balance_date')").all();
+  const map = Object.fromEntries(rows.map(r => [r.key, r.value]));
+  const amount = parseFloat(map.opening_balance) || 0;
+  const date   = map.opening_balance_date;
+  if (amount > 0 && date) {
+    db.prepare('INSERT OR IGNORE INTO monthly_opening_balances (month, amount) VALUES (?, ?)').run(date.slice(0, 7), amount);
+  }
+}
+seedMonthlyOpeningBalance();
 
 // ── Seed rate_to_pkr from existing rate_to_usd data ───────────────────────
 export function seedRateToPkr() {

@@ -340,25 +340,16 @@ router.get('/ledger', (req, res) => {
   const { from, to } = req.query;
   const rates = getRates();
 
-  // Opening balance setting — acts as the ledger floor date
-  const settingsRows = db.prepare("SELECT key, value FROM settings WHERE key IN ('opening_balance','opening_balance_date')").all();
-  const settingsMap  = Object.fromEntries(settingsRows.map(r => [r.key, r.value]));
-  const openingAmt   = parseFloat(settingsMap.opening_balance) || 0;
-  const openingDate  = settingsMap.opening_balance_date || null; // 'YYYY-MM-DD' or null
+  // Per-month opening-balance overrides. A month with a manual override resets
+  // the running balance to that value at the start of the month; a month without
+  // one simply carries the balance forward from everything before it — all the
+  // way back to the very first recorded transaction.
+  const overrides = db.prepare('SELECT month, amount FROM monthly_opening_balances ORDER BY month ASC').all()
+    .map(o => ({ month: o.month, date: `${o.month}-01`, amount: parseFloat(o.amount) || 0 }));
 
-  // Only apply the opening cutoff when the viewed period is on/after the opening date.
-  // If the user selects a period entirely before the opening date (e.g. June when
-  // opening is July 1), show normal historical data for that period.
-  const periodIsBeforeOpening = openingDate && to && to < openingDate;
-  const applyOpening = openingDate && !periodIsBeforeOpening;
-  const effectiveFrom = applyOpening ? ([from, openingDate].filter(Boolean).sort().pop() || from) : from;
-
-  const dateFilter = (col) => {
-    const parts = [];
-    if (effectiveFrom) parts.push(`date(${col}) >= '${effectiveFrom}'`);
-    if (to)            parts.push(`date(${col}) <= '${to}'`);
-    return parts.length ? 'AND ' + parts.join(' AND ') : '';
-  };
+  // We need full history (no lower bound) to compute the carried-forward balance;
+  // the `from` cutoff for display is applied in JS further down.
+  const dateFilter = (col) => to ? `AND date(${col}) <= '${to}'` : '';
 
   const entries = [];
 
@@ -590,43 +581,90 @@ router.get('/ledger', (req, res) => {
 
   // Final date filter — some sources (fabric/process/extra costs) build entries
   // in JS from JSON fields and cannot be filtered in SQL, so we filter here to
-  // guarantee nothing outside the requested range leaks through.
-  const filtered = (from && to)
-    ? entries.filter(e => {
-        const d = (e.date || '').replace(' ', 'T').split('T')[0];
-        return d >= from && d <= to;
-      })
-    : entries;
+  // guarantee nothing outside the requested range leaks through. Entries dated
+  // before `from` aren't discarded — they're rolled into the carried-forward
+  // opening balance below instead (applying any overrides encountered along the
+  // way), so every month's balance connects continuously to the one before it.
+  const normDay = e => (e.date || '').replace(' ', 'T').split('T')[0];
+  entries.sort((a, b) => normDay(a).localeCompare(normDay(b)));
 
-  // Sort all entries by date ASC, compute running balance
-  filtered.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  const filtered = [];
+  let carryForward = 0;
+  let oi = 0; // cursor into `overrides`, applied strictly before `from`
+  for (const e of entries) {
+    const d = normDay(e);
+    while (oi < overrides.length && overrides[oi].date <= d && (!from || overrides[oi].date < from)) {
+      carryForward = overrides[oi].amount; oi++;
+    }
+    if (to && d > to) continue;
+    if (from && d < from) {
+      carryForward += (e.credit - e.debit);
+      continue;
+    }
+    filtered.push(e);
+  }
+  while (oi < overrides.length && (!from || overrides[oi].date < from)) {
+    carryForward = overrides[oi].amount; oi++;
+  }
 
-  // Prepend opening balance entry only when the period is on/after the opening date
-  const openingEntry = applyOpening && openingAmt > 0 && openingDate ? [{
-    date: openingDate,
-    section: 'Opening Balance',
-    category: 'Opening Balance',
-    description: 'Opening Balance',
-    party: '',
-    credit: openingAmt,
-    debit: 0,
-    currency: 'PKR',
-    amount_orig: openingAmt,
-    isOpeningBalance: true,
+  // If a manual override exists for exactly the month being viewed, show it
+  // directly. Otherwise show the balance carried forward into this period.
+  const rawOverride  = from ? overrides.find(o => o.date === from) : null;
+  const showCarried  = !rawOverride && !!from;
+  const openingEntry = rawOverride ? [{
+    date: rawOverride.date, section: 'Opening Balance', category: 'Opening Balance',
+    description: 'Opening Balance', party: '',
+    credit: rawOverride.amount, debit: 0, currency: 'PKR', amount_orig: rawOverride.amount,
+    isOpeningBalance: true, carried: false, manual: true,
+  }] : showCarried ? [{
+    date: from, section: 'Opening Balance', category: 'Opening Balance',
+    description: 'Opening Balance (carried forward)', party: '',
+    credit: carryForward, debit: 0, currency: 'PKR', amount_orig: carryForward,
+    isOpeningBalance: true, carried: true, manual: false,
   }] : [];
 
-  let balance = 0;
-  const ledger = [...openingEntry, ...filtered].map(e => {
+  // Any other overrides that fall inside the displayed range (e.g. viewing "All
+  // Time" or a quarter spanning multiple override months) show up inline as
+  // additional reset points, in chronological order alongside the transactions.
+  const inlineOverrides = overrides
+    .filter(o => o.date !== openingEntry[0]?.date && (!from || o.date >= from) && (!to || o.date <= to))
+    .map(o => ({ date: o.date, __reset: o.amount }));
+
+  let balance = openingEntry[0]?.credit || 0;
+  const merged = [...filtered.map(e => ({ ...e, __sort: 0 })), ...inlineOverrides.map(o => ({ ...o, __sort: -1 }))]
+    .sort((a, b) => {
+      const d = normDay(a).localeCompare(normDay(b));
+      return d !== 0 ? d : a.__sort - b.__sort; // resets before same-day transactions
+    });
+
+  const ledgerBody = merged.map(e => {
+    if (e.__reset !== undefined) {
+      const delta = e.__reset - balance;
+      balance = e.__reset;
+      return {
+        date: e.date, section: 'Opening Balance', category: 'Opening Balance',
+        description: 'Opening Balance', party: '',
+        credit: delta >= 0 ? delta : 0, debit: delta < 0 ? -delta : 0,
+        currency: 'PKR', isOpeningBalance: true, manual: true, balance,
+      };
+    }
     balance += (e.credit - e.debit);
-    return { ...e, balance };
+    const { __sort, ...row } = e;
+    return { ...row, balance };
   });
 
-  // Summary
-  const totalCredit = filtered.reduce((s, e) => s + e.credit, 0) + (applyOpening ? openingAmt : 0);
-  const totalDebit  = filtered.reduce((s, e) => s + e.debit,  0);
+  const ledger = [...openingEntry, ...ledgerBody];
+
+  // Summary — sum straight from what's actually displayed, so it always matches
+  // the table (reset rows contribute their delta, not their raw override amount).
+  const openingForSummary = openingEntry[0]?.credit || 0;
+  const totalCredit = ledgerBody.reduce((s, e) => s + (e.credit || 0), 0) + openingForSummary;
+  const totalDebit  = ledgerBody.reduce((s, e) => s + (e.debit  || 0), 0);
   const summary = {
-    totalCredit, totalDebit, netBalance: totalCredit - totalDebit,
-    openingBalance: openingAmt, openingDate,
+    totalCredit, totalDebit, netBalance: ledger.length ? ledger[ledger.length - 1].balance : 0,
+    openingBalance: openingForSummary, openingDate: openingEntry[0]?.date || null,
+    openingCarried: !!openingEntry[0]?.carried,
+    openingManual: !!rawOverride,
     bySection: {},
   };
   for (const e of filtered) {
@@ -636,6 +674,32 @@ router.get('/ledger', (req, res) => {
   }
 
   res.json({ ledger, summary });
+});
+
+// ── Monthly opening-balance overrides ───────────────────────────────────────
+// One manual override per calendar month ('YYYY-MM'). A month with no override
+// simply carries its balance forward from the month before it (see /ledger).
+router.get('/monthly-opening-balances', (req, res) => {
+  res.json(db.prepare('SELECT month, amount, updated_at FROM monthly_opening_balances ORDER BY month ASC').all());
+});
+
+router.put('/monthly-opening-balances/:month', (req, res) => {
+  const { month } = req.params;
+  const { amount } = req.body;
+  if (!/^\d{4}-\d{2}$/.test(month)) return res.status(400).json({ error: 'month must be YYYY-MM' });
+  if (amount === '' || amount === null || amount === undefined || isNaN(parseFloat(amount))) {
+    return res.status(400).json({ error: 'amount is required' });
+  }
+  db.prepare(`
+    INSERT INTO monthly_opening_balances (month, amount, updated_at) VALUES (?, ?, datetime('now'))
+    ON CONFLICT(month) DO UPDATE SET amount = excluded.amount, updated_at = datetime('now')
+  `).run(month, parseFloat(amount));
+  res.json(db.prepare('SELECT month, amount, updated_at FROM monthly_opening_balances WHERE month = ?').get(month));
+});
+
+router.delete('/monthly-opening-balances/:month', (req, res) => {
+  db.prepare('DELETE FROM monthly_opening_balances WHERE month = ?').run(req.params.month);
+  res.json({ ok: true });
 });
 
 // ── Capital: Investments ───────────────────────────────────────────────────
