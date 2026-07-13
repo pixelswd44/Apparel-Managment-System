@@ -428,7 +428,7 @@ export default function Inventory() {
           )}
 
           {/* Items list */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 min-h-0 overflow-y-auto">
             {loading ? (
               <div className="flex items-center justify-center py-16">
                 <div className="w-6 h-6 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
@@ -471,9 +471,9 @@ export default function Inventory() {
         </div>
 
         {/* RIGHT: item detail / add form / empty state */}
-        <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
           {(adding || editItem) ? (
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex-1 min-h-0 overflow-y-auto p-6">
               <ItemForm
                 item={editItem ?? null}
                 onSave={handleSave}

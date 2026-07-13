@@ -689,7 +689,7 @@ function ProductDrawer({ product, onClose, onEdit, onDelete, onDuplicate, onAppl
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 min-h-0 overflow-y-auto">
 
           {/* ── Overview ── */}
           {tab === 'Overview' && (
@@ -1220,7 +1220,7 @@ export default function Products() {
             </div>
 
             {/* Scrollable product list */}
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 min-h-0 overflow-y-auto">
               {loading ? (
                 <div className="py-16 text-center">
                   <div className="w-6 h-6 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mx-auto mb-2" />
@@ -1340,7 +1340,7 @@ export default function Products() {
           </div>
 
           {/* RIGHT PANEL — product detail */}
-          <div className="flex-1 min-w-0 flex flex-col">
+          <div className="flex-1 min-w-0 min-h-0 flex flex-col">
             {drawer ? (
               <ProductDrawer
                 product={drawer}

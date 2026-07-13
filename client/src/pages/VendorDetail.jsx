@@ -95,7 +95,7 @@ function EditModal({ vendor, onClose, onSaved }) {
         </div>
 
         {/* Body */}
-        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
+        <div className="overflow-y-auto flex-1 min-h-0 px-6 py-5 space-y-5">
           {error && (
             <div className="bg-rose-50 border border-rose-200 text-rose-700 text-sm px-4 py-3 rounded-xl flex items-center gap-2">
               <AlertTriangle size={14} className="flex-shrink-0" />{error}

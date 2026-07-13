@@ -432,7 +432,7 @@ function EmployeePanel({ employee, onClose, onEdit, onRefresh, embedded = false 
           ))}
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 min-h-0 overflow-y-auto">
           {/* ── Advances Tab ── */}
           {tab === 'advances' && (
             <div className="p-6">
@@ -665,7 +665,7 @@ export default function Payroll() {
       <div className="flex-1 min-h-0 flex flex-col lg:flex-row rounded-2xl border border-slate-200 shadow-sm overflow-hidden bg-white">
 
         {/* LEFT: Employee list */}
-        <div className={`w-full lg:w-80 flex-shrink-0 flex flex-col border-b lg:border-b-0 lg:border-r border-slate-200 bg-white ${selected ? 'hidden lg:flex' : ''}`}>
+        <div className={`w-full lg:w-80 flex-1 min-h-0 lg:flex-none flex flex-col border-b lg:border-b-0 lg:border-r border-slate-200 bg-white ${selected ? 'hidden lg:flex' : ''}`}>
 
           {/* Search */}
           <div className="px-3 py-3 border-b border-slate-100">
@@ -702,7 +702,7 @@ export default function Payroll() {
           )}
 
           {/* Employee list */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 min-h-0 overflow-y-auto">
             {loading ? (
               <div className="flex items-center justify-center py-16">
                 <div className="w-6 h-6 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
@@ -764,7 +764,7 @@ export default function Payroll() {
         </div>
 
         {/* RIGHT: Employee detail panel */}
-        <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
           {selected ? (
             <EmployeePanel
               embedded={true}

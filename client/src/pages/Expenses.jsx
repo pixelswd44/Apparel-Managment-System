@@ -625,7 +625,7 @@ export default function Expenses() {
           )}
 
           {/* Expense list */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 min-h-0 overflow-y-auto">
             {loading ? (
               <div className="flex flex-col items-center justify-center py-16 gap-2">
                 <div className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
@@ -704,7 +704,7 @@ export default function Expenses() {
         </div>
 
         {/* ── RIGHT: detail or analytics ── */}
-        <div className="flex-1 min-w-0 overflow-y-auto p-5">
+        <div className="flex-1 min-w-0 min-h-0 overflow-y-auto p-5">
           {loading ? (
             <div className="flex flex-col items-center justify-center h-full gap-3">
               <div className="w-8 h-8 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />

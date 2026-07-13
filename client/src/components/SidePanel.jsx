@@ -69,7 +69,7 @@ export default function SidePanel({
         </div>
 
         {/* Body — scrollable */}
-        <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5">{children}</div>
 
         {/* Footer — sticky */}
         {footer && (

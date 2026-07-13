@@ -239,7 +239,7 @@ function ReceiptVoucher({ invoice, payment, settings, onClose, templates = [], a
       </div>
 
       {/* Voucher document — compact, A5-like */}
-      <div className="flex-1 overflow-y-auto bg-slate-100 py-6 px-4 print:p-0 print:bg-white print:overflow-visible">
+      <div className="flex-1 min-h-0 overflow-y-auto bg-slate-100 py-6 px-4 print:p-0 print:bg-white print:overflow-visible">
         <div ref={voucherRef}
           className="max-w-[520px] mx-auto bg-white shadow-xl print:shadow-none print:max-w-none overflow-hidden relative"
           data-layout={tplLayout}
@@ -594,7 +594,7 @@ function InvoiceView({ invoiceId, onClose, onConverted, embedded = false }) {
         </div>
 
         {/* ── Scrollable document ── */}
-        <div className="flex-1 overflow-y-auto bg-slate-100 py-6 px-3 print:p-0 print:bg-white print:overflow-visible">
+        <div className="flex-1 min-h-0 overflow-y-auto bg-slate-100 py-6 px-3 print:p-0 print:bg-white print:overflow-visible">
           {(() => {
             const tplCfg = (() => { try { return typeof activeTemplate?.config === 'string' ? JSON.parse(activeTemplate.config) : (activeTemplate?.config || {}); } catch { return {}; } })();
             const tplLayout = activeTemplate?.layout || 'classic';
@@ -1378,7 +1378,7 @@ export default function Invoices() {
             </div>
 
             {/* List */}
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 min-h-0 overflow-y-auto">
               {loading ? (
                 <div className="flex items-center justify-center py-16">
                   <div className="w-6 h-6 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
@@ -1445,7 +1445,7 @@ export default function Invoices() {
           </div>
 
           {/* RIGHT: Invoice preview */}
-          <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+          <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
             {viewId ? (
               <InvoiceView
                 embedded

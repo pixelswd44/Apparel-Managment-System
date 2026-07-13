@@ -291,7 +291,7 @@ function QuotationView({ quotationId, onClose, onEdit, onConverted, embedded = f
       </div>
 
       {/* ── Scrollable document area ── */}
-      <div className="flex-1 overflow-y-auto bg-slate-100 py-6 px-3 print:p-0 print:bg-white print:overflow-visible print:flex-none">
+      <div className="flex-1 min-h-0 overflow-y-auto bg-slate-100 py-6 px-3 print:p-0 print:bg-white print:overflow-visible print:flex-none">
         {(() => {
           // Parse active template config
           const tplCfg = (() => { try { return typeof activeTemplate?.config === 'string' ? JSON.parse(activeTemplate.config) : (activeTemplate?.config || {}); } catch { return {}; } })();
@@ -628,7 +628,7 @@ export default function Quotations() {
           </div>
 
           {/* List */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 min-h-0 overflow-y-auto">
             {loading ? (
               <div className="flex items-center justify-center py-16">
                 <div className="w-6 h-6 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
@@ -689,7 +689,7 @@ export default function Quotations() {
         </div>
 
         {/* RIGHT: Quotation preview */}
-        <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
           {viewId ? (
             <QuotationView
               embedded

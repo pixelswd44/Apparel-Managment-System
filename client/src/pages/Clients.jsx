@@ -223,7 +223,7 @@ function ClientDetailPanel({ client, stats, statsLoading, onEdit, onDelete, onCl
       </div>
 
       {/* ── Body ── */}
-      <div className="flex-1 overflow-y-auto bg-slate-50/40">
+      <div className="flex-1 min-h-0 overflow-y-auto bg-slate-50/40">
 
         {/* ── Overview ── */}
         {tab === 'Overview' && (
@@ -726,7 +726,7 @@ export default function Clients() {
           </div>
 
           {/* Scrollable list */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 min-h-0 overflow-y-auto">
             {loading ? (
               <div className="py-12 text-center">
                 <div className="w-6 h-6 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mx-auto mb-2" />
@@ -753,7 +753,7 @@ export default function Clients() {
         </div>
 
         {/* RIGHT: Detail Panel */}
-        <div className="flex-1 min-w-0 flex flex-col">
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col">
           {/* Inline delete confirmation */}
           {delTarget && (
             <div className="flex items-center gap-3 px-5 py-3 bg-rose-50 border-b border-rose-200 text-sm flex-shrink-0">
