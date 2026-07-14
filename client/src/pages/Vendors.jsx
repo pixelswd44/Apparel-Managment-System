@@ -84,6 +84,7 @@ function EmptyState({ icon: Icon, text, sub }) {
 const EMPTY_VENDOR = {
   name: '', type: 'process', contact_name: '', phone: '', email: '',
   address: '', city: '', country: '', bank_details: '', notes: '', rating: 0, status: 'active',
+  opening_balance: 0,
 };
 
 function VendorModal({ vendor, onClose, onSaved }) {
@@ -208,6 +209,16 @@ function VendorModal({ vendor, onClose, onSaved }) {
         {/* Rating */}
         <Field label="Rating">
           <StarRating value={form.rating} onChange={v => set('rating', v)} />
+        </Field>
+
+        {/* Opening Balance */}
+        <Field label="Opening Balance">
+          <input type="number" value={form.opening_balance ?? ''}
+            onChange={e => set('opening_balance', e.target.value)}
+            className={inputCls} placeholder="0" />
+          <p className="text-xs text-slate-400 mt-1">
+            Amount already owed to this vendor from before they were added to the CRM.
+          </p>
         </Field>
       </div>
     </Drawer>
@@ -434,8 +445,8 @@ function VendorDrawer({ vendorId, onClose, onEdit, onDeleted }) {
               )}
 
               {tab === 'Payments' && (() => {
-                const allPay = data.allPayments || [];
-                const total  = allPay.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+                const batches = data.paymentBatches || [];
+                const total   = batches.reduce((s, b) => s + (parseFloat(b.total_amount) || 0), 0);
                 const METHOD_LABELS = { cash: 'Cash', bank_transfer: 'Bank Transfer', cheque: 'Cheque', online: 'Online' };
                 return (
                   <div className="space-y-3">
@@ -446,48 +457,63 @@ function VendorDrawer({ vendorId, onClose, onEdit, onDeleted }) {
                         <p className="text-lg font-black text-indigo-700 break-all">{pkr(total)}</p>
                       </div>
                       <div className="bg-slate-50 border border-slate-100 rounded-xl px-4 py-3">
-                        <p className="text-2xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Transactions</p>
-                        <p className="text-lg font-black text-slate-700">{allPay.length}</p>
+                        <p className="text-2xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Payments</p>
+                        <p className="text-lg font-black text-slate-700">{batches.length}</p>
                       </div>
                     </div>
 
-                    {allPay.length === 0 ? (
+                    {batches.length === 0 ? (
                       <div className="flex flex-col items-center justify-center py-16 bg-white border border-slate-200 rounded-xl">
                         <Banknote size={32} className="text-slate-200 mb-3" />
                         <p className="text-slate-500 font-medium text-sm">No payments recorded yet</p>
                       </div>
                     ) : (
                       <div className="space-y-2">
-                        {allPay.map((p, i) => (
-                          <div key={p.id ?? i} className="bg-white border border-slate-200 rounded-xl px-4 py-3 shadow-sm">
-                            {/* Row 1: date + amount */}
+                        {batches.map((b, i) => (
+                          <div key={b.batch_id ?? i} className="bg-white border border-slate-200 rounded-xl px-4 py-3 shadow-sm">
+                            {/* Row 1: date + amount — the actual lump sum paid */}
                             <div className="flex items-start justify-between gap-2 mb-1.5">
                               <div className="min-w-0">
-                                <p className="text-xs text-slate-400">{fmt(p.paid_at)}</p>
-                                {/* Where adjusted */}
+                                <p className="text-xs text-slate-400">{fmt(b.paid_at)}</p>
                                 <p className="text-sm font-semibold text-slate-800 leading-snug mt-0.5">
-                                  {p.project_title || '—'}
-                                </p>
-                                <p className="text-xs text-slate-500">
-                                  {p.payment_type === 'shipping'
-                                    ? `Shipping · ${p.shipping_carrier || ''}${p.tracking_number ? ` · ${p.tracking_number}` : ''}`
-                                    : p.service_description || 'Service'}
+                                  {b.applications.length > 1
+                                    ? `Paid — applied across ${b.applications.length} project(s)`
+                                    : (b.applications[0]?.project_title || '—')}
                                 </p>
                               </div>
-                              <p className="text-base font-black text-emerald-600 flex-shrink-0 break-all">{pkr(p.amount)}</p>
+                              <p className="text-base font-black text-emerald-600 flex-shrink-0 break-all">{pkr(b.total_amount)}</p>
                             </div>
                             {/* Row 2: method + reference */}
-                            <div className="flex items-center gap-2 flex-wrap">
+                            <div className="flex items-center gap-2 flex-wrap mb-2">
                               <span className="text-2xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
-                                {METHOD_LABELS[p.method] || p.method || 'Cash'}
+                                {METHOD_LABELS[b.method] || b.method || 'Cash'}
                               </span>
-                              {p.reference && (
-                                <span className="text-2xs text-slate-400">Ref: {p.reference}</span>
+                              {b.reference && (
+                                <span className="text-2xs text-slate-400">Ref: {b.reference}</span>
                               )}
-                              {p.notes && (
-                                <span className="text-2xs text-slate-400 truncate max-w-[160px]">{p.notes}</span>
+                              {b.notes && (
+                                <span className="text-2xs text-slate-400 truncate max-w-[160px]">{b.notes}</span>
                               )}
                             </div>
+                            {/* Breakdown: where the lump sum was applied */}
+                            {b.applications.length > 1 && (
+                              <div className="border-t border-slate-100 pt-2 space-y-1">
+                                {b.applications.map(a => (
+                                  <div key={a.id} className="flex items-center justify-between gap-2 text-xs">
+                                    <span className="text-slate-500 truncate">
+                                      {a.project_title || '—'}
+                                      {a.payment_type === 'shipping' && a.tracking_number ? ` · ${a.tracking_number}` : ''}
+                                    </span>
+                                    <span className="text-slate-700 font-medium flex-shrink-0">{pkr(a.amount)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {b.applications.length === 1 && b.applications[0].payment_type === 'shipping' && (
+                              <p className="text-xs text-slate-500">
+                                Shipping · {b.applications[0].shipping_carrier || ''}{b.applications[0].tracking_number ? ` · ${b.applications[0].tracking_number}` : ''}
+                              </p>
+                            )}
                           </div>
                         ))}
                       </div>

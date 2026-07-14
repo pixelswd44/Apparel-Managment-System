@@ -37,6 +37,7 @@ const selectCls = `${inputCls} cursor-pointer`;
 const EMPTY_VENDOR = {
   name: '', type: 'process', contact_name: '', phone: '', email: '',
   address: '', city: '', country: '', bank_details: '', notes: '', rating: 0, status: 'active',
+  opening_balance: 0,
 };
 
 function Field({ label, required, children, className = '' }) {
@@ -160,6 +161,15 @@ function EditModal({ vendor, onClose, onSaved }) {
 
           <Field label="Rating">
             <StarRating value={form.rating} onChange={v => set('rating', v)} />
+          </Field>
+
+          <Field label="Opening Balance">
+            <input type="number" value={form.opening_balance ?? ''}
+              onChange={e => set('opening_balance', e.target.value)}
+              className={inputCls} placeholder="0" />
+            <p className="text-xs text-slate-400 mt-1">
+              Amount already owed to this vendor from before they were added to the CRM. Added to Total Billed so Outstanding stays accurate.
+            </p>
           </Field>
         </div>
 
@@ -451,13 +461,16 @@ function EditPaymentModal({ vendorId, payment, onClose, onSaved }) {
 }
 
 // ─── Payment History ───────────────────────────────────────────────────────────
+// A single lump-sum payment can get auto-distributed across several projects/
+// shipments (oldest outstanding first). Those rows share a batch_id, so the API
+// groups them back into one "payment" — showing what was actually paid, with the
+// per-project breakdown underneath — instead of several unlinked-looking rows.
 function PaymentHistory({ vendorId, data, onRefresh }) {
   const [editingPayment, setEditingPayment] = useState(null);
   const [deletingId,     setDeletingId]     = useState(null);
   const [confirmDel,     setConfirmDel]     = useState(null); // payment id to confirm
 
-  // Use the pre-built flat list from the API (includes service_description, carrier, payment_type)
-  const allPayments = data?.allPayments || [];
+  const batches = data?.paymentBatches || [];
 
   async function handleDelete(paymentId) {
     setDeletingId(paymentId);
@@ -469,7 +482,7 @@ function PaymentHistory({ vendorId, data, onRefresh }) {
     finally { setDeletingId(null); }
   }
 
-  if (!allPayments.length) {
+  if (!batches.length) {
     return (
       <div className="bg-white border border-dashed border-slate-200 rounded-2xl px-5 py-8 flex flex-col items-center gap-2">
         <History size={24} className="text-slate-200" />
@@ -478,7 +491,42 @@ function PaymentHistory({ vendorId, data, onRefresh }) {
     );
   }
 
-  const totalPaid = allPayments.reduce((s, p) => s + Number(p.amount), 0);
+  const totalPaid = batches.reduce((s, b) => s + Number(b.total_amount), 0);
+
+  const methodBadge = method => (
+    <span className={`text-xs px-2 py-0.5 rounded-full font-medium capitalize ${
+      method === 'cash'          ? 'bg-emerald-100 text-emerald-700' :
+      method === 'bank_transfer' ? 'bg-blue-100 text-blue-700' :
+      method === 'cheque'        ? 'bg-violet-100 text-violet-700' :
+      'bg-slate-100 text-slate-600'
+    }`}>{method?.replace('_', ' ')}</span>
+  );
+
+  const rowActions = p => (
+    confirmDel === p.id ? (
+      <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 rounded-lg px-2 py-1">
+        <span className="text-xs text-rose-600 font-medium">Delete?</span>
+        <button onClick={() => handleDelete(p.id)} disabled={deletingId === p.id}
+          className="text-xs font-bold text-rose-600 hover:text-rose-800 px-1">
+          {deletingId === p.id ? '…' : 'Yes'}
+        </button>
+        <button onClick={() => setConfirmDel(null)} className="text-xs text-slate-400 px-1">No</button>
+      </div>
+    ) : (
+      <>
+        <button onClick={() => setEditingPayment(p)}
+          className="p-1.5 text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+          title="Edit payment">
+          <Pencil size={13} />
+        </button>
+        <button onClick={() => setConfirmDel(p.id)}
+          className="p-1.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
+          title="Delete payment">
+          <Trash2 size={13} />
+        </button>
+      </>
+    )
+  );
 
   return (
     <>
@@ -491,72 +539,78 @@ function PaymentHistory({ vendorId, data, onRefresh }) {
             </div>
             <div>
               <p className="font-bold text-slate-900 text-sm">Payment History</p>
-              <p className="text-xs text-slate-400">{allPayments.length} payment{allPayments.length !== 1 ? 's' : ''} · {pkr(totalPaid)} total</p>
+              <p className="text-xs text-slate-400">{batches.length} payment{batches.length !== 1 ? 's' : ''} · {pkr(totalPaid)} total</p>
             </div>
           </div>
         </div>
 
         {/* Payments list */}
         <div className="divide-y divide-slate-50">
-          {allPayments.map(p => (
-            <div key={p.id} className="px-5 py-3">
-              <div className="flex items-start justify-between gap-2">
-                {/* Left: date + amount + where adjusted */}
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap mb-0.5">
-                    <span className="text-sm font-bold text-emerald-600">{pkr(p.amount)}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium capitalize ${
-                      p.method === 'cash'          ? 'bg-emerald-100 text-emerald-700' :
-                      p.method === 'bank_transfer' ? 'bg-blue-100 text-blue-700' :
-                      p.method === 'cheque'        ? 'bg-violet-100 text-violet-700' :
-                      'bg-slate-100 text-slate-600'
-                    }`}>{p.method?.replace('_', ' ')}</span>
-                    <span className="text-xs text-slate-400">{fmt(p.paid_at)}</span>
+          {batches.map(b => {
+            const single = b.applications.length === 1 ? b.applications[0] : null;
+            return (
+              <div key={b.batch_id} className="px-5 py-3">
+                <div className="flex items-start justify-between gap-2">
+                  {/* Left: date + amount + where adjusted */}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                      <span className="text-sm font-bold text-emerald-600">{pkr(b.total_amount)}</span>
+                      {methodBadge(b.method)}
+                      <span className="text-xs text-slate-400">{fmt(b.paid_at)}</span>
+                    </div>
+                    {single ? (
+                      <>
+                        <p className="text-sm font-semibold text-slate-800 truncate">{single.project_title || '—'}</p>
+                        <p className="text-xs text-indigo-600 truncate">
+                          {single.payment_type === 'shipping'
+                            ? `Shipping${single.shipping_carrier ? ` · ${single.shipping_carrier}` : ''}${single.tracking_number ? ` · ${single.tracking_number}` : ''}`
+                            : single.service_description || 'Service'}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-sm font-semibold text-slate-800">
+                        Applied across {b.applications.length} project(s)
+                      </p>
+                    )}
+                    {(b.reference || b.notes) && (
+                      <p className="text-xs text-slate-400 truncate mt-0.5">
+                        {[b.reference, b.notes].filter(Boolean).join(' · ')}
+                      </p>
+                    )}
                   </div>
-                  {/* Project */}
-                  <p className="text-sm font-semibold text-slate-800 truncate">{p.project_title || '—'}</p>
-                  {/* Where adjusted */}
-                  <p className="text-xs text-indigo-600 truncate">
-                    {p.payment_type === 'shipping'
-                      ? `Shipping${p.shipping_carrier ? ` · ${p.shipping_carrier}` : ''}${p.tracking_number ? ` · ${p.tracking_number}` : ''}`
-                      : p.service_description || 'Service'}
-                  </p>
-                  {(p.reference || p.notes) && (
-                    <p className="text-xs text-slate-400 truncate mt-0.5">
-                      {[p.reference, p.notes].filter(Boolean).join(' · ')}
-                    </p>
+
+                  {/* Right: actions (single-application batches only — edits/deletes that row directly) */}
+                  {single && (
+                    <div className="flex items-center gap-1 flex-shrink-0 mt-0.5">
+                      {rowActions(single)}
+                    </div>
                   )}
                 </div>
 
-                {/* Right: actions */}
-                <div className="flex items-center gap-1 flex-shrink-0 mt-0.5">
-                  {confirmDel === p.id ? (
-                    <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 rounded-lg px-2 py-1">
-                      <span className="text-xs text-rose-600 font-medium">Delete?</span>
-                      <button onClick={() => handleDelete(p.id)} disabled={deletingId === p.id}
-                        className="text-xs font-bold text-rose-600 hover:text-rose-800 px-1">
-                        {deletingId === p.id ? '…' : 'Yes'}
-                      </button>
-                      <button onClick={() => setConfirmDel(null)} className="text-xs text-slate-400 px-1">No</button>
-                    </div>
-                  ) : (
-                    <>
-                      <button onClick={() => setEditingPayment(p)}
-                        className="p-1.5 text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                        title="Edit payment">
-                        <Pencil size={13} />
-                      </button>
-                      <button onClick={() => setConfirmDel(p.id)}
-                        className="p-1.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
-                        title="Delete payment">
-                        <Trash2 size={13} />
-                      </button>
-                    </>
-                  )}
-                </div>
+                {/* Breakdown for multi-project batches — each still individually editable/deletable */}
+                {!single && (
+                  <div className="mt-2 ml-1 pl-3 border-l-2 border-slate-100 space-y-1.5">
+                    {b.applications.map(a => (
+                      <div key={a.id} className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-slate-700 truncate">{a.project_title || '—'}</p>
+                          <p className="text-2xs text-indigo-500 truncate">
+                            {a.payment_type === 'shipping'
+                              ? `Shipping${a.shipping_carrier ? ` · ${a.shipping_carrier}` : ''}${a.tracking_number ? ` · ${a.tracking_number}` : ''}`
+                              : a.service_description || 'Service'}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <span className="text-xs font-bold text-slate-700">{pkr(a.amount)}</span>
+                          {rowActions(a)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -671,12 +725,13 @@ export default function VendorDetail() {
   })();
 
   // Compute totals — freight uses shippingProjects, others use projects
+  const openingBalance = Number(data.opening_balance || 0);
   const projectCount = isFreight
     ? freightByProject.length
     : (data.projects?.length ?? 0);
-  const totalBilled = isFreight
+  const totalBilled = openingBalance + (isFreight
     ? (data.shippingProjects || []).reduce((s, sp) => s + Number(sp.amount || 0), 0)
-    : (data.projects || []).reduce((s, pv) => s + Number(pv.invoice_amount || 0), 0);
+    : (data.projects || []).reduce((s, pv) => s + Number(pv.invoice_amount || 0), 0));
   const totalPaid = isFreight
     ? (data.shippingProjects || []).reduce((s, sp) => s + Number(sp.paid_amount || 0), 0)
     : (data.projects || []).reduce((s, pv) => s + Number(pv.total_paid || 0), 0);
@@ -871,7 +926,9 @@ export default function VendorDetail() {
       {/* ── Stats Row ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Total Billed',   value: pkr(totalBilled), sub: `${projectCount} project${projectCount !== 1 ? 's' : ''}`, icon: FileText,     bg: 'bg-slate-100',    text: 'text-slate-700' },
+          { label: 'Total Billed',   value: pkr(totalBilled),
+            sub: `${projectCount} project${projectCount !== 1 ? 's' : ''}` + (openingBalance ? ` + ${pkr(openingBalance)} opening` : ''),
+            icon: FileText,     bg: 'bg-slate-100',    text: 'text-slate-700' },
           { label: 'Total Paid',     value: pkr(totalPaid),   sub: 'all time',              icon: CheckCircle2, bg: 'bg-emerald-50',   text: 'text-emerald-600' },
           { label: 'Outstanding',    value: pkr(outstanding), sub: outstanding > 0 ? 'remaining' : 'fully settled', icon: AlertCircle,
             bg: outstanding > 0 ? 'bg-rose-50' : 'bg-slate-100',

@@ -71,7 +71,12 @@ router.get('/summary', (req, res) => {
 
   const vendorPayments = db.prepare(`SELECT COALESCE(SUM(amount),0) as total FROM project_vendor_payments`).get().total;
   const workerPayments = db.prepare(`SELECT COALESCE(SUM(paid_amount),0) as total FROM project_workers WHERE paid_amount > 0`).get().total;
-  const shippingPaid   = db.prepare(`SELECT COALESCE(SUM(paid_amount),0) as total FROM project_shipping WHERE paid_amount > 0`).get().total;
+  // Only the portion of paid_amount NOT already recorded as a project_vendor_payments row —
+  // those are already counted in vendorPayments above and would otherwise be double-counted.
+  const shippingPaid   = db.prepare(`
+    SELECT COALESCE(SUM(MAX(0, ps.paid_amount - COALESCE((SELECT SUM(amount) FROM project_vendor_payments WHERE shipping_id = ps.id), 0))), 0) as total
+    FROM project_shipping ps
+  `).get().total;
 
   const allProjectsExtra = db.prepare(`SELECT extra_costs FROM projects WHERE extra_costs IS NOT NULL`).all();
   const extraCosts = allProjectsExtra.reduce((sum, p) => {
@@ -191,8 +196,11 @@ router.get('/monthly', (req, res) => {
       `SELECT COALESCE(SUM(paid_amount), 0) as total FROM project_workers WHERE paid_amount > 0 AND strftime('%Y-%m', created_at) = ?`
     ).get(month).total;
 
+    // Only the portion of paid_amount NOT already recorded as a project_vendor_payments row —
+    // those are already counted in vendorPay above and would otherwise be double-counted.
     const shippingPay = db.prepare(
-      `SELECT COALESCE(SUM(paid_amount), 0) as total FROM project_shipping WHERE paid_amount > 0 AND strftime('%Y-%m', shipping_date) = ?`
+      `SELECT COALESCE(SUM(MAX(0, ps.paid_amount - COALESCE((SELECT SUM(amount) FROM project_vendor_payments WHERE shipping_id = ps.id), 0))), 0) as total
+       FROM project_shipping ps WHERE ps.paid_amount > 0 AND strftime('%Y-%m', ps.shipping_date) = ?`
     ).get(month).total;
 
     // Fabric costs by month — only amount_paid (cash actually paid for fabric)
@@ -322,18 +330,21 @@ router.get('/transactions', (req, res) => {
 
   const shippingWhere = hasRange ? `AND date(ps.shipping_date) >= ? AND date(ps.shipping_date) <= ?` : '';
   const shippingArgs  = hasRange ? [from, to, limit] : [limit];
+  // Only the portion of paid_amount NOT already recorded as a project_vendor_payments
+  // row — those are emitted above via vendorPay and would otherwise be double-counted.
   const shippingTx = db.prepare(`
     SELECT ps.id, 'shipping' as type, 'Shipping' as category,
            COALESCE(v.name, ps.carrier, 'Shipping') as reference,
            COALESCE(v.name, ps.carrier, 'Shipping') as party,
-           ps.paid_amount as amount, 'PKR' as currency,
+           (ps.paid_amount - COALESCE((SELECT SUM(amount) FROM project_vendor_payments WHERE shipping_id = ps.id), 0)) as amount,
+           'PKR' as currency,
            ps.shipping_date as date,
            ps.carrier, ps.tracking_number,
            p.title as project_title
     FROM project_shipping ps
     LEFT JOIN projects p ON p.id = ps.project_id
     LEFT JOIN vendors v ON v.id = ps.vendor_id
-    WHERE ps.paid_amount > 0 ${shippingWhere}
+    WHERE (ps.paid_amount - COALESCE((SELECT SUM(amount) FROM project_vendor_payments WHERE shipping_id = ps.id), 0)) > 0 ${shippingWhere}
     ORDER BY ps.shipping_date DESC LIMIT ?
   `).all(...shippingArgs).map(s => ({ ...s, amount_pkr: s.amount, amount_orig: s.amount }));
 
@@ -435,15 +446,18 @@ router.get('/ledger', (req, res) => {
       currency: 'PKR', amount_orig: parseFloat(p.amount) || 0 });
   }
 
-  // Shipping paid
+  // Shipping paid — only the portion of paid_amount NOT already recorded as a
+  // project_vendor_payments row (those are emitted above via vendorPay and
+  // would otherwise be double-counted here).
   const shippingPay = db.prepare(`
-    SELECT ps.id, ps.shipping_date as date, ps.paid_amount as amount,
+    SELECT ps.id, ps.shipping_date as date,
+           (ps.paid_amount - COALESCE((SELECT SUM(amount) FROM project_vendor_payments WHERE shipping_id = ps.id), 0)) as amount,
            COALESCE(v.name, ps.carrier,'Shipping') as party,
            proj.title as project_title, ps.tracking_number
     FROM project_shipping ps
     LEFT JOIN vendors v ON v.id = ps.vendor_id
     LEFT JOIN projects proj ON proj.id = ps.project_id
-    WHERE ps.paid_amount > 0 ${dateFilter('ps.shipping_date')}
+    WHERE (ps.paid_amount - COALESCE((SELECT SUM(amount) FROM project_vendor_payments WHERE shipping_id = ps.id), 0)) > 0 ${dateFilter('ps.shipping_date')}
     ORDER BY ps.shipping_date ASC
   `).all();
   for (const p of shippingPay) {

@@ -734,6 +734,13 @@ const migrations = [
     amount     REAL NOT NULL,
     updated_at TEXT DEFAULT (datetime('now'))
   )`,
+  // Groups the multiple project_vendor_payments rows created by a single lump-sum
+  // vendor payment (auto-distributed across outstanding projects/shipments), so
+  // the original paid amount can still be shown as one entry.
+  `ALTER TABLE project_vendor_payments ADD COLUMN batch_id TEXT`,
+  // Amount already owed to (or, if negative, prepaid by) a vendor before they were
+  // added to the CRM — folded into that vendor's Total Billed so Outstanding stays accurate.
+  `ALTER TABLE vendors ADD COLUMN opening_balance REAL DEFAULT 0`,
 ];
 
 for (const sql of migrations) {

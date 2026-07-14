@@ -1,9 +1,10 @@
 import { Router } from 'express';
+import { randomUUID } from 'crypto';
 import db from '../db/index.js';
 
 const router = Router();
 
-const FIELDS = ['name','type','contact_name','phone','email','address','city','country','bank_details','notes','rating','status'];
+const FIELDS = ['name','type','contact_name','phone','email','address','city','country','bank_details','notes','rating','status','opening_balance'];
 
 // ── GET list ──────────────────────────────────────────────────────────────────
 router.get('/', (req, res) => {
@@ -12,7 +13,8 @@ router.get('/', (req, res) => {
       SELECT v.*,
         (SELECT COUNT(DISTINCT pv.project_id) FROM project_vendors pv WHERE pv.vendor_id = v.id)
           + (SELECT COUNT(DISTINCT ps.project_id) FROM project_shipping ps WHERE ps.vendor_id = v.id) as project_count,
-        (SELECT COALESCE(SUM(pv.invoice_amount), 0) FROM project_vendors pv WHERE pv.vendor_id = v.id)
+        COALESCE(v.opening_balance, 0)
+          + (SELECT COALESCE(SUM(pv.invoice_amount), 0) FROM project_vendors pv WHERE pv.vendor_id = v.id)
           + (SELECT COALESCE(SUM(ps.amount), 0) FROM project_shipping ps WHERE ps.vendor_id = v.id) as total_billed,
         (SELECT COALESCE(SUM(pvp.amount), 0) FROM project_vendor_payments pvp
            JOIN project_vendors pv ON pvp.project_vendor_id = pv.id WHERE pv.vendor_id = v.id)
@@ -74,6 +76,7 @@ router.get('/:id', (req, res) => {
         pvp.reference,
         pvp.notes,
         pvp.paid_at,
+        pvp.batch_id,
         p.title        as project_title,
         pv.service_description,
         pv.invoice_amount,
@@ -89,7 +92,41 @@ router.get('/:id', (req, res) => {
       ORDER BY pvp.paid_at DESC, pvp.id DESC
     `).all(req.params.id, req.params.id);
 
-    res.json({ ...vendor, projects: withPayments, shippingProjects, allPayments });
+    // Group into payment batches — a single lump-sum payment that got auto-distributed
+    // across several projects/shipments shares one batch_id and should read as one
+    // transaction, not several unrelated ones. Rows from before batch_id existed (or the
+    // legacy shipping/global routes that didn't set it) each become their own batch.
+    const batchMap = new Map();
+    for (const p of allPayments) {
+      const key = p.batch_id || `single-${p.id}`;
+      if (!batchMap.has(key)) {
+        batchMap.set(key, {
+          batch_id: key, paid_at: p.paid_at, method: p.method,
+          reference: p.reference, notes: p.notes, total_amount: 0, applications: [],
+        });
+      }
+      const batch = batchMap.get(key);
+      batch.total_amount += parseFloat(p.amount) || 0;
+      // Full row kept per-application (not just id/amount) so editing/deleting a single
+      // application within a batch still has the method/reference/notes/paid_at it needs.
+      batch.applications.push({ ...p });
+    }
+    const paymentBatches = [...batchMap.values()].sort((a, b) => (b.paid_at || '').localeCompare(a.paid_at || ''));
+
+    // Total billed/paid across both service (project_vendors) and shipping work —
+    // mirrors the list endpoint's computation so the summary cards aren't stuck at 0.
+    const totals = db.prepare(`
+      SELECT
+        COALESCE(v.opening_balance, 0)
+          + (SELECT COALESCE(SUM(pv.invoice_amount), 0) FROM project_vendors pv WHERE pv.vendor_id = v.id)
+          + (SELECT COALESCE(SUM(ps.amount), 0) FROM project_shipping ps WHERE ps.vendor_id = v.id) as total_billed,
+        (SELECT COALESCE(SUM(pvp.amount), 0) FROM project_vendor_payments pvp
+           JOIN project_vendors pv ON pvp.project_vendor_id = pv.id WHERE pv.vendor_id = v.id)
+          + (SELECT COALESCE(SUM(ps.paid_amount), 0) FROM project_shipping ps WHERE ps.vendor_id = v.id) as total_paid
+      FROM vendors v WHERE v.id = ?
+    `).get(req.params.id);
+
+    res.json({ ...vendor, ...totals, projects: withPayments, shippingProjects, allPayments, paymentBatches });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -99,6 +136,7 @@ router.post('/', (req, res) => {
     if (!req.body.name?.trim()) return res.status(400).json({ error: 'Vendor name is required.' });
     const vals = FIELDS.map(f => {
       if (f === 'rating') return parseInt(req.body[f]) || 0;
+      if (f === 'opening_balance') return parseFloat(req.body[f]) || 0;
       if (f === 'status' && !req.body[f]) return 'active';
       if (f === 'type'   && !req.body[f]) return 'process';
       return req.body[f] ?? '';
@@ -116,6 +154,7 @@ router.put('/:id', (req, res) => {
     if (!req.body.name?.trim()) return res.status(400).json({ error: 'Vendor name is required.' });
     const vals = FIELDS.map(f => {
       if (f === 'rating') return parseInt(req.body[f]) || 0;
+      if (f === 'opening_balance') return parseFloat(req.body[f]) || 0;
       return req.body[f] ?? '';
     });
     db.prepare(
@@ -150,7 +189,8 @@ router.post('/:id/shipping-payments', (req, res) => {
       ORDER BY shipping_date ASC, id ASC
     `).all(vendorId);
 
-    const applied = [];
+    const applied  = [];
+    const batchId  = randomUUID();
 
     db.transaction(() => {
       for (const ship of outstanding) {
@@ -159,9 +199,9 @@ router.post('/:id/shipping-payments', (req, res) => {
         const apply = Math.min(remaining, due);
 
         db.prepare(
-          `INSERT INTO project_vendor_payments (project_vendor_id, project_id, amount, method, reference, notes, paid_at, shipping_id)
-           VALUES (NULL, ?, ?, ?, ?, ?, ?, ?)`
-        ).run(ship.project_id, apply, method, reference, notes, paidAt, ship.id);
+          `INSERT INTO project_vendor_payments (project_vendor_id, project_id, amount, method, reference, notes, paid_at, shipping_id, batch_id)
+           VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ).run(ship.project_id, apply, method, reference, notes, paidAt, ship.id, batchId);
 
         const newPaid = (parseFloat(ship.paid_amount) || 0) + apply;
         db.prepare(
@@ -179,9 +219,9 @@ router.post('/:id/shipping-payments', (req, res) => {
         ).get(vendorId);
         if (lastShip) {
           db.prepare(
-            `INSERT INTO project_vendor_payments (project_vendor_id, project_id, amount, method, reference, notes, paid_at, shipping_id)
-             VALUES (NULL, ?, ?, ?, ?, ?, ?, ?)`
-          ).run(lastShip.project_id, remaining, method, reference, notes, paidAt, lastShip.id);
+            `INSERT INTO project_vendor_payments (project_vendor_id, project_id, amount, method, reference, notes, paid_at, shipping_id, batch_id)
+             VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?)`
+          ).run(lastShip.project_id, remaining, method, reference, notes, paidAt, lastShip.id, batchId);
           const newPaid = (parseFloat(lastShip.paid_amount) || 0) + remaining;
           db.prepare(
             `UPDATE project_shipping SET paid_amount = ?, paid = CASE WHEN ? >= amount THEN 1 ELSE 0 END WHERE id = ?`
@@ -192,7 +232,7 @@ router.post('/:id/shipping-payments', (req, res) => {
       }
     })();
 
-    res.status(201).json({ applied, leftover: Math.max(0, remaining) });
+    res.status(201).json({ applied, leftover: Math.max(0, remaining), batch_id: batchId });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -222,9 +262,10 @@ router.post('/:id/payments', (req, res) => {
       ORDER BY pv.created_at ASC
     `).all(vendorId);
 
+    const batchId = randomUUID();
     const insStmt = db.prepare(
-      `INSERT INTO project_vendor_payments (project_vendor_id, project_id, amount, method, reference, notes, paid_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO project_vendor_payments (project_vendor_id, project_id, amount, method, reference, notes, paid_at, batch_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     );
 
     const applied = [];
@@ -234,19 +275,19 @@ router.post('/:id/payments', (req, res) => {
         const due = pv.invoice_amount - pv.paid_so_far;
         if (due <= 0) continue;
         const apply = Math.min(remaining, due);
-        const r = insStmt.run(pv.id, pv.project_id, apply, method, reference, notes, paid_at);
+        const r = insStmt.run(pv.id, pv.project_id, apply, method, reference, notes, paid_at, batchId);
         applied.push({ project_vendor_id: pv.id, amount: apply, payment_id: r.lastInsertRowid });
         remaining -= apply;
       }
       // If amount exceeds all outstanding, record surplus on the most recent pv
       if (remaining > 0 && pvRows.length > 0) {
         const lastPv = pvRows[pvRows.length - 1];
-        const r = insStmt.run(lastPv.id, lastPv.project_id, remaining, method, reference, notes, paid_at);
+        const r = insStmt.run(lastPv.id, lastPv.project_id, remaining, method, reference, notes, paid_at, batchId);
         applied.push({ project_vendor_id: lastPv.id, amount: remaining, payment_id: r.lastInsertRowid });
       }
     })();
 
-    res.status(201).json({ applied, leftover: Math.max(0, remaining) });
+    res.status(201).json({ applied, leftover: Math.max(0, remaining), batch_id: batchId });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
