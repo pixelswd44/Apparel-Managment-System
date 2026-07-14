@@ -970,6 +970,7 @@ function PaymentsTab({ onPrintReceipt, settings, onPaymentDeleted }) {
       reference: p.reference || '',
       notes:     p.notes || '',
       paid_at:   p.paid_at?.split('T')[0] ?? new Date().toISOString().split('T')[0],
+      amount_pkr_actual: p.amount_pkr_actual != null ? String(p.amount_pkr_actual) : '',
     });
     setEditError('');
   }
@@ -1102,6 +1103,9 @@ function PaymentsTab({ onPrintReceipt, settings, onPaymentDeleted }) {
                     <td className="px-5 py-3.5 text-slate-500 font-mono text-xs">{p.reference || '—'}</td>
                     <td className="px-5 py-3.5 text-right">
                       <span className="font-bold text-emerald-700">{fmtMoney(p.amount, sym)}</span>
+                      {p.amount_pkr_actual != null && p.amount_pkr_actual !== '' && (
+                        <p className="text-xs text-indigo-500 font-medium">₨{Number(p.amount_pkr_actual).toLocaleString()} actual</p>
+                      )}
                     </td>
                     <td className="px-5 py-3.5 text-right">
                       <div className="flex items-center justify-end gap-1">
@@ -1197,6 +1201,23 @@ function PaymentsTab({ onPrintReceipt, settings, onPaymentDeleted }) {
                     className={`${inputCls} pl-7`} placeholder="0.00" />
                 </div>
               </div>
+
+              {editTarget.currency && editTarget.currency !== 'PKR' && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                    Amount Actually Received (₨) <span className="text-slate-400 normal-case font-normal">— optional</span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₨</span>
+                    <input type="number" min="0" step="any" value={editForm.amount_pkr_actual}
+                      onChange={e => setEditForm(f => ({ ...f, amount_pkr_actual: e.target.value }))}
+                      className={`${inputCls} pl-7`} placeholder="Leave blank to auto-convert" />
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Only fill this in if what landed in your account differs from the standard conversion. Ledger and Financials will use this exact figure instead of auto-converting.
+                  </p>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>

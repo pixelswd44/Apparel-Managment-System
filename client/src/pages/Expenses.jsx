@@ -6,7 +6,7 @@ import {
   Home, Zap, Droplets, Truck, Coffee, Package, MoreHorizontal,
   BarChart2, AlertTriangle, TrendingUp, TrendingDown, Banknote,
 } from 'lucide-react';
-import PeriodPicker from '../components/PeriodPicker';
+import PeriodPicker, { currentMonthRange } from '../components/PeriodPicker';
 import Drawer from '../components/Drawer';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -537,8 +537,8 @@ export default function Expenses() {
   const [delTarget, setDelTarget] = useState(null);       // expense id pending delete
   const [delCatTarget, setDelCatTarget] = useState(null); // category id pending delete
   const [selected, setSelected] = useState(null);         // expense shown in detail panel
-  // Period filter: { from, to, label } — null from/to means "all time" / use month
-  const [periodRange, setPeriodRange] = useState({ from: null, to: null, label: 'All Time' });
+  // Period filter: { from, to, label } — defaults to the current month; null from/to means "all time"
+  const [periodRange, setPeriodRange] = useState(currentMonthRange());
 
   // ── Income tab ──────────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState('expenses'); // 'expenses' | 'income'
@@ -548,7 +548,7 @@ export default function Expenses() {
   const [incomeSearch, setIncomeSearch] = useState('');
   const [incomeModal, setIncomeModal] = useState(null);
   const [incomeDelTarget, setIncomeDelTarget] = useState(null);
-  const [incomePeriodRange, setIncomePeriodRange] = useState({ from: null, to: null, label: 'All Time' });
+  const [incomePeriodRange, setIncomePeriodRange] = useState(currentMonthRange());
 
   const loadIncome = useCallback(async () => {
     setIncomeLoading(true);
@@ -730,7 +730,7 @@ export default function Expenses() {
       <div className="hidden lg:flex items-center gap-3 mb-3 flex-shrink-0 flex-wrap">
         {/* Period picker */}
         <div className="flex-shrink-0">
-          <PeriodPicker onChange={range => setPeriodRange(range)} />
+          <PeriodPicker defaultMode="month" onChange={range => setPeriodRange(range)} />
         </div>
         {!periodRange.from && (
           <div className="flex items-center gap-2">
@@ -777,7 +777,7 @@ export default function Expenses() {
 
           {/* Period picker + category filter — mobile only */}
           <div className="lg:hidden px-4 py-3 border-b border-slate-100 space-y-2">
-            <PeriodPicker onChange={range => setPeriodRange(range)} />
+            <PeriodPicker defaultMode="month" onChange={range => setPeriodRange(range)} />
             {!periodRange.from && (
               <div className="flex items-center gap-2">
                 <input type="month" value={month} onChange={e => setMonth(e.target.value)}
@@ -995,7 +995,7 @@ export default function Expenses() {
         <div className="flex-1 min-h-0 flex flex-col">
           {/* Period picker */}
           <div className="mb-3 flex-shrink-0">
-            <PeriodPicker onChange={range => setIncomePeriodRange(range)} />
+            <PeriodPicker defaultMode="month" onChange={range => setIncomePeriodRange(range)} />
           </div>
 
           {/* Summary cards */}
