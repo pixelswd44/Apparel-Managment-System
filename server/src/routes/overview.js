@@ -12,6 +12,16 @@ function toPKR(amount, fromCurrency, ratesToPkr) {
   return amt * rate;
 }
 
+// A payment's real PKR value — uses the manually entered actual amount received
+// (bank fees / tax withholding mean this can differ from the theoretical
+// amount × rate conversion) when set, otherwise falls back to the auto-conversion.
+function paymentToPKR(payment, ratesToPkr) {
+  if (payment.amount_pkr_actual !== null && payment.amount_pkr_actual !== undefined && payment.amount_pkr_actual !== '') {
+    return parseFloat(payment.amount_pkr_actual) || 0;
+  }
+  return toPKR(payment.amount, payment.currency, ratesToPkr);
+}
+
 router.get('/', (req, res) => {
   try {
     const { from, to } = req.query;
@@ -60,16 +70,16 @@ router.get('/', (req, res) => {
     // ── Revenue from payments — filtered by date range when provided ───────
     const allPayments = hasRange
       ? db.prepare(`
-          SELECT p.amount, COALESCE(p.currency, i.currency, 'USD') as currency
+          SELECT p.amount, COALESCE(p.currency, i.currency, 'USD') as currency, p.amount_pkr_actual
           FROM payments p LEFT JOIN invoices i ON p.invoice_id = i.id
           WHERE date(p.paid_at) >= ? AND date(p.paid_at) <= ?
         `).all(from, to)
       : db.prepare(`
-          SELECT p.amount, COALESCE(p.currency, i.currency, 'USD') as currency
+          SELECT p.amount, COALESCE(p.currency, i.currency, 'USD') as currency, p.amount_pkr_actual
           FROM payments p LEFT JOIN invoices i ON p.invoice_id = i.id
         `).all();
     const revenuePKR = allPayments.reduce((s, p) =>
-      s + toPKR(p.amount, p.currency, ratesToPkr), 0);
+      s + paymentToPKR(p, ratesToPkr), 0);
 
     // ── This month / period revenue ────────────────────────────────────────
     const now   = new Date();
@@ -78,10 +88,10 @@ router.get('/', (req, res) => {
     // When a range is selected, period revenue = same as filtered revenue above
     // When no range, fetch this-month separately
     const monthRevPKR = hasRange ? revenuePKR : db.prepare(`
-      SELECT p.amount, COALESCE(p.currency, i.currency, 'USD') as currency
+      SELECT p.amount, COALESCE(p.currency, i.currency, 'USD') as currency, p.amount_pkr_actual
       FROM payments p LEFT JOIN invoices i ON p.invoice_id = i.id
       WHERE p.paid_at >= ?
-    `).all(msISO).reduce((s, p) => s + toPKR(p.amount, p.currency, ratesToPkr), 0);
+    `).all(msISO).reduce((s, p) => s + paymentToPKR(p, ratesToPkr), 0);
 
     const monthQuotations = hasRange
       ? allQuotations.filter(q => q.created_at >= from && q.created_at.slice(0,10) <= to).length
@@ -98,10 +108,10 @@ router.get('/', (req, res) => {
         const end   = nextD.toISOString();
         const label = d.toLocaleString('en-US', { month: 'short' });
         const pkrTotal = db.prepare(`
-          SELECT p.amount, COALESCE(p.currency, i.currency, 'USD') as currency
+          SELECT p.amount, COALESCE(p.currency, i.currency, 'USD') as currency, p.amount_pkr_actual
           FROM payments p LEFT JOIN invoices i ON p.invoice_id = i.id
           WHERE p.paid_at >= ? AND p.paid_at < ?
-        `).all(start, end).reduce((s, p) => s + toPKR(p.amount, p.currency, ratesToPkr), 0);
+        `).all(start, end).reduce((s, p) => s + paymentToPKR(p, ratesToPkr), 0);
         trend.push({ month: label, pkr: Math.round(pkrTotal) });
         d = nextD;
       }
@@ -112,10 +122,10 @@ router.get('/', (req, res) => {
         const end   = new Date(d.getFullYear(), d.getMonth() + 1, 1).toISOString();
         const label = d.toLocaleString('en-US', { month: 'short' });
         const pkrTotal = db.prepare(`
-          SELECT p.amount, COALESCE(p.currency, i.currency, 'USD') as currency
+          SELECT p.amount, COALESCE(p.currency, i.currency, 'USD') as currency, p.amount_pkr_actual
           FROM payments p LEFT JOIN invoices i ON p.invoice_id = i.id
           WHERE p.paid_at >= ? AND p.paid_at < ?
-        `).all(start, end).reduce((s, p) => s + toPKR(p.amount, p.currency, ratesToPkr), 0);
+        `).all(start, end).reduce((s, p) => s + paymentToPKR(p, ratesToPkr), 0);
         trend.push({ month: label, pkr: Math.round(pkrTotal) });
       }
     }

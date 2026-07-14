@@ -65,12 +65,14 @@ function PaymentModal({ invoice, onClose, onSuccess, editPayment = null }) {
     reference: editPayment.reference || '',
     notes:     editPayment.notes || '',
     paid_at:   editPayment.paid_at?.split('T')[0] ?? new Date().toISOString().split('T')[0],
+    amount_pkr_actual: editPayment.amount_pkr_actual != null ? String(editPayment.amount_pkr_actual) : '',
   } : {
     amount:    (parseFloat(invoice.total) - parseFloat(invoice.amount_paid || 0)).toFixed(2),
     method:    'cash',
     reference: '',
     notes:     '',
     paid_at:   new Date().toISOString().split('T')[0],
+    amount_pkr_actual: '',
   });
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState('');
@@ -137,6 +139,23 @@ function PaymentModal({ invoice, onClose, onSuccess, editPayment = null }) {
                 className={`${inputCls} pl-7`} placeholder="0.00" autoFocus />
             </div>
           </div>
+
+          {invoice.currency && invoice.currency !== 'PKR' && (
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                Amount Actually Received (₨) <span className="text-slate-400 normal-case font-normal">— optional</span>
+              </label>
+              <div className="relative">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₨</span>
+                <input type="number" min="0" step="any" value={form.amount_pkr_actual}
+                  onChange={e => set('amount_pkr_actual', e.target.value)}
+                  className={`${inputCls} pl-7`} placeholder="Leave blank to auto-convert" />
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                Only fill this in if what landed in your account differs from the standard conversion — e.g. bank fees or tax deducted. Ledger and Financials will use this exact figure instead of auto-converting.
+              </p>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -842,6 +861,9 @@ function InvoiceView({ invoiceId, onClose, onConverted, embedded = false }) {
                     <div className="flex items-center gap-4">
                       <div className="text-right">
                         <p className="text-sm font-bold text-emerald-700">{fmtMoney(p.amount, getSym(invoice.currency))}</p>
+                        {p.amount_pkr_actual != null && p.amount_pkr_actual !== '' && (
+                          <p className="text-xs text-indigo-500 font-medium">₨{Number(p.amount_pkr_actual).toLocaleString()} actual</p>
+                        )}
                         <p className="text-xs text-slate-400">{fmt(p.paid_at)}</p>
                       </div>
                       <button onClick={() => setEditingPayment(p)}

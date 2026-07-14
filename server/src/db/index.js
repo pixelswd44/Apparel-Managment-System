@@ -741,6 +741,10 @@ const migrations = [
   // Amount already owed to (or, if negative, prepaid by) a vendor before they were
   // added to the CRM — folded into that vendor's Total Billed so Outstanding stays accurate.
   `ALTER TABLE vendors ADD COLUMN opening_balance REAL DEFAULT 0`,
+  // Actual PKR received for a payment, when it differs from amount × the configured
+  // exchange rate (bank fees, tax withholding, etc.) — overrides the auto-converted
+  // figure everywhere revenue is calculated, when set.
+  `ALTER TABLE payments ADD COLUMN amount_pkr_actual REAL`,
 ];
 
 for (const sql of migrations) {

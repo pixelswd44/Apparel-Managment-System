@@ -20,6 +20,16 @@ function toPKR(amount, currency, rates) {
   return (parseFloat(amount) || 0) * rate;
 }
 
+// A payment's real PKR value — uses the manually entered actual amount received
+// (bank fees / tax withholding mean this can differ from the theoretical
+// amount × rate conversion) when set, otherwise falls back to the auto-conversion.
+function paymentToPKR(payment, rates) {
+  if (payment.amount_pkr_actual !== null && payment.amount_pkr_actual !== undefined && payment.amount_pkr_actual !== '') {
+    return parseFloat(payment.amount_pkr_actual) || 0;
+  }
+  return toPKR(payment.amount, payment.currency, rates);
+}
+
 // ── Summary ────────────────────────────────────────────────────────────────
 router.get('/summary', (req, res) => {
   const { from, to } = req.query;
@@ -28,9 +38,9 @@ router.get('/summary', (req, res) => {
 
   // Revenue: payments received — filtered by date range when provided
   const rawPayments = hasRange
-    ? db.prepare(`SELECT amount, COALESCE(currency,'PKR') as currency FROM payments WHERE date(paid_at) >= ? AND date(paid_at) <= ?`).all(from, to)
-    : db.prepare(`SELECT amount, COALESCE(currency,'PKR') as currency FROM payments`).all();
-  const invoiceRevenue = rawPayments.reduce((s, p) => s + toPKR(p.amount, p.currency, rates), 0);
+    ? db.prepare(`SELECT amount, COALESCE(currency,'PKR') as currency, amount_pkr_actual FROM payments WHERE date(paid_at) >= ? AND date(paid_at) <= ?`).all(from, to)
+    : db.prepare(`SELECT amount, COALESCE(currency,'PKR') as currency, amount_pkr_actual FROM payments`).all();
+  const invoiceRevenue = rawPayments.reduce((s, p) => s + paymentToPKR(p, rates), 0);
 
   // Other income — e.g. selling scrap fabric locally, outside the invoice flow. Stored in PKR.
   const otherIncome = hasRange
@@ -168,11 +178,11 @@ router.get('/monthly', (req, res) => {
   const result = months.map(month => {
     // Revenue: convert each payment to PKR
     const monthPayments = db.prepare(`
-      SELECT amount, COALESCE(currency, 'PKR') as currency
+      SELECT amount, COALESCE(currency, 'PKR') as currency, amount_pkr_actual
       FROM payments
       WHERE strftime('%Y-%m', paid_at) = ?
     `).all(month);
-    const invoiceRevenue = monthPayments.reduce((s, p) => s + toPKR(p.amount, p.currency, rates), 0);
+    const invoiceRevenue = monthPayments.reduce((s, p) => s + paymentToPKR(p, rates), 0);
 
     const otherIncome = db.prepare(
       `SELECT COALESCE(SUM(amount), 0) as total FROM other_income WHERE strftime('%Y-%m', income_date) = ?`
@@ -266,7 +276,7 @@ router.get('/transactions', (req, res) => {
   const rawPay = db.prepare(`
     SELECT p.id, 'income' as type, 'Invoice Payment' as category,
            i.number as reference, c.name as party,
-           p.amount, COALESCE(p.currency,'PKR') as currency,
+           p.amount, COALESCE(p.currency,'PKR') as currency, p.amount_pkr_actual,
            p.paid_at as date
     FROM payments p
     LEFT JOIN invoices i ON i.id = p.invoice_id
@@ -274,7 +284,7 @@ router.get('/transactions', (req, res) => {
     WHERE 1=1 ${payWhere}
     ORDER BY p.paid_at DESC LIMIT ?
   `).all(...payArgs);
-  const payments = rawPay.map(p => ({ ...p, amount_pkr: toPKR(p.amount, p.currency, rates), amount_orig: p.amount }));
+  const payments = rawPay.map(p => ({ ...p, amount_pkr: paymentToPKR(p, rates), amount_orig: p.amount }));
 
   const expenses = db.prepare(`
     SELECT e.id, 'expense' as type,
@@ -377,7 +387,7 @@ router.get('/ledger', (req, res) => {
 
   // ── CREDITS (Income) ───────────────────────────────────────────────────────
   const payments = db.prepare(`
-    SELECT p.id, p.paid_at as date, p.amount, COALESCE(p.currency,'PKR') as currency,
+    SELECT p.id, p.paid_at as date, p.amount, COALESCE(p.currency,'PKR') as currency, p.amount_pkr_actual,
            'Income' as section, 'Invoice Payment' as category,
            i.number as reference, COALESCE(c.display_name, c.company, c.name,'') as party
     FROM payments p
@@ -389,7 +399,7 @@ router.get('/ledger', (req, res) => {
   for (const p of payments) {
     entries.push({ date: p.date, section: 'Income', category: p.category,
       description: `Invoice ${p.reference || ''}`, party: p.party || '',
-      credit: toPKR(p.amount, p.currency, rates), debit: 0,
+      credit: paymentToPKR(p, rates), debit: 0,
       currency: p.currency, amount_orig: parseFloat(p.amount) });
   }
 

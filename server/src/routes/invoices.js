@@ -152,18 +152,19 @@ router.get('/:id/payments', (req, res) => {
 
 router.post('/:id/payments', (req, res) => {
   try {
-    const { amount, method = 'cash', reference, notes, paid_at } = req.body;
+    const { amount, method = 'cash', reference, notes, paid_at, amount_pkr_actual } = req.body;
     const invoice = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id);
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
 
     const payResult = db.prepare(`
-      INSERT INTO payments (invoice_id, client_id, amount, method, reference, notes, paid_at, currency)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO payments (invoice_id, client_id, amount, method, reference, notes, paid_at, currency, amount_pkr_actual)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       req.params.id, invoice.client_id,
       parseFloat(amount), method, reference || null, notes || null,
       paid_at || new Date().toISOString(),
       invoice.currency || 'USD',
+      (amount_pkr_actual !== undefined && amount_pkr_actual !== null && amount_pkr_actual !== '') ? parseFloat(amount_pkr_actual) : null,
     );
 
     const totalPaid = db.prepare('SELECT COALESCE(SUM(amount),0) as t FROM payments WHERE invoice_id = ?').get(req.params.id).t;
@@ -180,13 +181,14 @@ router.post('/:id/payments', (req, res) => {
 
 router.patch('/:invoiceId/payments/:paymentId', (req, res) => {
   try {
-    const { amount, method, reference, notes, paid_at } = req.body;
+    const { amount, method, reference, notes, paid_at, amount_pkr_actual } = req.body;
     db.prepare(`
-      UPDATE payments SET amount=?, method=?, reference=?, notes=?, paid_at=?
+      UPDATE payments SET amount=?, method=?, reference=?, notes=?, paid_at=?, amount_pkr_actual=?
       WHERE id = ? AND invoice_id = ?
     `).run(
       parseFloat(amount), method, reference || null, notes || null,
       paid_at || new Date().toISOString(),
+      (amount_pkr_actual !== undefined && amount_pkr_actual !== null && amount_pkr_actual !== '') ? parseFloat(amount_pkr_actual) : null,
       req.params.paymentId, req.params.invoiceId,
     );
     const invoice  = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.invoiceId);
