@@ -121,7 +121,11 @@ function pvBilled(pv) {
 
 function calcProject(project, currencies = []) {
   // ── What we committed to spend (total expense) ─────────────────────────────
-  const productCost    = (project.products||[]).reduce((s,pp)=>s+calcPP(pp).total, 0);
+  // Project-level bulk fabrics + per-product costs
+  const projFabrics     = Array.isArray(project.fabrics) ? project.fabrics : [];
+  const projFabricCost  = projFabrics.reduce((s, f) => s + (parseFloat(f.qty)||0) * (parseFloat(f.rate)||0), 0);
+  const projFabricPaid  = projFabrics.reduce((s, f) => s + (parseFloat(f.amount_paid)||0), 0);
+  const productCost    = (project.products||[]).reduce((s,pp)=>s+calcPP(pp).total, 0) + projFabricCost;
   const vendorBilled   = (project.vendors||[]).reduce((s,pv)=>s+pvBilled(pv), 0);
   const workerAgreed   = (project.workers||[]).reduce((s,pw)=>s+Number(pw.agreed_amount||0), 0);
   const _ec = Array.isArray(project.extra_costs) ? project.extra_costs
@@ -145,10 +149,10 @@ function calcProject(project, currencies = []) {
     return s + fp + cp + ep;
   }, 0);
   // Extra costs are treated as already paid
-  const totalPaid = productPaid + vendorPaid + workerPaid + extraCostTotal + shippingPaid;
+  const totalPaid = productPaid + projFabricPaid + vendorPaid + workerPaid + extraCostTotal + shippingPaid;
   const due       = totalExpense - totalPaid;
   // Production-only due (excludes shipping) — used for "✓ Settled" badge on Costs
-  const productionDue = totalExpenseBeforeShipping - (productPaid + vendorPaid + workerPaid + extraCostTotal);
+  const productionDue = totalExpenseBeforeShipping - (productPaid + projFabricPaid + vendorPaid + workerPaid + extraCostTotal);
 
   // ── Revenue ────────────────────────────────────────────────────────────────
   const receivedCurrency = project.invoice_id
@@ -454,7 +458,7 @@ function migrateFabrics(pp) {
   return [];
 }
 
-function ProductLine({ pp, catalogProducts, costFields, onSave, onRemove }) {
+function ProductLine({ pp, catalogProducts, costFields, invoiceNames = [], onSave, onRemove }) {
   const [expanded, setExpanded] = useState(!pp.id);
   const [form, setForm]         = useState(() => ({
     ...pp,
@@ -464,6 +468,7 @@ function ProductLine({ pp, catalogProducts, costFields, onSave, onRemove }) {
     external_costs: pp.external_costs || [],
   }));
   const [saving, setSaving]             = useState(false);
+  const [saveState, setSaveState]       = useState('idle'); // idle | saving | saved | error
   const [delConf, setDelConf]           = useState(false);
   const [customSizeName, setCustomSizeName] = useState('');
   const [nameMode, setNameMode]         = useState(pp.product_id ? 'catalog' : (pp.product_name ? 'custom' : 'catalog'));
@@ -575,9 +580,10 @@ function ProductLine({ pp, catalogProducts, costFields, onSave, onRemove }) {
     } finally { setSyncing(false); }
   }
 
-  async function handleSave() {
+  async function persist(collapse = true) {
     if (!form.product_name.trim()) return;
     setSaving(true);
+    setSaveState('saving');
     try {
       const saved = await onSave({ ...form, total_quantity: totalQty });
       const ppId = saved?.id || pp.id;
@@ -624,17 +630,40 @@ function ProductLine({ pp, catalogProducts, costFields, onSave, onRemove }) {
           .catch(() => {});
       }
 
-      setExpanded(false);
+      if (collapse) setExpanded(false);
+      setSaveState('saved');
+    } catch {
+      setSaveState('error');
     } finally { setSaving(false); }
   }
+
+  const handleSave = () => persist(true);
+
+  // Debounced auto-save for already-saved products — fires 1.2s after the last edit
+  const autosaveReady = useRef(false);
+  useEffect(() => {
+    if (!pp.id) return;
+    if (!autosaveReady.current) { autosaveReady.current = true; return; }
+    if (!form.product_name.trim()) return;
+    const t = setTimeout(() => persist(false), 1200);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form]);
+
+  // Fade the "Saved" badge back to idle
+  useEffect(() => {
+    if (saveState !== 'saved') return;
+    const t = setTimeout(() => setSaveState('idle'), 2500);
+    return () => clearTimeout(t);
+  }, [saveState]);
 
   const removedStandard = ALL_STANDARD_SIZES.filter(s => !form.sizes.find(sz => sz.size === s));
 
   return (
     <div className={`bg-white border rounded-2xl shadow-sm transition-all ${expanded ? 'border-indigo-200 ring-1 ring-indigo-100' : 'border-slate-200'}`}>
 
-      {/* ── Collapsed header ── */}
-      <div className="flex items-center gap-3 px-5 py-3.5 cursor-pointer" onClick={() => setExpanded(e => !e)}>
+      {/* ── Collapsed header — unsaved (new) lines stay expanded so the Add button never gets stuck ── */}
+      <div className={`flex items-center gap-3 px-5 py-3.5 ${pp.id ? 'cursor-pointer' : ''}`} onClick={() => pp.id && setExpanded(e => !e)}>
         <div className="w-8 h-8 bg-indigo-50 rounded-xl flex items-center justify-center flex-shrink-0">
           <Shirt size={15} className="text-indigo-600" />
         </div>
@@ -649,6 +678,13 @@ function ProductLine({ pp, catalogProducts, costFields, onSave, onRemove }) {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
+          {saveState === 'saving' && (
+            <span className="flex items-center gap-1 text-2xs text-slate-400">
+              <span className="w-3 h-3 border-2 border-slate-200 border-t-slate-400 rounded-full animate-spin" /> Saving…
+            </span>
+          )}
+          {saveState === 'saved' && <span className="text-2xs font-semibold text-emerald-500">✓ Saved</span>}
+          {saveState === 'error' && <span className="text-2xs font-semibold text-rose-500">Save failed</span>}
           {!delConf ? (
             <button type="button" onClick={e => { e.stopPropagation(); setDelConf(true); }}
               className="p-1.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors">
@@ -661,22 +697,22 @@ function ProductLine({ pp, catalogProducts, costFields, onSave, onRemove }) {
               <button onClick={() => setDelConf(false)} className="text-xs text-slate-400 px-1">No</button>
             </div>
           )}
-          {expanded ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
+          {pp.id && (expanded ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />)}
         </div>
       </div>
 
-      {expanded && (
-        <div className="border-t border-slate-100 px-5 py-5 space-y-5">
+      {(expanded || !pp.id) && (
+        <div className="border-t border-slate-100 p-4 sm:p-5 space-y-4">
 
-          {/* ══ Row 1: Col 1 (Product Info + Sizes) | Col 2 (Process Costs + External) ══ */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+          {/* ══ Bento grid: Product | Sizes | External Costs ══ */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
-            {/* ── Col 1: Product Info stacked above Sizes ── */}
-            <div className="space-y-4">
-
-              {/* Product Info */}
-              <div>
-                <p className="text-2xs font-semibold uppercase tracking-widest text-slate-400 mb-3">Product</p>
+              {/* ── Product card ── */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-6 h-6 bg-indigo-100 rounded-lg flex items-center justify-center flex-shrink-0"><Shirt size={12} className="text-indigo-600" /></div>
+                  <p className="text-xs font-bold text-slate-700">Product</p>
+                </div>
                 <div className="space-y-3">
                   <div className="grid grid-cols-2 gap-3">
                     <Field label="Catalog">
@@ -690,11 +726,22 @@ function ProductLine({ pp, catalogProducts, costFields, onSave, onRemove }) {
                         }}
                         className={selectCls}>
                         <option value="">— Select —</option>
-                        {catalogProducts.map(p => (
-                          <option key={p.id} value={String(p.id)}>
-                            {p.name}{p.article_number ? ` (${p.article_number})` : ''}
-                          </option>
-                        ))}
+                        {(() => {
+                          const invSet = new Set(invoiceNames.map(n => n.trim().toLowerCase()));
+                          const onInv  = catalogProducts.filter(p => invSet.has((p.name||'').trim().toLowerCase()));
+                          const rest   = onInv.length ? catalogProducts.filter(p => !invSet.has((p.name||'').trim().toLowerCase())) : catalogProducts;
+                          const opt = p => (
+                            <option key={p.id} value={String(p.id)}>
+                              {p.name}{p.article_number ? ` (${p.article_number})` : ''}
+                            </option>
+                          );
+                          return onInv.length > 0 ? (
+                            <>
+                              <optgroup label="On Invoice">{onInv.map(opt)}</optgroup>
+                              <optgroup label="All Products">{rest.map(opt)}</optgroup>
+                            </>
+                          ) : rest.map(opt);
+                        })()}
                         <option value="__custom__">✏ Custom</option>
                       </select>
                     </Field>
@@ -717,11 +764,14 @@ function ProductLine({ pp, catalogProducts, costFields, onSave, onRemove }) {
                 </div>
               </div>
 
-              {/* Sizes */}
-              <div>
+              {/* ── Sizes card ── */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-4">
                 <div className="flex items-center justify-between mb-3">
-                  <p className="text-2xs font-semibold uppercase tracking-widest text-slate-400">Sizes</p>
-                  <span className="text-xs font-bold text-indigo-600">Total: {totalQty.toLocaleString()} {form.unit}</span>
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 bg-violet-100 rounded-lg flex items-center justify-center flex-shrink-0"><Tag size={12} className="text-violet-600" /></div>
+                    <p className="text-xs font-bold text-slate-700">Sizes</p>
+                  </div>
+                  <span className="text-xs font-bold text-indigo-600">{totalQty.toLocaleString()} {form.unit}</span>
                 </div>
                 {form.sizes.length === 0 ? (
                   <p className="text-xs text-slate-400 italic mb-2">No sizes — use "Add Size" below.</p>
@@ -767,74 +817,17 @@ function ProductLine({ pp, catalogProducts, costFields, onSave, onRemove }) {
                   </button>
                 </div>
               </div>
-            </div>
 
-            {/* ── Col 2: Process Costs + External Costs ── */}
-            <div className="space-y-4">
-
-              {/* Process Costs */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-2xs font-semibold uppercase tracking-widest text-slate-400">
-                    Process Costs <span className="normal-case font-normal text-slate-300">(₨/pc)</span>
-                  </p>
-                  {form.product_id && (
-                    <button onClick={syncFromCalculator} disabled={syncing}
-                      className="flex items-center gap-1 text-2xs text-indigo-600 font-semibold border border-indigo-200 bg-indigo-50 px-2 py-0.5 rounded-lg hover:bg-indigo-100 transition-colors disabled:opacity-50">
-                      <Save size={9} /> {syncing ? 'Syncing…' : 'Sync'}
-                    </button>
-                  )}
+              {/* ── External Costs card — legacy entries only; new ones live in Costs → Extra Costs ── */}
+              {form.external_costs.length > 0 && (
+              <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:col-span-2">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0"><Receipt size={12} className="text-amber-600" /></div>
+                    <p className="text-xs font-bold text-slate-700">External Costs <span className="font-normal text-slate-400">— new ones go in Costs → Extra Costs</span></p>
+                  </div>
                 </div>
-                <div className="space-y-1.5">
-                  {costFields.map(cf => {
-                    const v      = getCost(cf.key);
-                    const active = v !== '' && parseFloat(v) > 0;
-                    const cTotal = (parseFloat(v)||0) * totalQty;
-                    return (
-                      <div key={cf.key}
-                        className={`flex items-center gap-2 rounded-xl px-3 py-2 border transition-colors ${
-                          active ? 'bg-indigo-50 border-indigo-200' : 'bg-slate-50 border-slate-200 hover:border-slate-300'
-                        }`}>
-                        <span className={`text-sm font-medium flex-1 min-w-0 leading-tight ${active ? 'text-indigo-700' : 'text-slate-600'}`}>
-                          {cf.label}
-                        </span>
-                        <div className="relative flex-shrink-0">
-                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none select-none">₨</span>
-                          <input
-                            type="number" min="0" step="0.01"
-                            value={v}
-                            onChange={e => setCostPerPiece(cf.key, cf.label, e.target.value)}
-                            placeholder="0"
-                            className={`w-24 pl-5 pr-1 py-1 border rounded-lg bg-white text-sm font-semibold outline-none text-right focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100 placeholder:text-slate-300 ${
-                              active ? 'text-indigo-700 border-indigo-200' : 'text-slate-700 border-slate-200'
-                            }`}
-                          />
-                        </div>
-                        {active && cTotal > 0 && totalQty > 0 ? (
-                          <span className="text-xs text-indigo-500 font-semibold whitespace-nowrap w-20 text-right flex-shrink-0">
-                            ={pkr(cTotal).replace('₨','')}
-                          </span>
-                        ) : (
-                          <span className="w-20 flex-shrink-0" />
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* External Costs */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-2xs font-semibold uppercase tracking-widest text-slate-400">External Costs</p>
-                  <button onClick={addExternal}
-                    className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-medium">
-                    <Plus size={12} /> Add Line
-                  </button>
-                </div>
-                {form.external_costs.length === 0 ? (
-                  <p className="text-xs text-slate-400 italic">No external costs yet.</p>
-                ) : (
+                {(
                   <div className="space-y-2">
                     {form.external_costs.map(ec => (
                       <div key={ec.id} className="flex gap-1.5 items-center">
@@ -855,28 +848,24 @@ function ProductLine({ pp, catalogProducts, costFields, onSave, onRemove }) {
                   </div>
                 )}
               </div>
-            </div>
+              )}
           </div>
 
-          {/* ══ Row 2: Fabrics / Materials (full width) ══ */}
-          <div className="bg-blue-50/40 border border-blue-100 rounded-xl p-4">
+          {/* ══ Materials card — legacy per-product fabrics only; new materials live in the Fabrics tab ══ */}
+          {form.fabrics.length > 0 && (
+          <div className="bg-white border border-slate-200 border-t-4 border-t-blue-500 rounded-2xl p-4">
             <div className="flex items-center justify-between mb-3">
-              <p className="text-2xs font-semibold uppercase tracking-widest text-blue-700">
-                Fabrics / Materials
-                {fabricTotal > 0 && <span className="text-blue-500 font-bold ml-2">{pkr(fabricTotal)}</span>}
-              </p>
-              <button onClick={addFabric}
-                className="flex items-center gap-1 text-xs text-blue-600 font-semibold border border-blue-200 bg-white px-2.5 py-1 rounded-lg hover:bg-blue-50 transition-colors">
-                <Plus size={11} /> Add Material
-              </button>
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0"><Package size={12} className="text-blue-600" /></div>
+                <p className="text-xs font-bold text-blue-700">
+                  Fabrics & Materials
+                  {fabricTotal > 0 && <span className="text-blue-500 ml-2">{pkr(fabricTotal)}</span>}
+                  <span className="font-normal text-blue-400 ml-2">— new materials go in the Fabrics tab</span>
+                </p>
+              </div>
             </div>
 
-            {form.fabrics.length === 0 ? (
-              <div className="text-center py-6">
-                <p className="text-xs text-blue-400 italic">No materials yet.</p>
-                <p className="text-2xs text-blue-300 mt-0.5">Track fabrics, accessories & supplies (zips, buttons, labels…)</p>
-              </div>
-            ) : (
+            {(
               <div className="space-y-2">
                 {/* Header — desktop only */}
                 <div className="hidden sm:grid gap-2 px-0.5" style={{ gridTemplateColumns: 'minmax(0,3fr) 72px 76px 92px 80px 26px' }}>
@@ -1017,47 +1006,27 @@ function ProductLine({ pp, catalogProducts, costFields, onSave, onRemove }) {
               </div>
             )}
           </div>
+          )}
 
-          {/* ══ Row 3: Cost Summary (full-width bar) ══ */}
-          <div className="bg-gradient-to-r from-slate-900 to-indigo-900 rounded-2xl px-4 py-4">
-            <p className="text-2xs font-bold uppercase tracking-widest text-white/40 mb-3">Summary</p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {[
-                { label: 'Fabric & Materials', val: fabricTotal, color: 'text-blue-300' },
-                { label: 'Process Costs',       val: proc,        color: 'text-indigo-300' },
-                { label: 'External Costs',      val: ext,         color: 'text-violet-300' },
-              ].map(({ label, val, color }) => (
-                <div key={label}>
-                  <p className="text-2xs text-white/40 font-medium">{label}</p>
-                  <p className={`text-sm font-bold mt-0.5 break-all ${val > 0 ? color : 'text-white/20'}`}>
-                    {val > 0 ? pkr(val) : '—'}
-                  </p>
-                </div>
-              ))}
-              <div className="border-t sm:border-t-0 sm:border-l border-white/10 pt-3 sm:pt-0 sm:pl-3 col-span-2 sm:col-span-1">
-                <p className="text-2xs font-bold uppercase tracking-widest text-white/40">Grand Total</p>
-                <p className="text-xl font-black text-white leading-tight mt-0.5 break-all">
-                  {total > 0 ? pkr(total) : <span className="text-white/20 text-lg">—</span>}
-                </p>
-                {totalQty > 0 && total > 0 && (
-                  <p className="text-2xs text-indigo-300 mt-0.5">{pkr(total / totalQty)} / pc · {totalQty.toLocaleString()} {form.unit}</p>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* ── Save / Cancel ── */}
-          <div className="flex gap-3 pt-1">
-            <button onClick={handleSave} disabled={saving || !form.product_name.trim()}
-              className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-colors">
-              <Save size={14} /> {saving ? 'Saving…' : pp.id ? 'Save Changes' : 'Add Product'}
-            </button>
-            {pp.id && (
-              <button onClick={() => setExpanded(false)}
-                className="px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50 transition-colors">
-                Cancel
+          {/* ── Save / Close — sticky so it's always reachable on long forms ── */}
+          <div className="sticky bottom-3 z-10 pt-1">
+            <div className="inline-flex items-center gap-2 bg-white/95 backdrop-blur border border-slate-200 rounded-2xl p-2 shadow-lg">
+              <button onClick={handleSave} disabled={saving || !form.product_name.trim()}
+                className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-colors">
+                <Save size={14} /> {saving ? 'Saving…' : pp.id ? 'Save & Close' : 'Add Product'}
               </button>
-            )}
+              {pp.id && (
+                <button onClick={() => setExpanded(false)}
+                  className="px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50 transition-colors bg-white">
+                  Close
+                </button>
+              )}
+              {pp.id && (
+                saveState === 'saving' ? <span className="text-2xs text-slate-400 px-1">Saving…</span>
+                : saveState === 'error' ? <span className="text-2xs font-semibold text-rose-500 px-1">Save failed</span>
+                : <span className="text-2xs text-slate-400 px-1 hidden sm:inline">Auto-saves as you edit</span>
+              )}
+            </div>
           </div>
 
         </div>
@@ -1808,7 +1777,420 @@ function ProjectImageUploader({ images, onSave }) {
 
 // ─── Project Detail ───────────────────────────────────────────────────────────
 
-const DETAIL_TABS = ['Overview', 'Products', 'Costs', 'Stages', 'Boxes', 'Shipping', 'Vendors', 'Workers'];
+const DETAIL_TABS = ['Overview', 'Products', 'Fabrics', 'Costs', 'Shipping'];
+
+// ─── Production pipeline — compact stepper shown above the tabs ───────────────
+function StagePipeline({ stages, onUpdate }) {
+  const [manage, setManage] = useState(false);
+  const sorted  = [...stages].sort((a, b) => a.sort_order - b.sort_order);
+  const enabled = sorted.filter(s => s.enabled);
+  if (enabled.length === 0) return null;
+
+  const done = enabled.filter(s => s.status === 'done').length;
+  const pct  = Math.round((done / enabled.length) * 100);
+  const NEXT = { pending: 'in_progress', in_progress: 'done', done: 'pending' };
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 mb-3 shadow-sm">
+      <div className="flex items-center justify-between mb-2.5">
+        <p className="text-2xs font-bold uppercase tracking-widest text-slate-400">Production Progress</p>
+        <div className="flex items-center gap-3">
+          <span className={`text-2xs font-bold ${pct === 100 ? 'text-emerald-600' : 'text-indigo-600'}`}>
+            {done}/{enabled.length} · {pct}%
+          </span>
+          <button onClick={() => setManage(m => !m)}
+            className="text-2xs text-slate-400 hover:text-indigo-600 font-medium flex items-center gap-0.5 transition-colors">
+            Manage {manage ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+          </button>
+        </div>
+      </div>
+
+      <div className="flex items-start overflow-x-auto scrollbar-hide pb-1">
+        {enabled.map((st, i) => {
+          const Icon   = STAGE_ICON[st.stage_key] ?? Package;
+          const isDone = st.status === 'done';
+          const isProg = st.status === 'in_progress';
+          return (
+            <div key={st.id} className={`flex items-start ${i < enabled.length - 1 ? 'flex-1' : ''} min-w-0`}>
+              <button onClick={() => onUpdate(st.id, { status: NEXT[st.status] || 'in_progress' })}
+                title={`${st.stage_name} — click to ${st.status === 'pending' ? 'start' : st.status === 'in_progress' ? 'mark done' : 'reset'}`}
+                className="flex flex-col items-center gap-1 group flex-shrink-0 w-16">
+                <span className={`w-8 h-8 rounded-full flex items-center justify-center border-2 transition-all ${
+                  isDone ? 'bg-emerald-500 border-emerald-500 text-white'
+                  : isProg ? 'bg-indigo-50 border-indigo-500 text-indigo-600 ring-4 ring-indigo-100'
+                  : 'bg-white border-slate-200 text-slate-300 group-hover:border-indigo-300 group-hover:text-indigo-400'
+                }`}>
+                  {isDone ? <Check size={14} strokeWidth={3} /> : <Icon size={14} className={isProg ? 'animate-pulse' : ''} />}
+                </span>
+                <span className={`text-2xs font-medium leading-tight text-center truncate w-full ${
+                  isDone ? 'text-emerald-600' : isProg ? 'text-indigo-600 font-semibold' : 'text-slate-400'
+                }`}>{st.stage_name}</span>
+              </button>
+              {i < enabled.length - 1 && (
+                <div className={`flex-1 h-0.5 mt-4 rounded ${isDone ? 'bg-emerald-400' : 'bg-slate-200'}`} />
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Full stage management (sub-tasks, optional-stage toggles) */}
+      {manage && (
+        <div className="mt-3 border-t border-slate-100 pt-3">
+          <StagesTab stages={stages} onUpdate={onUpdate} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Invoice → Products sync banner ──────────────────────────────────────────
+// Shows when the linked invoice has line items that aren't in the project yet.
+function InvoiceSyncBanner({ project, catalogProducts, onReload, onItemsLoaded }) {
+  const [invoices, setInvoices]     = useState([]);
+  const [invId, setInvId]           = useState(project.invoice_id || '');
+  const [invItems, setInvItems]     = useState(null);
+  const [syncing, setSyncing]       = useState(false);
+  const [deselected, setDeselected] = useState(() => new Set()); // names the user unticked
+
+  // Related invoices only: must have line items; scoped to the project's client
+  // (derived from the linked invoice when the project has no client set)
+  useEffect(() => {
+    api.get('/invoices').then(r => {
+      const all = Array.isArray(r.data) ? r.data : [];
+      const hasItems = i => {
+        let items = i.items;
+        if (typeof items === 'string') { try { items = JSON.parse(items); } catch { items = []; } }
+        return Array.isArray(items) && items.length > 0;
+      };
+      let clientId = project.client_id;
+      if (!clientId && project.invoice_id) {
+        clientId = all.find(i => String(i.id) === String(project.invoice_id))?.client_id;
+      }
+      let mine = all.filter(hasItems);
+      if (clientId) mine = mine.filter(i => i.client_id === clientId);
+      // Always keep the linked invoice in the list
+      if (project.invoice_id && !mine.find(i => String(i.id) === String(project.invoice_id))) {
+        const linked = all.find(i => String(i.id) === String(project.invoice_id));
+        if (linked) mine.unshift(linked);
+      }
+      setInvoices(mine);
+    }).catch(() => {});
+  }, [project.client_id, project.invoice_id]);
+
+  // Items of the selected invoice
+  useEffect(() => {
+    if (!invId) { setInvItems(null); onItemsLoaded?.([]); return; }
+    api.get(`/invoices/${invId}`)
+      .then(r => {
+        let items = r.data.items;
+        if (typeof items === 'string') { try { items = JSON.parse(items); } catch { items = []; } }
+        items = Array.isArray(items) ? items : [];
+        setInvItems(items);
+        setDeselected(new Set());
+        onItemsLoaded?.(items.map(it => (it.name || it.description || '').trim()).filter(Boolean));
+      })
+      .catch(() => { setInvItems(null); onItemsLoaded?.([]); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invId]);
+
+  if (invoices.length === 0 && !project.invoice_id) return null;
+
+  const itemName = it => (it.name || it.description || '').trim();
+  const existing = new Set((project.products||[]).map(p => (p.product_name||'').trim().toLowerCase()));
+  const missing  = (invItems || []).filter(it => {
+    const nm = itemName(it);
+    return nm && !existing.has(nm.toLowerCase());
+  });
+  const selected = missing.filter(it => !deselected.has(itemName(it).toLowerCase()));
+
+  function toggle(nm) {
+    const key = nm.toLowerCase();
+    setDeselected(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  async function sync() {
+    if (selected.length === 0) return;
+    setSyncing(true);
+    try {
+      for (const it of selected) {
+        const nm  = itemName(it);
+        const qty = parseFloat(it.quantity) || 0;
+        const cat = catalogProducts.find(p => (p.name||'').trim().toLowerCase() === nm.toLowerCase());
+        await api.post(`/projects/${project.id}/products`, {
+          product_id:     cat?.id || '',
+          product_name:   nm,
+          unit:           cat?.unit || 'pcs',
+          notes:          it.name ? (it.description || '') : '',
+          sizes:          qty > 0 ? [{ size: 'QTY', qty }] : [],
+          total_quantity: qty,
+          fabrics: [], costs: [], external_costs: [],
+        });
+      }
+      await onReload();
+    } finally { setSyncing(false); }
+  }
+
+  return (
+    <div className="bg-indigo-50 border border-indigo-100 rounded-2xl px-4 py-3 space-y-2.5">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2 min-w-0 flex-wrap">
+          <Receipt size={14} className="text-indigo-500 flex-shrink-0" />
+          <span className="text-xs text-indigo-700 font-semibold">Sync products from invoice</span>
+          <select value={invId || ''} onChange={e => setInvId(e.target.value)}
+            className="border border-indigo-200 bg-white rounded-lg px-2 py-1 text-xs font-mono outline-none focus:border-indigo-400 cursor-pointer max-w-[220px]">
+            <option value="">— Select invoice —</option>
+            {invoices.map(i => (
+              <option key={i.id} value={i.id}>
+                {i.number}{String(i.id) === String(project.invoice_id) ? ' ★' : ''}{i.client_name ? ` — ${i.client_name}` : ''}
+              </option>
+            ))}
+          </select>
+          {invId && invItems && missing.length === 0 && (
+            <span className="text-2xs font-semibold text-emerald-600">✓ All its products are already in this project</span>
+          )}
+          {invId && invItems && missing.length > 0 && (
+            <span className="text-2xs text-indigo-500">tap to select:</span>
+          )}
+        </div>
+        {missing.length > 0 && (
+          <button onClick={sync} disabled={syncing || selected.length === 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white rounded-xl text-xs font-semibold hover:bg-indigo-700 disabled:opacity-60 transition-colors flex-shrink-0">
+            {syncing
+              ? <><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Adding…</>
+              : <><Wand2 size={12} /> Add {selected.length} Selected</>}
+          </button>
+        )}
+      </div>
+      {missing.length > 0 && (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {missing.map(it => {
+            const nm = itemName(it);
+            const on = !deselected.has(nm.toLowerCase());
+            const qty = parseFloat(it.quantity) || 0;
+            return (
+              <button key={nm} type="button" onClick={() => toggle(nm)}
+                className={`flex items-center gap-1 text-2xs px-2 py-1 rounded-lg border font-medium transition-colors ${
+                  on ? 'bg-indigo-600 border-indigo-600 text-white'
+                     : 'bg-white border-slate-200 text-slate-400 line-through'
+                }`}>
+                {on && <Check size={10} />}
+                {nm}{qty > 0 && <span className={on ? 'text-indigo-200' : 'text-slate-300'}> ×{qty}</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Fabrics Tab — project-level bulk materials (auto-saves) ─────────────────
+function FabricsTab({ project, onReload }) {
+  const [rows, setRows] = useState(() => (Array.isArray(project.fabrics) ? project.fabrics : []));
+  const [inventoryItems, setInventoryItems] = useState([]);
+  const [saveState, setSaveState] = useState('idle');
+  const ready = useRef(false);
+
+  useEffect(() => {
+    api.get('/inventory').then(r => setInventoryItems(Array.isArray(r.data) ? r.data : [])).catch(() => {});
+  }, []);
+
+  const total     = rows.reduce((s, f) => s + (parseFloat(f.qty)||0) * (parseFloat(f.rate)||0), 0);
+  const totalPaid = rows.reduce((s, f) => s + (parseFloat(f.amount_paid)||0), 0);
+  const totalDue  = Math.max(0, total - totalPaid);
+
+  function payAll() {
+    setRows(rs => rs.map(r => ({ ...r, amount_paid: String((parseFloat(r.qty)||0) * (parseFloat(r.rate)||0)) })));
+  }
+
+  // Legacy materials still attached to individual products (edited there)
+  const legacy = (project.products||[]).flatMap(pp => (pp.fabrics||[]).map(f => ({ ...f, _product: pp.product_name })));
+  const legacyTotal = legacy.reduce((s, f) => s + (parseFloat(f.qty)||0) * (parseFloat(f.rate)||0), 0);
+
+  function setRow(id, field, val) { setRows(rs => rs.map(r => r.id === id ? { ...r, [field]: val } : r)); }
+  function addRow() { setRows(rs => [...rs, { id: Date.now(), name: '', unit: 'KG', qty: '', rate: '', amount_paid: '', date: new Date().toISOString().split('T')[0] }]); }
+  function removeRow(id) { setRows(rs => rs.filter(r => r.id !== id)); }
+
+  // Debounced autosave + inventory sync (idempotent on the server)
+  useEffect(() => {
+    if (!ready.current) { ready.current = true; return; }
+    const t = setTimeout(async () => {
+      setSaveState('saving');
+      try {
+        await api.put(`/projects/${project.id}/fabrics`, { fabrics: rows });
+        const forSync = rows.filter(f => parseFloat(f.qty) > 0 && (f.name||'').trim());
+        let purchaseSynced = [];
+        try {
+          const res = await api.post('/inventory/sync-project-fabric-purchase', {
+            project_product_id: `p${project.id}`,   // project-level reference
+            fabrics: forSync.map(f => ({
+              inventory_item_id: f.inventory_item_id || null,
+              name: f.name, unit: f.unit, qty: parseFloat(f.qty), rate: parseFloat(f.rate) || 0,
+            })),
+          });
+          purchaseSynced = res.data.synced || [];
+        } catch { /* non-fatal */ }
+        const items = forSync.map(f => {
+          const matched = purchaseSynced.find(s => (s.name||'').toLowerCase() === (f.name||'').toLowerCase());
+          const invId = f.inventory_item_id || matched?.inventory_item_id;
+          return invId ? { inventory_item_id: invId, qty: parseFloat(f.qty), name: f.name } : null;
+        }).filter(Boolean);
+        await api.post('/inventory/sync-project-product', { project_product_id: `p${project.id}`, items }).catch(() => {});
+        setSaveState('saved');
+        onReload?.();
+      } catch { setSaveState('error'); }
+    }, 1200);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows]);
+
+  useEffect(() => {
+    if (saveState !== 'saved') return;
+    const t = setTimeout(() => setSaveState('idle'), 2500);
+    return () => clearTimeout(t);
+  }, [saveState]);
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white border border-slate-200 border-t-4 border-t-blue-500 rounded-2xl p-4">
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0"><Package size={12} className="text-blue-600" /></div>
+            <p className="text-xs font-bold text-blue-700">Bulk Fabrics & Materials</p>
+            {saveState === 'saving' && <span className="text-2xs text-slate-400 flex items-center gap-1"><span className="w-3 h-3 border-2 border-slate-200 border-t-slate-400 rounded-full animate-spin" /> Saving…</span>}
+            {saveState === 'saved'  && <span className="text-2xs font-semibold text-emerald-500">✓ Saved</span>}
+            {saveState === 'error'  && <span className="text-2xs font-semibold text-rose-500">Save failed</span>}
+          </div>
+          <div className="flex items-center gap-3 flex-wrap">
+            {total > 0 && (
+              <span className="text-xs">
+                <span className="text-slate-500">Total: <b className="text-slate-700">{pkr(total)}</b></span>
+                <span className="text-emerald-600 ml-2">Paid: <b>{pkr(totalPaid)}</b></span>
+                {totalDue > 0
+                  ? <span className="text-rose-500 ml-2">Due: <b>{pkr(totalDue)}</b></span>
+                  : <span className="text-emerald-500 ml-2 font-semibold">✓ Settled</span>}
+              </span>
+            )}
+            {totalDue > 0 && (
+              <button onClick={payAll}
+                className="flex items-center gap-1 text-xs text-amber-700 font-semibold border border-amber-200 bg-amber-50 px-2.5 py-1 rounded-lg hover:bg-amber-100 transition-colors">
+                Pay All
+              </button>
+            )}
+            <button onClick={addRow}
+              className="flex items-center gap-1 text-xs text-blue-600 font-semibold border border-blue-200 bg-white px-2.5 py-1 rounded-lg hover:bg-blue-50 transition-colors">
+              <Plus size={11} /> Add Material
+            </button>
+          </div>
+        </div>
+
+        {rows.length === 0 ? (
+          <div className="text-center py-8">
+            <p className="text-xs text-blue-400 italic">No materials yet.</p>
+            <p className="text-2xs text-blue-300 mt-0.5">Bulk fabric, accessories & supplies for the whole project — auto-saves as you type.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <div className="hidden sm:grid gap-2 px-0.5" style={{ gridTemplateColumns: 'minmax(0,3fr) 72px 76px 92px 80px 92px 34px 26px' }}>
+              {['Name / Material', 'Unit', 'Qty', '₨ per Unit', 'Total', 'Paid (₨)', '', ''].map((h, i) => (
+                <span key={i} className="text-2xs font-bold text-blue-500 uppercase tracking-wider">{h}</span>
+              ))}
+            </div>
+            {rows.map(fb => {
+              const fbTotal = (parseFloat(fb.qty)||0) * (parseFloat(fb.rate)||0);
+              const fbPaid  = parseFloat(fb.amount_paid)||0;
+              const fbDue   = fbTotal - fbPaid;
+              return (
+                <div key={fb.id} className="border border-blue-100 rounded-xl bg-white overflow-hidden">
+                  <div className="grid gap-2 items-center p-1" style={{ gridTemplateColumns: 'minmax(0,3fr) 72px 76px 92px 80px 92px 34px 26px' }}>
+                    <FabricCombobox
+                      value={fb.name}
+                      inventoryItems={inventoryItems}
+                      onSelect={item => setRows(rs => rs.map(x => x.id !== fb.id ? x : ({
+                        ...x, name: item.name, unit: item.unit || x.unit, rate: String(item.rate || ''), inventory_item_id: item.id,
+                      })))}
+                      onNameChange={val => setRows(rs => rs.map(x => x.id !== fb.id ? x : ({ ...x, name: val, inventory_item_id: null })))}
+                      onInventoryAdded={() => {
+                        api.get('/inventory').then(r => setInventoryItems(Array.isArray(r.data) ? r.data : [])).catch(() => {});
+                      }}
+                    />
+                    <select value={fb.unit} onChange={e => setRow(fb.id, 'unit', e.target.value)}
+                      className="border border-blue-200 rounded-lg px-1.5 py-2 text-sm outline-none focus:border-blue-400 bg-white cursor-pointer w-full">
+                      {FABRIC_UNIT_OPTS.map(u => <option key={u}>{u}</option>)}
+                    </select>
+                    <input type="number" min="0" step="0.01" value={fb.qty}
+                      onChange={e => setRow(fb.id, 'qty', e.target.value)} placeholder="0"
+                      className="border border-blue-200 rounded-lg px-2 py-2 text-sm outline-none focus:border-blue-400 bg-white text-center w-full" />
+                    <div className="relative w-full">
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none select-none">₨</span>
+                      <input type="number" min="0" step="0.01" value={fb.rate}
+                        onChange={e => setRow(fb.id, 'rate', e.target.value)} placeholder="0"
+                        className="border border-blue-200 rounded-lg pl-5 pr-2 py-2 text-sm outline-none focus:border-blue-400 bg-white w-full text-right" />
+                    </div>
+                    <div className={`text-sm font-bold text-center rounded-lg px-1 py-2 ${fbTotal > 0 ? 'text-blue-700 bg-blue-100' : 'text-slate-300 bg-slate-50'}`}>
+                      {fbTotal > 0 ? `₨${Math.round(fbTotal).toLocaleString()}` : '—'}
+                    </div>
+                    <input type="number" min="0" step="0.01" value={fb.amount_paid}
+                      onChange={e => setRow(fb.id, 'amount_paid', e.target.value)} placeholder="0"
+                      className={`border rounded-lg px-2 py-2 text-sm outline-none bg-white w-full text-right ${
+                        fbTotal > 0 && fbPaid >= fbTotal ? 'border-emerald-300 text-emerald-700 font-semibold' : 'border-blue-200 focus:border-blue-400'
+                      }`} />
+                    <div className="text-center" title={fbDue > 0 ? `₨${Math.round(fbDue).toLocaleString()} remaining` : 'Fully paid'}>
+                      {fbTotal > 0 && (
+                        fbPaid >= fbTotal
+                          ? <span className="text-emerald-500 font-bold text-sm">✓</span>
+                          : <span className="text-2xs text-rose-500 font-semibold">-{Math.round(fbDue/1000)}k</span>
+                      )}
+                    </div>
+                    <button onClick={() => removeRow(fb.id)}
+                      className="flex items-center justify-center w-6 h-7 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors">
+                      <X size={13} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+            {rows.length > 1 && total > 0 && (
+              <div className="flex items-center justify-between bg-blue-100 rounded-lg px-3 py-2 mt-1">
+                <span className="text-xs text-blue-700 font-semibold">Total Material Cost</span>
+                <span className="text-sm font-bold text-blue-800">
+                  {pkr(total)}
+                  <span className="font-normal text-blue-600 ml-2 text-xs">Paid {pkr(totalPaid)}{totalDue > 0 ? ` · Due ${pkr(totalDue)}` : ''}</span>
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Legacy per-product materials — still counted in totals */}
+      {legacy.length > 0 && (
+        <div className="bg-white border border-slate-200 rounded-2xl p-4">
+          <p className="text-2xs font-semibold uppercase tracking-widest text-slate-400 mb-2">
+            Materials attached to products <span className="normal-case font-normal">(older entries — edit inside each product)</span>
+          </p>
+          <div className="space-y-1">
+            {legacy.map((f, i) => (
+              <div key={i} className="flex items-center justify-between text-xs py-1 border-b border-slate-50 last:border-0">
+                <span className="text-slate-600 truncate">{f.name || '—'} <span className="text-slate-300">· {f._product}</span></span>
+                <span className="text-slate-500 whitespace-nowrap ml-2">{f.qty} {f.unit} × ₨{(parseFloat(f.rate)||0).toLocaleString()} = <span className="font-semibold text-slate-700">₨{Math.round((parseFloat(f.qty)||0)*(parseFloat(f.rate)||0)).toLocaleString()}</span></span>
+              </div>
+            ))}
+            <div className="flex items-center justify-between text-xs pt-1.5">
+              <span className="font-semibold text-slate-500">Subtotal</span>
+              <span className="font-bold text-slate-700">₨{Math.round(legacyTotal).toLocaleString()}</span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function ProjectDetail({ projectId, onBack, clients, invoices, catalogProducts, costFields, currencies, baseCurrency, onProjectUpdated }) {
   const navigate = useNavigate();
@@ -1819,6 +2201,7 @@ function ProjectDetail({ projectId, onBack, clients, invoices, catalogProducts, 
   const [deleting, setDeleting] = useState(false);
   const [printMode, setPrint]   = useState(null); // 'cutting' | 'stitching' | 'packaging'
   const [addingProduct, setAddingProduct] = useState(false);
+  const [invoiceNames, setInvoiceNames]   = useState([]); // product names on the sync-selected invoice
   const printRef = useRef();
 
   const load = useCallback(async () => {
@@ -1968,173 +2351,132 @@ function ProjectDetail({ projectId, onBack, clients, invoices, catalogProducts, 
 
   return (
     <div>
-      {/* Header */}
-      <div className="flex flex-col gap-2 mb-4">
-        <div className="flex items-center gap-3 min-w-0">
-          <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-900 transition-colors flex-shrink-0">
-            <ArrowLeft size={16} /> Projects
-          </button>
-          <ChevronRight size={14} className="text-slate-300 flex-shrink-0" />
-          <h1 className="text-lg font-bold text-slate-900 truncate flex-1 min-w-0">{project.title}</h1>
-          <StatusBadge status={project.status} />
-          <button onClick={() => navigate(`/projects/${project.id}/edit`)}
-            className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors">
-            <Pencil size={15} />
-          </button>
-          {!delConf ? (
-            <button onClick={() => setDelConf(true)}
-              className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors">
-              <Trash2 size={15} />
-            </button>
-          ) : (
-            <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 rounded-xl px-3 py-1.5">
-              <span className="text-xs text-rose-600">Delete project?</span>
-              <button onClick={handleDelete} disabled={deleting}
-                className="text-xs text-rose-600 font-bold px-2 hover:text-rose-800">{deleting ? '…' : 'Yes'}</button>
-              <button onClick={() => setDelConf(false)} className="text-xs text-slate-400 px-1">No</button>
-            </div>
-          )}
-        </div>
-        {/* Print buttons — horizontally scrollable on mobile */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-0.5 scrollbar-hide">
+      {/* Header — title, print docs, status & actions on one row */}
+      <div className="flex items-center gap-3 min-w-0 flex-wrap mb-4">
+        <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-900 transition-colors flex-shrink-0">
+          <ArrowLeft size={16} /> Projects
+        </button>
+        <ChevronRight size={14} className="text-slate-300 flex-shrink-0" />
+        <h1 className="text-lg font-bold text-slate-900 truncate flex-1 min-w-[140px]">{project.title}</h1>
+        {/* Print docs */}
+        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide order-last w-full sm:order-none sm:w-auto">
           <button onClick={() => setPrint('summary')}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 font-semibold transition-colors shadow-sm whitespace-nowrap flex-shrink-0">
-            <FileImage size={12} /> Summary
+            className="flex items-center gap-1 px-2.5 py-1 text-2xs bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold transition-colors shadow-sm whitespace-nowrap flex-shrink-0">
+            <FileImage size={11} /> Summary
           </button>
           <button onClick={() => setPrint('cutting')}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-blue-200 bg-blue-50 text-blue-700 rounded-xl hover:bg-blue-100 font-semibold transition-colors whitespace-nowrap flex-shrink-0">
-            <Scissors size={12} /> Cutting
+            className="flex items-center gap-1 px-2.5 py-1 text-2xs border border-blue-200 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 font-semibold transition-colors whitespace-nowrap flex-shrink-0">
+            <Scissors size={11} /> Cutting
           </button>
           <button onClick={() => setPrint('stitching')}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-green-200 bg-green-50 text-green-700 rounded-xl hover:bg-green-100 font-semibold transition-colors whitespace-nowrap flex-shrink-0">
-            <Shirt size={12} /> Stitching
+            className="flex items-center gap-1 px-2.5 py-1 text-2xs border border-green-200 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 font-semibold transition-colors whitespace-nowrap flex-shrink-0">
+            <Shirt size={11} /> Stitching
           </button>
           <button onClick={() => setPrint('packaging')}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-amber-200 bg-amber-50 text-amber-700 rounded-xl hover:bg-amber-100 font-semibold transition-colors whitespace-nowrap flex-shrink-0">
-            <PackageOpen size={12} /> Packaging
+            className="flex items-center gap-1 px-2.5 py-1 text-2xs border border-amber-200 bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-100 font-semibold transition-colors whitespace-nowrap flex-shrink-0">
+            <PackageOpen size={11} /> Packaging
           </button>
           <button onClick={() => setPrint('materials')}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-violet-200 bg-violet-50 text-violet-700 rounded-xl hover:bg-violet-100 font-semibold transition-colors whitespace-nowrap flex-shrink-0">
-            <Package size={12} /> Materials
+            className="flex items-center gap-1 px-2.5 py-1 text-2xs border border-violet-200 bg-violet-50 text-violet-700 rounded-lg hover:bg-violet-100 font-semibold transition-colors whitespace-nowrap flex-shrink-0">
+            <Package size={11} /> Materials
           </button>
         </div>
+        <StatusBadge status={project.status} />
+        <button onClick={() => navigate(`/projects/${project.id}/edit`)}
+          className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors">
+          <Pencil size={15} />
+        </button>
+        {!delConf ? (
+          <button onClick={() => setDelConf(true)}
+            className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors">
+            <Trash2 size={15} />
+          </button>
+        ) : (
+          <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 rounded-xl px-3 py-1.5">
+            <span className="text-xs text-rose-600">Delete project?</span>
+            <button onClick={handleDelete} disabled={deleting}
+              className="text-xs text-rose-600 font-bold px-2 hover:text-rose-800">{deleting ? '…' : 'Yes'}</button>
+            <button onClick={() => setDelConf(false)} className="text-xs text-slate-400 px-1">No</button>
+          </div>
+        )}
       </div>
 
-      {/* ── Project Summary Cards ── */}
+      {/* ── Compact financial strip ── */}
       {(() => {
         const prods       = project.products || [];
         const totalQtyAll = prods.reduce((s, pp) => s + (parseFloat(pp.total_quantity)||0), 0);
-        const costPcBefore = totalQtyAll > 0 ? fin.totalExpenseBeforeShipping / totalQtyAll : 0;
-        const costPcAfter  = totalQtyAll > 0 ? fin.totalExpense / totalQtyAll : 0;
-        const recvPerPc   = totalQtyAll > 0 && fin.received > 0 ? fin.received / totalQtyAll : 0;
+        const costPcAfter = totalQtyAll > 0 ? fin.totalExpense / totalQtyAll : 0;
+        const pocketDiff  = fin.totalPaid - fin.received;
+        const pocketLoss  = pocketDiff > 0;
+        const projProfit  = fin.profit >= 0;
+        const items = [
+          { label: 'Expense',  val: fmt(fin.totalExpense), dot: 'bg-rose-500',    cls: 'text-slate-800' },
+          { label: 'Received', val: fmt(fin.received),     dot: 'bg-emerald-500', cls: 'text-slate-800' },
+          { label: projProfit ? 'Profit' : 'Loss',
+            val: `${projProfit ? '' : '−'}${fmt(Math.abs(fin.profit))}`,
+            sub: fin.received > 0 ? `${((fin.profit / fin.received) * 100).toFixed(1)}%` : null,
+            dot: projProfit ? 'bg-amber-500' : 'bg-rose-600',
+            cls: projProfit ? 'text-amber-600' : 'text-rose-600' },
+          { label: 'Out of Pocket',
+            val: `${pocketLoss ? '−' : '+'}${fmt(Math.abs(pocketDiff))}`,
+            dot: pocketLoss ? 'bg-rose-400' : 'bg-emerald-400',
+            cls: pocketLoss ? 'text-rose-600' : 'text-emerald-600' },
+          costPcAfter > 0 && { label: 'Cost/pc', val: fmt(costPcAfter), dot: 'bg-indigo-400', cls: 'text-slate-800' },
+        ].filter(Boolean);
         return (
-          <>
-          <div className="grid grid-cols-3 gap-2 mb-3">
-
-            {/* Total Expense */}
-            <div className="bg-rose-500 rounded-xl p-2.5 sm:p-4 shadow-sm text-white min-w-0">
-              <div className="flex items-center gap-1 mb-1.5">
-                <TrendingUp size={12} className="text-rose-200 flex-shrink-0" />
-                <p className="text-2xs font-bold uppercase tracking-wide text-rose-100 truncate">Total Expense</p>
-              </div>
-              <p className="text-sm sm:text-xl font-bold leading-tight break-all">{fmt(fin.totalExpense)}</p>
-              <div className="text-2xs text-rose-200 mt-1 space-y-0.5 hidden sm:block">
-                <p className="truncate">Mat+Proc: {fmt(fin.productCost)}</p>
-                {fin.vendorBilled   > 0 && <p className="truncate">Vendors: {fmt(fin.vendorBilled)}</p>}
-                {fin.extraCostTotal > 0 && <p className="truncate">Extra: {fmt(fin.extraCostTotal)}</p>}
-                {fin.shippingTotal  > 0 && <p className="truncate">Ship: {fmt(fin.shippingTotal)}</p>}
-              </div>
-              <div className="mt-1.5 pt-1.5 border-t border-rose-400/40 text-2xs">
-                <p className="text-rose-100 truncate">Paid: <span className="font-bold">{fmt(fin.totalPaid)}</span></p>
-                {fin.productionDue > 0
-                  ? <p className="text-rose-200 truncate">Due: {fmt(fin.productionDue)}</p>
-                  : <p className="text-emerald-300 font-semibold">✓ Settled</p>}
-              </div>
-            </div>
-
-            {/* Amount Received */}
-            <div className="bg-emerald-500 rounded-xl p-2.5 sm:p-4 shadow-sm text-white min-w-0">
-              <div className="flex items-center gap-1 mb-1.5">
-                <DollarSign size={12} className="text-emerald-200 flex-shrink-0" />
-                <p className="text-2xs font-bold uppercase tracking-wide text-emerald-100 truncate">Received</p>
-              </div>
-              <p className="text-sm sm:text-xl font-bold leading-tight break-all">{fmt(fin.received)}</p>
-              <p className="text-2xs text-emerald-200 mt-1 truncate">
-                {fin.receivedCurrency !== 'PKR' ? `${fin.receivedCurrency} ${fin.receivedRaw.toLocaleString()}` : 'From client'}
-              </p>
-              {recvPerPc > 0 && (
-                <p className="text-2xs text-emerald-100 mt-1.5 font-semibold border-t border-emerald-400/40 pt-1.5 truncate">
-                  {fmt(recvPerPc)}/pc
-                </p>
-              )}
-            </div>
-
-            {/* Net Profit / Loss — Projected + Out-of-Pocket */}
-            {(() => {
-              const pocketDiff   = fin.totalPaid - fin.received;
-              const pocketLoss   = pocketDiff > 0;
-              const projProfit   = fin.profit >= 0;
-              return (
-                <div className={`rounded-xl p-2.5 sm:p-4 shadow-sm text-white min-w-0 ${projProfit ? 'bg-amber-500' : 'bg-rose-700'}`}>
-                  <div className="flex items-center gap-1 mb-1.5">
-                    {projProfit ? <CheckCircle2 size={12} className="text-amber-200 flex-shrink-0" /> : <AlertTriangle size={12} className="text-rose-200 flex-shrink-0" />}
-                    <p className="text-2xs font-bold uppercase tracking-wide text-white/80 truncate">{projProfit ? 'Net Profit' : 'Net Loss'}</p>
-                  </div>
-
-                  <p className="text-2xs text-white/60 uppercase tracking-wide mb-0.5 hidden sm:block">Projected</p>
-                  <p className="text-sm sm:text-xl font-bold leading-tight break-all">
-                    {projProfit ? '' : '−'}{fmt(Math.abs(fin.profit))}
-                  </p>
-                  <p className="text-2xs text-white/70 mt-0.5 truncate">
-                    {fin.received > 0 ? `Margin: ${((fin.profit / fin.received) * 100).toFixed(1)}%` : 'Exp − Recv'}
-                  </p>
-
-                  <div className="border-t border-white/20 pt-1.5 mt-1.5">
-                    <p className="text-2xs text-white/60 uppercase tracking-wide mb-0.5 hidden sm:block">Out of Pocket</p>
-                    <p className={`text-xs sm:text-base font-bold break-all ${pocketLoss ? 'text-rose-200' : 'text-emerald-200'}`}>
-                      {pocketLoss ? '−' : '+'}{fmt(Math.abs(pocketDiff))}
-                    </p>
-                  </div>
-
-                  {totalQtyAll > 0 && (
-                    <p className="text-2xs text-white/70 mt-1.5 font-semibold border-t border-white/20 pt-1.5 truncate">
-                      {fmt(Math.abs(fin.profit / totalQtyAll))}/pc
-                    </p>
-                  )}
+          <div className="bg-white border border-slate-200 rounded-xl px-4 py-2.5 mb-3 shadow-sm">
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
+              {items.map(it => (
+                <div key={it.label} className="flex items-center gap-1.5 min-w-0">
+                  <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${it.dot}`} />
+                  <span className="text-2xs text-slate-400 font-medium uppercase tracking-wide whitespace-nowrap">{it.label}</span>
+                  <span className={`text-xs sm:text-sm font-bold whitespace-nowrap ${it.cls}`}>{it.val}</span>
+                  {it.sub && <span className="text-2xs text-slate-400 whitespace-nowrap">({it.sub})</span>}
                 </div>
-              );
-            })()}
+              ))}
+            </div>
 
+            {/* Client + invoice inline */}
+            {(project.client_name || project.invoice_id || parseFloat(project.amount_received) > 0) && (
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-1 mt-2 pt-2 border-t border-slate-100">
+                {project.client_name && (
+                  <span className="flex items-center gap-1.5 text-xs text-slate-600 min-w-0">
+                    <User size={11} className="text-slate-400 flex-shrink-0" />
+                    <span className="font-semibold truncate">{project.client_name}</span>
+                    {project.client_company && <span className="text-slate-400 truncate hidden sm:inline">· {project.client_company}</span>}
+                    {project.client_phone && <span className="text-slate-400 hidden md:inline">· {project.client_phone}</span>}
+                  </span>
+                )}
+                {project.invoice_id ? (() => {
+                  const cur = project.invoice_currency;
+                  const fx  = cur && cur !== 'PKR';
+                  const inv = v => fx ? `${cur} ${(parseFloat(v)||0).toLocaleString()}` : pkr(v);
+                  const due = (parseFloat(project.invoice_total)||0) - (parseFloat(project.invoice_amount_paid)||0);
+                  return (
+                    <span className="flex items-center gap-1.5 text-xs min-w-0">
+                      <Receipt size={11} className="text-slate-400 flex-shrink-0" />
+                      <span className="font-mono font-semibold text-indigo-700">{project.invoice_number}</span>
+                      <span className="text-slate-500">{inv(project.invoice_total)}</span>
+                      {due > 0
+                        ? <span className="font-semibold text-rose-500">Due {inv(due)}</span>
+                        : <span className="font-semibold text-emerald-600">✓ Paid</span>}
+                    </span>
+                  );
+                })() : parseFloat(project.amount_received) > 0 && (
+                  <span className="flex items-center gap-1.5 text-xs">
+                    <Receipt size={11} className="text-slate-400" />
+                    <span className="text-slate-500">Received</span>
+                    <span className="font-semibold text-emerald-600">{fmt(toPKR(project.amount_received, project.currency || 'PKR', currencies))}</span>
+                  </span>
+                )}
+              </div>
+            )}
           </div>
-
-          {/* ── Price per piece row ── */}
-          {totalQtyAll > 0 && (costPcBefore > 0 || costPcAfter > 0) && (
-            <div className="grid grid-cols-2 gap-2 mb-3">
-              <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm flex items-center gap-3 min-w-0">
-                <div className="w-8 h-8 bg-indigo-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <Package size={15} className="text-indigo-500" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-2xs font-semibold text-slate-400 uppercase tracking-wide truncate">Cost/pc · Before Ship</p>
-                  <p className="text-sm sm:text-lg font-bold text-slate-800 mt-0.5 break-all">{fmt(costPcBefore)}</p>
-                  <p className="text-2xs text-slate-400 mt-0.5 truncate">{totalQtyAll.toLocaleString()} pcs</p>
-                </div>
-              </div>
-              <div className="bg-white border border-indigo-200 rounded-xl p-3 shadow-sm flex items-center gap-3 min-w-0">
-                <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <Truck size={15} className="text-indigo-600" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-2xs font-semibold text-indigo-500 uppercase tracking-wide truncate">Cost/pc · After Ship</p>
-                  <p className="text-sm sm:text-lg font-bold text-indigo-700 mt-0.5 break-all">{fmt(costPcAfter)}</p>
-                  <p className="text-2xs text-slate-400 mt-0.5 truncate">+{fmt(fin.shippingTotal / totalQtyAll)}/pc ship</p>
-                </div>
-              </div>
-            </div>
-          )}
-          </>
         );
       })()}
+
+      {/* ── Production pipeline ── */}
+      <StagePipeline stages={project.stages || []} onUpdate={handleStageUpdate} />
 
       {/* Tabs */}
       <div className="flex gap-1 bg-slate-100 p-1 rounded-xl mb-6 overflow-x-auto scrollbar-hide">
@@ -2154,8 +2496,8 @@ function ProjectDetail({ projectId, onBack, clients, invoices, catalogProducts, 
         return (
           <div className="space-y-5">
 
-            {/* ── Row 3: Spending breakdown | Client | Invoice ── */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* ── Spending breakdown ── */}
+            <div className="grid grid-cols-1 gap-4">
 
               {/* Spending breakdown with bars */}
               <div className="bg-white border border-slate-200 rounded-2xl p-4">
@@ -2204,83 +2546,6 @@ function ProjectDetail({ projectId, onBack, clients, invoices, catalogProducts, 
                 )}
               </div>
 
-              {/* Client */}
-              <div className="bg-white border border-slate-200 rounded-2xl p-4">
-                <div className="flex items-center gap-2 mb-4">
-                  <Users size={14} className="text-slate-400" />
-                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Client</p>
-                </div>
-                {project.client_name ? (
-                  <>
-                    <p className="font-semibold text-slate-900">{project.client_name}</p>
-                    {project.client_company  && <p className="text-sm text-slate-500 mt-0.5">{project.client_company}</p>}
-                    {project.client_email    && <p className="text-xs text-slate-400 mt-2">{project.client_email}</p>}
-                    {project.client_phone    && <p className="text-xs text-slate-400">{project.client_phone}</p>}
-                    {project.client_ship_address && (
-                      <div className="mt-3 pt-3 border-t border-slate-100">
-                        <p className="text-xs font-medium text-slate-500 mb-1">Ship To</p>
-                        <p className="text-xs text-slate-600">{project.client_ship_address}</p>
-                        <p className="text-xs text-slate-600">{[project.client_ship_city, project.client_ship_country].filter(Boolean).join(', ')}</p>
-                      </div>
-                    )}
-                  </>
-                ) : <p className="text-sm text-slate-400 italic">No client linked</p>}
-              </div>
-
-              {/* Invoice / manual payment */}
-              <div className="bg-white border border-slate-200 rounded-2xl p-4">
-                <div className="flex items-center gap-2 mb-4">
-                  <Receipt size={14} className="text-slate-400" />
-                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Invoice</p>
-                </div>
-                {project.invoice_id ? (
-                  <>
-                    <div className="flex items-center justify-between">
-                      <p className="font-semibold text-slate-900 font-mono">{project.invoice_number}</p>
-                      {project.invoice_currency && project.invoice_currency !== 'PKR' && (
-                        <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-semibold">{project.invoice_currency}</span>
-                      )}
-                    </div>
-                    <div className="space-y-1.5 mt-3">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-slate-500">Invoice Total</span>
-                        <span className="font-medium">
-                          {project.invoice_currency && project.invoice_currency !== 'PKR'
-                            ? `${project.invoice_currency} ${(parseFloat(project.invoice_total)||0).toLocaleString()}`
-                            : pkr(project.invoice_total)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-slate-500">Amount Paid</span>
-                        <span className="font-semibold text-emerald-600">
-                          {project.invoice_currency && project.invoice_currency !== 'PKR'
-                            ? `${project.invoice_currency} ${(parseFloat(project.invoice_amount_paid)||0).toLocaleString()}`
-                            : pkr(project.invoice_amount_paid)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-slate-500">Balance Due</span>
-                        <span className="font-semibold text-rose-500">
-                          {project.invoice_currency && project.invoice_currency !== 'PKR'
-                            ? `${project.invoice_currency} ${((parseFloat(project.invoice_total)||0)-(parseFloat(project.invoice_amount_paid)||0)).toLocaleString()}`
-                            : pkr((project.invoice_total||0)-(project.invoice_amount_paid||0))}
-                        </span>
-                      </div>
-                      {project.invoice_currency && project.invoice_currency !== 'PKR' && fin.exchangeRate > 1 && (
-                        <div className="pt-1.5 border-t border-slate-100 text-xs text-slate-400">
-                          Converted @ 1 {project.invoice_currency} = {pkr(fin.exchangeRate)}
-                        </div>
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-sm text-slate-400 italic">Manual entry</p>
-                    <p className="text-lg font-bold text-emerald-600 mt-2">{fmt(toPKR(project.amount_received, project.currency || 'PKR', currencies))}</p>
-                    <p className="text-xs text-slate-400">Amount received</p>
-                  </>
-                )}
-              </div>
             </div>
 
             {/* Notes */}
@@ -2304,6 +2569,15 @@ function ProjectDetail({ projectId, onBack, clients, invoices, catalogProducts, 
       {/* ── Products Tab ── */}
       {tab === 'Products' && (
         <div className="space-y-4">
+          <InvoiceSyncBanner project={project} catalogProducts={catalogProducts} onReload={load} onItemsLoaded={setInvoiceNames} />
+          {!addingProduct && project.products.length > 0 && (
+            <div className="flex justify-end">
+              <button onClick={() => setAddingProduct(true)}
+                className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 border border-indigo-200 bg-indigo-50 px-3 py-1.5 rounded-xl hover:bg-indigo-100 transition-colors">
+                <Plus size={13} /> Add Product
+              </button>
+            </div>
+          )}
           {project.products.map(pp => (
             <ProductLine key={pp.id}
               pp={pp}
@@ -2333,34 +2607,22 @@ function ProjectDetail({ projectId, onBack, clients, invoices, catalogProducts, 
         </div>
       )}
 
-      {/* ── Stages Tab ── */}
-      {tab === 'Stages' && (
-        <StagesTab stages={project.stages||[]} onUpdate={handleStageUpdate} />
+      {/* ── Fabrics Tab (project-level bulk materials) ── */}
+      {tab === 'Fabrics' && (
+        <FabricsTab project={project} onReload={load} />
       )}
 
-      {/* ── Boxes Tab ── */}
-      {tab === 'Boxes' && (
-        <BoxesTab project={project} onSave={handleSaveBox} onDelete={handleDeleteBox} onReload={load} onPrint={() => setPrint('packaging')} />
-      )}
-
-      {/* ── Shipping Tab ── */}
+      {/* ── Shipping Tab (boxes + shipping) ── */}
       {tab === 'Shipping' && (
-        <ShippingTab project={project} onReload={load} />
+        <div className="space-y-8">
+          <BoxesTab project={project} onSave={handleSaveBox} onDelete={handleDeleteBox} onReload={load} onPrint={() => setPrint('packaging')} />
+          <ShippingTab project={project} onReload={load} />
+        </div>
       )}
 
-      {/* ── Costs Tab ── */}
+      {/* ── Costs Tab (costs + vendors + workers) ── */}
       {tab === 'Costs' && (
-        <CostsTab project={project} onReload={load} fmt={fmt} view="costs" />
-      )}
-
-      {/* ── Vendors Tab ── */}
-      {tab === 'Vendors' && (
-        <CostsTab project={project} onReload={load} fmt={fmt} view="vendors" />
-      )}
-
-      {/* ── Workers Tab ── */}
-      {tab === 'Workers' && (
-        <CostsTab project={project} onReload={load} fmt={fmt} view="workers" />
+        <CostsTab project={project} onReload={load} fmt={fmt} view="all" />
       )}
 
     </div>
@@ -2620,6 +2882,7 @@ const TASK_PRESETS = [
 ];
 
 function VendorForm({ pv, allVendors, projectProducts = [], onSave, onCancel }) {
+  const totalProjectQty = projectProducts.reduce((s, pp) => s + (parseFloat(pp.total_quantity) || 0), 0);
   const [form, setForm] = useState({
     vendor_id:           pv?.vendor_id           ?? '',
     vendor_name:         pv?.vendor_name         ?? '',
@@ -2629,77 +2892,14 @@ function VendorForm({ pv, allVendors, projectProducts = [], onSave, onCancel }) 
     notes:               pv?.notes               ?? '',
     tasks:               Array.isArray(pv?.tasks) ? pv.tasks : [],
   });
-  const [saving, setSaving]     = useState(false);
-  const [newTaskLabel, setNTL]  = useState('');
-  const [syncing, setSyncing]   = useState(false);
+  const [saving, setSaving]    = useState(false);
+  const [newTaskLabel, setNTL] = useState('');
   const set = (k,v) => setForm(f => ({ ...f, [k]: v }));
-
-  // ── Product lines (multi-product per vendor) ──────────────────────────────
-  // Each line: { id, product_id, label, qty, rate }
-  const initProductLines = () => {
-    // Hydrate from existing per_piece tasks if editing
-    if (pv?.tasks?.length) {
-      const pp = pv.tasks.filter(t => t.type === 'per_piece');
-      if (pp.length) return pp.map(t => ({
-        id: t.id, product_id: t.product_id || 'all',
-        label: t.label || '', qty: String(t.qty || ''), rate: String(t.agreed || ''),
-      }));
-    }
-    return [{ id: `pl-${Date.now()}`, product_id: 'all', label: '', qty: '', rate: '' }];
-  };
-  const [productLines, setProductLines] = useState(initProductLines);
-
-  const totalProjectQty = projectProducts.reduce((s, pp) => s + (parseFloat(pp.total_quantity) || 0), 0);
-
-  function addProductLine() {
-    setProductLines(prev => [...prev, { id: `pl-${Date.now()}`, product_id: 'all', label: '', qty: '', rate: '' }]);
-  }
-  function removeProductLine(id) {
-    setProductLines(prev => prev.filter(l => l.id !== id));
-  }
-  function setPlField(id, field, val) {
-    setProductLines(prev => prev.map(l => {
-      if (l.id !== id) return l;
-      if (field === 'product_id') {
-        const autoQty = val === 'all'
-          ? String(totalProjectQty || '')
-          : String(projectProducts.find(p => String(p.id) === String(val))?.total_quantity || '');
-        const autoLabel = val === 'all' ? 'All Products' : (projectProducts.find(p => String(p.id) === String(val))?.product_name || '');
-        return { ...l, product_id: val, qty: autoQty, label: l.label || autoLabel };
-      }
-      return { ...l, [field]: val };
-    }));
-  }
-
-  const productLinesTotal = productLines.reduce((s, l) => s + (parseFloat(l.rate) || 0) * (parseFloat(l.qty) || 0), 0);
-
-  // Invoice-level type toggle (shown when no tasks, legacy lump-sum path)
-  const [invoiceType, setInvoiceType]   = useState('lump_sum'); // 'lump_sum' | 'per_piece'
-  const [invoiceRate, setInvoiceRate]   = useState('');
-  const [invoiceProdId, setInvoiceProdId] = useState('all');
 
   // '__manual__' means user wants to type a name manually
   const [vendorMode, setVendorMode] = useState(
     pv?.vendor_id ? 'catalog' : (pv?.vendor_name ? 'manual' : 'catalog')
   );
-
-  const selectedVendorInfo = vendorMode === 'catalog' && form.vendor_id
-    ? allVendors.find(x => String(x.id) === String(form.vendor_id))
-    : null;
-
-  // Per-piece invoice calculations (when no tasks are used)
-  const invoiceQty = invoiceProdId === 'all'
-    ? totalProjectQty
-    : parseFloat(projectProducts.find(p => String(p.id) === String(invoiceProdId))?.total_quantity || 0);
-  const invoicePerPieceTotal = (parseFloat(invoiceRate) || 0) * invoiceQty;
-
-  // Task total helper: lump_sum → agreed directly; per_piece → agreed × qty
-  function taskAmt(t) {
-    if (t.type === 'per_piece') return (parseFloat(t.agreed) || 0) * (parseFloat(t.qty) || 0);
-    return parseFloat(t.agreed) || 0;
-  }
-  const tasksTotal = form.tasks.reduce((s, t) => s + taskAmt(t), 0);
-  const hasTaskAmt = form.tasks.length > 0;
 
   function pickVendor(vid) {
     if (vid === '__manual__') {
@@ -2709,10 +2909,16 @@ function VendorForm({ pv, allVendors, projectProducts = [], onSave, onCancel }) 
       setVendorMode('catalog');
       const v = allVendors.find(x => String(x.id) === String(vid));
       set('vendor_id', vid);
-      if (v) set('vendor_name', v.name);
-      else   set('vendor_name', '');
+      set('vendor_name', v ? v.name : '');
     }
   }
+
+  // Each task: { id, label, type: 'lump_sum' | 'per_piece', agreed, qty }
+  function taskAmt(t) {
+    if (t.type === 'per_piece') return (parseFloat(t.agreed) || 0) * (parseFloat(t.qty) || 0);
+    return parseFloat(t.agreed) || 0;
+  }
+  const tasksTotal = form.tasks.reduce((s, t) => s + taskAmt(t), 0);
 
   function addTask(label) {
     const l = (label || newTaskLabel).trim();
@@ -2720,389 +2926,124 @@ function VendorForm({ pv, allVendors, projectProducts = [], onSave, onCancel }) 
     setForm(f => ({
       ...f,
       tasks: [...f.tasks, {
-        id:         `t-${Date.now()}`,
-        label:      l,
-        type:       'lump_sum',   // 'lump_sum' | 'per_piece'
-        agreed:     '',           // lump sum total OR per-piece rate
-        qty:        String(totalProjectQty || ''),
-        cost_key:   '',
-        product_id: 'all',        // 'all' or specific product id for per-piece tasks
+        id: `t-${Date.now()}`, label: l, type: 'lump_sum',
+        agreed: '', qty: String(totalProjectQty || ''), cost_key: '', product_id: 'all',
       }],
     }));
     setNTL('');
   }
-
   function setTaskField(id, field, val) {
-    setForm(f => ({
-      ...f,
-      tasks: f.tasks.map(t => t.id === id ? { ...t, [field]: val } : t),
-    }));
+    setForm(f => ({ ...f, tasks: f.tasks.map(t => t.id === id ? { ...t, [field]: val } : t) }));
   }
-
-  // When user picks a product for a per-piece task, auto-fill qty from that product
-  function setTaskProduct(id, pid) {
-    const qty = pid === 'all'
-      ? String(totalProjectQty || '')
-      : String(projectProducts.find(p => String(p.id) === String(pid))?.total_quantity || '');
-    setForm(f => ({
-      ...f,
-      tasks: f.tasks.map(t => t.id === id ? { ...t, product_id: pid, qty } : t),
-    }));
-  }
-
   function removeTask(id) {
     setForm(f => ({ ...f, tasks: f.tasks.filter(t => t.id !== id) }));
-  }
-
-  // Sync agreed amounts from project product process costs
-  function syncFromProducts() {
-    if (!projectProducts.length || !form.tasks.length) return;
-    setSyncing(true);
-    // Collect per-piece rates per cost key (averaged when multiple products)
-    const costMap = {};
-    projectProducts.forEach(pp => {
-      (pp.costs || []).forEach(c => {
-        if (!costMap[c.key]) costMap[c.key] = { key: c.key, label: c.label, rate: 0, count: 0 };
-        costMap[c.key].rate  += parseFloat(c.cost_per_piece) || 0;
-        costMap[c.key].count += 1;
-      });
-    });
-    const allCosts = Object.values(costMap).map(c => ({ ...c, rate: c.count > 1 ? c.rate / c.count : c.rate }));
-
-    setForm(f => ({
-      ...f,
-      tasks: f.tasks.map(t => {
-        const match = allCosts.find(c =>
-          c.label.toLowerCase().includes(t.label.toLowerCase()) ||
-          t.label.toLowerCase().includes(c.label.toLowerCase()) ||
-          (t.cost_key && c.key === t.cost_key)
-        );
-        if (!match) return t;
-        // For per_piece tasks → fill the per-piece rate; for lump_sum → fill the total
-        if (t.type === 'per_piece') {
-          return { ...t, agreed: String(match.rate), qty: String(totalProjectQty || t.qty), cost_key: match.key };
-        }
-        return { ...t, agreed: String(match.rate * totalProjectQty), cost_key: match.key };
-      }),
-    }));
-    setSyncing(false);
   }
 
   async function save() {
     if (!form.vendor_name.trim()) return;
     setSaving(true);
     try {
-      // Merge product lines into per_piece tasks, then append any manual lump-sum tasks
-      const plTasks = productLines
-        .filter(l => parseFloat(l.rate) > 0)
-        .map(l => ({
-          id:         l.id,
-          label:      l.label || (l.product_id === 'all' ? 'All Products' : (projectProducts.find(p => String(p.id) === String(l.product_id))?.product_name || 'Product')),
-          type:       'per_piece',
-          agreed:     String(l.rate),
-          qty:        String(l.qty),
-          product_id: l.product_id,
-          cost_key:   '',
-        }));
-      // Keep manual lump-sum tasks (those not coming from product lines)
-      const lumpTasks = form.tasks.filter(t => t.type !== 'per_piece');
-      const allTasks  = [...plTasks, ...lumpTasks];
-      const finalAmount = allTasks.reduce((s, t) => {
-        if (t.type === 'per_piece') return s + (parseFloat(t.agreed)||0)*(parseFloat(t.qty)||0);
-        return s + (parseFloat(t.agreed)||0);
-      }, 0) || (parseFloat(form.invoice_amount) || 0);
-      await onSave({ ...form, tasks: allTasks, invoice_amount: finalAmount });
+      const finalAmount = tasksTotal || (parseFloat(form.invoice_amount) || 0);
+      await onSave({ ...form, invoice_amount: finalAmount });
     } finally { setSaving(false); }
   }
 
   return (
     <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-4">
 
-      {/* ── Vendor selector ── */}
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Vendor</label>
-          <select
-            value={vendorMode === 'manual' ? '__manual__' : (form.vendor_id || '')}
-            onChange={e => pickVendor(e.target.value)}
-            className={selectCls}>
-            <option value="">— Select Vendor —</option>
-            {allVendors.map(v => <option key={v.id} value={v.id}>{v.name} ({v.type})</option>)}
-            <option value="__manual__">✏ Add New (manual)</option>
-          </select>
-        </div>
-        <div>
-          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Description</label>
-          <input value={form.service_description} onChange={e => set('service_description', e.target.value)}
-            className={inputCls} placeholder="e.g. Stitching + Cutting" />
-        </div>
-      </div>
-
-      {/* Manual name entry */}
-      {vendorMode === 'manual' && (
-        <div>
-          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Vendor Name *</label>
+      {/* ── Vendor ── */}
+      <div>
+        <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Vendor *</label>
+        <select
+          value={vendorMode === 'manual' ? '__manual__' : (form.vendor_id || '')}
+          onChange={e => pickVendor(e.target.value)}
+          className={selectCls}>
+          <option value="">— Select Vendor —</option>
+          {allVendors.map(v => <option key={v.id} value={v.id}>{v.name} ({v.type})</option>)}
+          <option value="__manual__">✏ Add New (manual)</option>
+        </select>
+        {vendorMode === 'manual' && (
           <input value={form.vendor_name} onChange={e => set('vendor_name', e.target.value)}
-            className={inputCls} placeholder="Enter vendor name" autoFocus />
-        </div>
-      )}
-
-      {/* Read-only vendor info */}
-      {selectedVendorInfo && (selectedVendorInfo.phone || selectedVendorInfo.bank_details) && (
-        <div className="bg-white border border-slate-100 rounded-xl px-3 py-2 space-y-1">
-          {selectedVendorInfo.phone && (
-            <p className="text-xs text-slate-500 flex items-center gap-1"><Phone size={10} className="text-slate-400" /> {selectedVendorInfo.phone}</p>
-          )}
-          {selectedVendorInfo.bank_details && (
-            <p className="text-xs text-slate-400 whitespace-pre-wrap leading-tight">{selectedVendorInfo.bank_details}</p>
-          )}
-        </div>
-      )}
-
-      {/* ── Products Ordered (multi-product per vendor) ── */}
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-        <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-100 bg-slate-50">
-          <div className="flex items-center gap-2">
-            <Package size={13} className="text-indigo-500" />
-            <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Products Ordered</span>
-            <span className="text-2xs bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded-full font-semibold">{productLines.length}</span>
-          </div>
-          {productLinesTotal > 0 && (
-            <span className="text-xs font-bold text-indigo-700">Total: ₨{Math.round(productLinesTotal).toLocaleString()}</span>
-          )}
-        </div>
-
-        {/* Header row */}
-        <div className="grid gap-1 px-3 pt-2 pb-1" style={{ gridTemplateColumns: '1fr 72px 88px 80px 28px' }}>
-          <span className="text-2xs font-semibold text-slate-400 uppercase tracking-wider">Product</span>
-          <span className="text-2xs font-semibold text-slate-400 uppercase tracking-wider text-right">Qty</span>
-          <span className="text-2xs font-semibold text-slate-400 uppercase tracking-wider text-right">Rate ₨/pc</span>
-          <span className="text-2xs font-semibold text-slate-400 uppercase tracking-wider text-right">Total</span>
-          <span />
-        </div>
-
-        <div className="divide-y divide-slate-50 px-3 pb-2 space-y-1">
-          {productLines.map(l => {
-            const lineTotal = (parseFloat(l.rate)||0) * (parseFloat(l.qty)||0);
-            return (
-              <div key={l.id} className="grid gap-1 pt-1.5" style={{ gridTemplateColumns: '1fr 72px 88px 80px 28px' }}>
-                <select
-                  value={l.product_id}
-                  onChange={e => setPlField(l.id, 'product_id', e.target.value)}
-                  className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100 bg-white cursor-pointer">
-                  <option value="all">All Products ({totalProjectQty.toLocaleString()} pcs)</option>
-                  {projectProducts.map(pp => (
-                    <option key={pp.id} value={String(pp.id)}>
-                      {pp.product_name} ({(parseFloat(pp.total_quantity)||0).toLocaleString()} pcs)
-                    </option>
-                  ))}
-                  <option value="custom">Custom / Other</option>
-                </select>
-                <input
-                  type="number" min="0"
-                  value={l.qty}
-                  onChange={e => setPlField(l.id, 'qty', e.target.value)}
-                  placeholder="Qty"
-                  className="text-right border border-slate-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100 bg-white"
-                />
-                <input
-                  type="number" min="0"
-                  value={l.rate}
-                  onChange={e => setPlField(l.id, 'rate', e.target.value)}
-                  placeholder="0.00"
-                  className="text-right border border-slate-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100 bg-white"
-                />
-                <span className={`text-xs font-bold self-center text-right ${lineTotal > 0 ? 'text-slate-800' : 'text-slate-300'}`}>
-                  {lineTotal > 0 ? `₨${Math.round(lineTotal).toLocaleString()}` : '—'}
-                </span>
-                <button type="button" onClick={() => removeProductLine(l.id)}
-                  className="self-center text-slate-300 hover:text-rose-500 transition-colors justify-self-center">
-                  <X size={13} />
-                </button>
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="px-3 pb-3">
-          <button type="button" onClick={addProductLine}
-            className="flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-800 font-semibold transition-colors">
-            <Plus size={12} /> Add Another Product
-          </button>
-        </div>
-
-        {productLinesTotal > 0 && (
-          <div className="flex items-center justify-between px-3 py-2 bg-indigo-50 border-t border-indigo-100">
-            <span className="text-xs text-indigo-600 font-semibold">Products Total</span>
-            <span className="text-sm font-bold text-indigo-700">₨{Math.round(productLinesTotal).toLocaleString()}</span>
-          </div>
+            className={`${inputCls} mt-2`} placeholder="Enter vendor name" autoFocus />
         )}
       </div>
 
-      {/* ── Tasks Section ── */}
+      {/* ── Tasks: name + per-piece or total ── */}
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-        <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-100">
-          <div className="flex items-center gap-2">
-            <Tag size={13} className="text-indigo-500" />
-            <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Tasks / Processes</span>
-            {form.tasks.length > 0 && (
-              <span className="text-2xs bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded-full font-semibold">
-                {form.tasks.length}
-              </span>
-            )}
-          </div>
-          {form.tasks.length > 0 && projectProducts.length > 0 && (
-            <button
-              type="button"
-              onClick={syncFromProducts}
-              disabled={syncing}
-              className="flex items-center gap-1 text-2xs text-violet-600 bg-violet-50 border border-violet-200 px-2 py-1 rounded-lg hover:bg-violet-100 font-semibold transition-colors"
-            >
-              <Wand2 size={10} /> Sync from Products
-            </button>
+        <div className="flex items-center gap-2 px-3 py-2.5 border-b border-slate-100">
+          <Tag size={13} className="text-indigo-500" />
+          <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Tasks</span>
+          {form.tasks.length > 0 && (
+            <span className="text-2xs bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded-full font-semibold">{form.tasks.length}</span>
           )}
         </div>
 
-        {/* Task rows */}
         {form.tasks.length > 0 && (
           <div className="divide-y divide-slate-50">
             {form.tasks.map(t => {
               const isPerPiece = t.type === 'per_piece';
               const lineTotal  = taskAmt(t);
               return (
-                <div key={t.id} className="px-3 py-2.5 space-y-2">
-                  {/* Row 1: label + type toggle + delete */}
-                  <div className="flex items-center gap-2">
-                    <input
-                      value={t.label}
-                      onChange={e => setTaskField(t.id, 'label', e.target.value)}
-                      className="flex-1 text-sm border-0 bg-transparent outline-none text-slate-800 font-medium placeholder:text-slate-400 min-w-0"
-                      placeholder="Task name"
-                    />
-                    {/* Type toggle pills */}
-                    <div className="flex rounded-lg border border-slate-200 overflow-hidden flex-shrink-0 text-2xs font-semibold">
-                      <button
-                        type="button"
-                        onClick={() => setTaskField(t.id, 'type', 'lump_sum')}
-                        title="Fixed lump-sum amount"
-                        className={`px-2.5 py-1.5 transition-colors ${!isPerPiece ? 'bg-indigo-600 text-white' : 'bg-white text-slate-400 hover:bg-slate-50'}`}
-                      >
-                        Lump Sum
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setTaskField(t.id, 'type', 'per_piece');
-                          // auto-fill qty from product if not already set
-                          if (!t.qty || t.qty === '0') {
-                            setTaskField(t.id, 'qty', String(totalProjectQty || ''));
-                          }
-                        }}
-                        title="Rate per piece × quantity"
-                        className={`px-2.5 py-1.5 transition-colors border-l border-slate-200 ${isPerPiece ? 'bg-indigo-600 text-white' : 'bg-white text-slate-400 hover:bg-slate-50'}`}
-                      >
-                        Per Piece
-                      </button>
-                    </div>
-                    <button type="button" onClick={() => removeTask(t.id)}
-                      className="text-slate-300 hover:text-rose-500 transition-colors flex-shrink-0">
-                      <X size={14} />
+                <div key={t.id} className="px-3 py-2.5 flex items-center gap-2 flex-wrap">
+                  <input
+                    value={t.label}
+                    onChange={e => setTaskField(t.id, 'label', e.target.value)}
+                    className="flex-1 text-sm border-0 bg-transparent outline-none text-slate-800 font-medium placeholder:text-slate-400 min-w-[120px]"
+                    placeholder="Task name"
+                  />
+                  {/* Per piece / total toggle */}
+                  <div className="flex rounded-lg border border-slate-200 overflow-hidden flex-shrink-0 text-2xs font-semibold">
+                    <button type="button" onClick={() => setTaskField(t.id, 'type', 'lump_sum')}
+                      className={`px-2.5 py-1.5 transition-colors ${!isPerPiece ? 'bg-indigo-600 text-white' : 'bg-white text-slate-400 hover:bg-slate-50'}`}>
+                      Total
+                    </button>
+                    <button type="button"
+                      onClick={() => {
+                        setTaskField(t.id, 'type', 'per_piece');
+                        if (!t.qty || t.qty === '0') setTaskField(t.id, 'qty', String(totalProjectQty || ''));
+                      }}
+                      className={`px-2.5 py-1.5 transition-colors border-l border-slate-200 ${isPerPiece ? 'bg-indigo-600 text-white' : 'bg-white text-slate-400 hover:bg-slate-50'}`}>
+                      Per Piece
                     </button>
                   </div>
-
-                  {/* Row 2: amount inputs */}
                   {isPerPiece ? (
-                    <div className="space-y-1.5 pl-0.5">
-                      {/* Product selector (only shown when project has products) */}
-                      {projectProducts.length > 0 && (
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-2xs text-slate-400 whitespace-nowrap flex-shrink-0">Product:</span>
-                          <select
-                            value={t.product_id || 'all'}
-                            onChange={e => setTaskProduct(t.id, e.target.value)}
-                            className="flex-1 border border-slate-200 rounded-lg px-2 py-1 text-xs outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100 bg-white cursor-pointer min-w-0"
-                          >
-                            <option value="all">All Products ({totalProjectQty.toLocaleString()} pcs)</option>
-                            {projectProducts.map(pp => (
-                              <option key={pp.id} value={String(pp.id)}>
-                                {pp.product_name} ({(parseFloat(pp.total_quantity)||0).toLocaleString()} pcs)
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
-                      {/* Rate × qty = total */}
-                      <div className="flex items-center gap-2">
-                        {/* Rate per piece */}
-                        <div className="flex items-center gap-1">
-                          <span className="text-2xs text-slate-400 whitespace-nowrap">₨/pc</span>
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            value={t.agreed}
-                            onChange={e => setTaskField(t.id, 'agreed', e.target.value)}
-                            placeholder="Rate"
-                            className="w-24 text-right border border-slate-200 rounded-lg px-2 py-1 text-sm outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100"
-                          />
-                        </div>
-                        <span className="text-slate-300 font-light">×</span>
-                        {/* Quantity (auto-filled from product selector, still editable) */}
-                        <div className="flex items-center gap-1">
-                          <span className="text-2xs text-slate-400">pcs</span>
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            value={t.qty}
-                            onChange={e => setTaskField(t.id, 'qty', e.target.value)}
-                            placeholder={String(totalProjectQty || '0')}
-                            className="w-20 text-right border border-slate-200 rounded-lg px-2 py-1 text-sm outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100"
-                          />
-                        </div>
-                        {/* Computed total */}
-                        {lineTotal > 0 && (
-                          <>
-                            <span className="text-slate-300 font-light">=</span>
-                            <span className="text-sm font-bold text-indigo-700 whitespace-nowrap">
-                              ₨{Math.round(lineTotal).toLocaleString()}
-                            </span>
-                          </>
-                        )}
-                      </div>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <span className="text-2xs text-slate-400">₨/pc</span>
+                      <input type="text" inputMode="decimal" value={t.agreed}
+                        onChange={e => setTaskField(t.id, 'agreed', e.target.value)} placeholder="Rate"
+                        className="w-20 text-right border border-slate-200 rounded-lg px-2 py-1 text-sm outline-none focus:border-indigo-400" />
+                      <span className="text-slate-300">×</span>
+                      <input type="text" inputMode="decimal" value={t.qty}
+                        onChange={e => setTaskField(t.id, 'qty', e.target.value)} placeholder="pcs"
+                        className="w-16 text-right border border-slate-200 rounded-lg px-2 py-1 text-sm outline-none focus:border-indigo-400" />
                     </div>
                   ) : (
-                    <div className="flex items-center gap-1 pl-0.5">
-                      <span className="text-2xs text-slate-400">Total ₨</span>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={t.agreed}
-                        onChange={e => setTaskField(t.id, 'agreed', e.target.value)}
-                        placeholder="0"
-                        className="w-36 text-right border border-slate-200 rounded-lg px-2 py-1 text-sm outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100"
-                      />
-                      {lineTotal > 0 && (
-                        <span className="text-2xs text-slate-400 ml-1">
-                          = ₨{Math.round(lineTotal).toLocaleString()}
-                        </span>
-                      )}
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <span className="text-2xs text-slate-400">₨</span>
+                      <input type="text" inputMode="decimal" value={t.agreed}
+                        onChange={e => setTaskField(t.id, 'agreed', e.target.value)} placeholder="0"
+                        className="w-28 text-right border border-slate-200 rounded-lg px-2 py-1 text-sm outline-none focus:border-indigo-400" />
                     </div>
                   )}
+                  <span className={`text-sm font-bold w-24 text-right flex-shrink-0 ${lineTotal > 0 ? 'text-indigo-700' : 'text-slate-300'}`}>
+                    {lineTotal > 0 ? `₨${Math.round(lineTotal).toLocaleString()}` : '—'}
+                  </span>
+                  <button type="button" onClick={() => removeTask(t.id)}
+                    className="text-slate-300 hover:text-rose-500 transition-colors flex-shrink-0">
+                    <X size={14} />
+                  </button>
                 </div>
               );
             })}
-            {/* Tasks subtotal */}
             <div className="flex items-center justify-between px-3 py-2 bg-indigo-50/60">
-              <span className="text-xs text-indigo-600 font-semibold">Tasks Total</span>
-              <span className="text-sm font-bold text-indigo-700">
-                ₨{Math.round(tasksTotal).toLocaleString()}
-              </span>
+              <span className="text-xs text-indigo-600 font-semibold">Total</span>
+              <span className="text-sm font-bold text-indigo-700">₨{Math.round(tasksTotal).toLocaleString()}</span>
             </div>
           </div>
         )}
 
-        {/* Add task row */}
+        {/* Add task */}
         <div className="px-3 py-2.5 border-t border-slate-100">
-          {/* Preset chips */}
           <div className="flex flex-wrap gap-1 mb-2">
             {TASK_PRESETS.filter(p => !form.tasks.find(t => t.label === p)).slice(0, 8).map(p => (
               <button key={p} type="button" onClick={() => addTask(p)}
@@ -3111,14 +3052,13 @@ function VendorForm({ pv, allVendors, projectProducts = [], onSave, onCancel }) 
               </button>
             ))}
           </div>
-          {/* Custom task input */}
           <div className="flex gap-2">
             <input
               value={newTaskLabel}
               onChange={e => setNTL(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && addTask()}
               className={`${inputCls} flex-1`}
-              placeholder="Custom task name…"
+              placeholder="Task name (e.g. Stitching, Embroidery)…"
             />
             <button type="button" onClick={() => addTask()}
               disabled={!newTaskLabel.trim()}
@@ -3127,13 +3067,6 @@ function VendorForm({ pv, allVendors, projectProducts = [], onSave, onCancel }) 
             </button>
           </div>
         </div>
-      </div>
-
-      {/* Notes */}
-      <div>
-        <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Notes</label>
-        <input value={form.notes} onChange={e => set('notes', e.target.value)}
-          className={inputCls} placeholder="Optional notes" />
       </div>
 
       <div className="flex gap-2">
@@ -3146,7 +3079,6 @@ function VendorForm({ pv, allVendors, projectProducts = [], onSave, onCancel }) 
     </div>
   );
 }
-
 function PaymentForm({ pvId, projectId, onSaved, onCancel }) {
   const [form, setForm]         = useState({ amount: '', method: 'cash', reference: '', notes: '', paid_at: new Date().toISOString().slice(0,10), receipt_url: '' });
   const [saving, setSaving]     = useState(false);
@@ -3240,12 +3172,22 @@ function PaymentForm({ pvId, projectId, onSaved, onCancel }) {
   );
 }
 
-function WorkerForm({ pw, onSave, onCancel }) {
+const WORKER_TASK_PRESETS = ['Cutting', 'Stitching', 'Sublimation', 'Embroidery', 'Screen Print', 'Pressing', 'Packing'];
+
+function WorkerForm({ pw, project, onSave, onCancel }) {
+  const projQty = (project?.products||[]).reduce((s, p) => s + (parseFloat(p.total_quantity)||0), 0);
+  // Recover per-piece breakdown from a previously saved description
+  const ppMatch = /₨([\d.]+)\/pc × ([\d,.]+)/.exec(pw?.task_description || '');
+  const [employees, setEmployees] = useState([]);
   const [form, setForm] = useState({
     worker_type:       pw?.worker_type       ?? 'contract',
+    employee_id:       pw?.employee_id       ?? '',
     worker_name:       pw?.worker_name       ?? '',
     worker_phone:      pw?.worker_phone      ?? '',
-    task_description:  pw?.task_description  ?? '',
+    task_description:  (pw?.task_description ?? '').replace(/\s*\(₨[\d.]+\/pc × [\d,.]+ pcs\)\s*$/, ''),
+    rate_mode:         ppMatch ? 'per_piece' : 'total',
+    rate:              ppMatch ? ppMatch[1] : '',
+    qty:               ppMatch ? ppMatch[2].replace(/,/g, '') : (projQty || ''),
     agreed_amount:     pw?.agreed_amount     ?? '',
     paid_amount:       pw?.paid_amount       ?? '',
     notes:             pw?.notes             ?? '',
@@ -3253,10 +3195,36 @@ function WorkerForm({ pw, onSave, onCancel }) {
   const [saving, setSaving] = useState(false);
   const set = (k,v) => setForm(f => ({ ...f, [k]: v }));
 
+  useEffect(() => {
+    api.get('/employees').then(r => setEmployees(Array.isArray(r.data) ? r.data : [])).catch(() => {});
+  }, []);
+
+  const perPieceTotal = (parseFloat(form.rate)||0) * (parseFloat(form.qty)||0);
+  const agreed = form.rate_mode === 'per_piece' ? perPieceTotal : (parseFloat(form.agreed_amount)||0);
+
+  function pickEmployee(id) {
+    const emp = employees.find(e => String(e.id) === String(id));
+    setForm(f => ({ ...f, employee_id: id, worker_name: emp?.name || f.worker_name, worker_phone: emp?.phone || f.worker_phone }));
+  }
+
   async function save() {
     if (!form.worker_name.trim()) return;
     setSaving(true);
-    try { await onSave(form); } finally { setSaving(false); }
+    try {
+      const desc = form.task_description.trim();
+      await onSave({
+        worker_type:      form.worker_type,
+        employee_id:      form.worker_type === 'employee' ? (form.employee_id || null) : null,
+        worker_name:      form.worker_name,
+        worker_phone:     form.worker_phone,
+        task_description: form.rate_mode === 'per_piece'
+          ? `${desc} (₨${parseFloat(form.rate)||0}/pc × ${(parseFloat(form.qty)||0).toLocaleString()} pcs)`
+          : desc,
+        agreed_amount:    agreed,
+        paid_amount:      form.paid_amount,
+        notes:            form.notes,
+      });
+    } finally { setSaving(false); }
   }
 
   return (
@@ -3270,9 +3238,18 @@ function WorkerForm({ pw, onSave, onCancel }) {
           </select>
         </div>
         <div>
-          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Name *</label>
-          <input value={form.worker_name} onChange={e => set('worker_name', e.target.value)}
-            className={inputCls} placeholder="Worker name" />
+          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">
+            {form.worker_type === 'employee' ? 'Employee *' : 'Name *'}
+          </label>
+          {form.worker_type === 'employee' && employees.length > 0 ? (
+            <select value={form.employee_id || ''} onChange={e => pickEmployee(e.target.value)} className={selectCls}>
+              <option value="">— Select employee —</option>
+              {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+            </select>
+          ) : (
+            <input value={form.worker_name} onChange={e => set('worker_name', e.target.value)}
+              className={inputCls} placeholder="Worker name" />
+          )}
         </div>
         <div>
           <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Phone</label>
@@ -3280,29 +3257,83 @@ function WorkerForm({ pw, onSave, onCancel }) {
             className={inputCls} placeholder="+92 300…" />
         </div>
       </div>
+
+      {/* Task presets + description */}
       <div>
-        <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Task / Description</label>
+        <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Task</label>
+        <div className="flex items-center gap-1.5 flex-wrap mb-2">
+          {WORKER_TASK_PRESETS.map(t => (
+            <button key={t} type="button" onClick={() => set('task_description', t)}
+              className={`text-2xs px-2 py-1 rounded-lg border font-medium transition-colors ${
+                form.task_description === t
+                  ? 'bg-indigo-600 border-indigo-600 text-white'
+                  : 'border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-indigo-600 bg-white'
+              }`}>
+              {t}
+            </button>
+          ))}
+        </div>
         <input value={form.task_description} onChange={e => set('task_description', e.target.value)}
           className={inputCls} placeholder="e.g. Stitching 200 jackets" />
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Agreed Amount (PKR)</label>
-          <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₨</span>
-            <input type="number" min="0" value={form.agreed_amount} onChange={e => set('agreed_amount', e.target.value)}
-              className={`${inputCls} pl-7`} placeholder="0" />
+
+      {/* Rate: per-piece or total */}
+      <div>
+        <div className="flex items-center gap-2 mb-2">
+          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Cost</label>
+          <div className="flex bg-slate-100 rounded-lg p-0.5">
+            {[['total','Total'],['per_piece','Per Piece']].map(([v, l]) => (
+              <button key={v} type="button" onClick={() => set('rate_mode', v)}
+                className={`text-2xs px-2.5 py-1 rounded-md font-semibold transition-all ${
+                  form.rate_mode === v ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'
+                }`}>{l}</button>
+            ))}
           </div>
         </div>
-        <div>
-          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Paid So Far (PKR)</label>
-          <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₨</span>
-            <input type="number" min="0" value={form.paid_amount} onChange={e => set('paid_amount', e.target.value)}
-              className={`${inputCls} pl-7`} placeholder="0" />
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          {form.rate_mode === 'per_piece' ? (
+            <>
+              <div>
+                <label className="text-2xs font-semibold text-slate-400 uppercase tracking-wider mb-1 block">₨ / piece</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₨</span>
+                  <input type="number" min="0" step="0.01" value={form.rate} onChange={e => set('rate', e.target.value)}
+                    className={`${inputCls} pl-7`} placeholder="0" />
+                </div>
+              </div>
+              <div>
+                <label className="text-2xs font-semibold text-slate-400 uppercase tracking-wider mb-1 block">Pieces</label>
+                <input type="number" min="0" value={form.qty} onChange={e => set('qty', e.target.value)}
+                  className={inputCls} placeholder={projQty ? String(projQty) : '0'} />
+              </div>
+              <div className="col-span-2 sm:col-span-1">
+                <label className="text-2xs font-semibold text-slate-400 uppercase tracking-wider mb-1 block">Agreed Total</label>
+                <div className="px-3 py-2 bg-indigo-50 border border-indigo-100 rounded-xl text-sm font-bold text-indigo-700">
+                  {pkr(perPieceTotal)}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div>
+              <label className="text-2xs font-semibold text-slate-400 uppercase tracking-wider mb-1 block">Agreed Amount (PKR)</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₨</span>
+                <input type="number" min="0" value={form.agreed_amount} onChange={e => set('agreed_amount', e.target.value)}
+                  className={`${inputCls} pl-7`} placeholder="0" />
+              </div>
+            </div>
+          )}
+          <div>
+            <label className="text-2xs font-semibold text-slate-400 uppercase tracking-wider mb-1 block">Paid So Far (PKR)</label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₨</span>
+              <input type="number" min="0" value={form.paid_amount} onChange={e => set('paid_amount', e.target.value)}
+                className={`${inputCls} pl-7`} placeholder="0" />
+            </div>
           </div>
         </div>
       </div>
+
       <div className="flex gap-2">
         <button onClick={save} disabled={saving || !form.worker_name.trim()}
           className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50">
@@ -4001,8 +4032,10 @@ function CostsTab({ project, onReload, fmt = pkr, view = 'all' }) {
   return (
     <div className="space-y-8">
 
-      {/* ── Product Costs Payment Summary ── */}
-      {(view === 'all' || view === 'costs') && products.length > 0 && (
+      {/* ── Product Costs Payment Summary — legacy per-product costs only ── */}
+      {(view === 'all' || view === 'costs') && products.some(pp =>
+        (pp.fabrics||[]).length > 0 || (pp.costs||[]).length > 0 || (pp.external_costs||[]).length > 0
+      ) && (
         <div>
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
@@ -4356,47 +4389,81 @@ function CostsTab({ project, onReload, fmt = pkr, view = 'all' }) {
         </div>
       )}
 
-      {/* ── Summary bar ── */}
-      {(view === 'all' || view === 'costs') && <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-2xl p-5 text-white">
-        <p className="text-2xs font-bold uppercase tracking-widest text-slate-400 mb-4">Project Cost Breakdown</p>
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
-          {[
-            { label: 'Materials + Process', total: grandProductCost,  paid: grandProductPaidRaw, color: 'text-indigo-300' },
-            { label: 'Vendors',             total: totalVendorBilled,  paid: totalVendorPaid,     color: 'text-violet-300' },
-            { label: 'Workers',             total: totalWorkerAgreed,  paid: totalWorkerPaid,     color: 'text-blue-300'   },
-            { label: 'Extra Costs',         total: extraCostTotal,     paid: extraCostTotal,      color: 'text-orange-300' },
-            { label: 'TOTAL',               total: grandTotal,         paid: grandTotalPaid,      color: 'text-white', bold: true },
-          ].map(s => (
-            <div key={s.label} className={s.bold ? 'border-t sm:border-t-0 sm:border-l border-white/10 pt-3 sm:pt-0 sm:pl-4 col-span-2 sm:col-span-1' : ''}>
-              <p className={`text-2xs font-semibold uppercase tracking-wider mb-1 ${s.bold ? 'text-slate-300' : 'text-slate-400'}`}>{s.label}</p>
-              <p className={`font-bold break-all ${s.bold ? 'text-lg text-white' : 'text-sm'} ${s.color}`}>{fmt(s.total)}</p>
-              <p className="text-2xs text-emerald-400 mt-0.5">Paid: {fmt(s.paid)}</p>
-              {s.total - s.paid > 0
-                ? <p className="text-2xs text-rose-400">Due: {fmt(s.total - s.paid)}</p>
-                : s.total > 0 && <p className="text-2xs text-emerald-400">✓ Settled</p>
-              }
+      {/* ── Cost breakdown card ── */}
+      {(view === 'all' || view === 'costs') && (() => {
+        const projFabrics = Array.isArray(project.fabrics) ? project.fabrics : [];
+        const pfTotal = projFabrics.reduce((s, f) => s + (parseFloat(f.qty)||0) * (parseFloat(f.rate)||0), 0);
+        const pfPaid  = projFabrics.reduce((s, f) => s + (parseFloat(f.amount_paid)||0), 0);
+        const bdTotal = grandTotal + pfTotal;
+        const bdPaid  = grandTotalPaid + pfPaid;
+        const rows = [
+          pfTotal > 0          && { label: 'Bulk Fabrics',    icon: Package, total: pfTotal,           paid: pfPaid,              chip: 'bg-blue-100 text-blue-600',     bar: 'bg-blue-500' },
+          grandProductCost > 0 && { label: 'Product Costs',   icon: Shirt,   total: grandProductCost,  paid: grandProductPaidRaw, chip: 'bg-indigo-100 text-indigo-600', bar: 'bg-indigo-500' },
+          totalVendorBilled > 0 && { label: 'Vendors',        icon: Store,   total: totalVendorBilled, paid: totalVendorPaid,     chip: 'bg-violet-100 text-violet-600', bar: 'bg-violet-500' },
+          totalWorkerAgreed > 0 && { label: 'Process / Workers', icon: User, total: totalWorkerAgreed, paid: totalWorkerPaid,     chip: 'bg-sky-100 text-sky-600',       bar: 'bg-sky-500' },
+          extraCostTotal > 0    && { label: 'Extra Costs',    icon: Receipt, total: extraCostTotal,    paid: extraCostTotal,      chip: 'bg-amber-100 text-amber-600',   bar: 'bg-amber-500' },
+        ].filter(Boolean);
+        return (
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 bg-slate-100 rounded-lg flex items-center justify-center flex-shrink-0"><Banknote size={13} className="text-slate-500" /></div>
+                <p className="text-xs font-bold text-slate-700 uppercase tracking-wider">Cost Breakdown</p>
+              </div>
+              <div className="text-right">
+                <span className="text-lg font-black text-slate-900">{fmt(bdTotal)}</span>
+                <span className="text-xs ml-2">
+                  <span className="text-emerald-600 font-semibold">Paid {fmt(bdPaid)}</span>
+                  {bdTotal - bdPaid > 0
+                    ? <span className="text-rose-500 font-semibold ml-1.5">· Due {fmt(bdTotal - bdPaid)}</span>
+                    : bdTotal > 0 && <span className="text-emerald-500 font-semibold ml-1.5">✓ Settled</span>}
+                </span>
+              </div>
             </div>
-          ))}
-        </div>
 
-        {/* Cost per Piece — project-wide */}
-        {totalProjectQty > 0 && grandTotal > 0 && (
-          <div className="border-t border-white/10 pt-4 flex items-center justify-between">
-            <div>
-              <p className="text-2xs font-bold uppercase tracking-widest text-slate-400">
-                Average Cost per Piece
-              </p>
-              <p className="text-xs text-slate-500 mt-0.5">
-                {fmt(grandTotal)} ÷ {totalProjectQty.toLocaleString()} total pcs
-                {products.length > 1 && ' (all products combined)'}
-              </p>
-            </div>
-            <div className="text-right">
-              <p className="text-xl sm:text-3xl font-black text-white break-all">{fmt(grandTotal / totalProjectQty)}</p>
-            </div>
+            {rows.length === 0 ? (
+              <p className="text-xs text-slate-400 italic">No costs yet — add bulk fabrics, vendors, workers or extra costs.</p>
+            ) : (
+              <div className="space-y-3">
+                {rows.map(r => {
+                  const Icon = r.icon;
+                  const pct  = r.total > 0 ? Math.min(100, (r.paid / r.total) * 100) : 0;
+                  const due  = r.total - r.paid;
+                  return (
+                    <div key={r.label} className="flex items-center gap-3">
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${r.chip}`}><Icon size={13} /></div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between text-xs mb-1">
+                          <span className="font-semibold text-slate-600">{r.label}</span>
+                          <span className="font-bold text-slate-800">{fmt(r.total)}</span>
+                        </div>
+                        <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full transition-all ${r.bar}`} style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                      <div className="w-24 text-right flex-shrink-0">
+                        {due > 0
+                          ? <span className="text-2xs text-rose-500 font-semibold">Due {fmt(due)}</span>
+                          : <span className="text-2xs text-emerald-500 font-semibold">✓ Paid</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {totalProjectQty > 0 && bdTotal > 0 && (
+              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                <span className="text-2xs font-semibold uppercase tracking-wider text-slate-400">Avg Cost / Piece</span>
+                <span className="text-base font-black text-indigo-700">
+                  {fmt(bdTotal / totalProjectQty)}
+                  <span className="text-2xs font-normal text-slate-400 ml-1.5">÷ {totalProjectQty.toLocaleString()} pcs</span>
+                </span>
+              </div>
+            )}
           </div>
-        )}
-      </div>}
+        );
+      })()}
 
       {/* ── Vendors section ── */}
       {(view === 'all' || view === 'vendors') && <div>
@@ -4639,8 +4706,9 @@ function CostsTab({ project, onReload, fmt = pkr, view = 'all' }) {
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <User size={16} className="text-slate-500" />
-            <h3 className="font-semibold text-slate-900">Workers</h3>
+            <h3 className="font-semibold text-slate-900">Process / Workers</h3>
             <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{workers.length}</span>
+            <span className="text-2xs text-slate-400 hidden sm:inline">cutting · stitching · sublimation · embroidery…</span>
           </div>
           {!addingWorker && !editWorker && (
             <button onClick={() => setAddingW(true)}
@@ -4652,7 +4720,7 @@ function CostsTab({ project, onReload, fmt = pkr, view = 'all' }) {
 
         {(addingWorker && !editWorker) && (
           <div className="mb-4">
-            <WorkerForm pw={null} onSave={saveWorker} onCancel={() => setAddingW(false)} />
+            <WorkerForm pw={null} project={project} onSave={saveWorker} onCancel={() => setAddingW(false)} />
           </div>
         )}
 
@@ -4673,7 +4741,7 @@ function CostsTab({ project, onReload, fmt = pkr, view = 'all' }) {
                 <div key={pw.id} className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
                   {isEditing ? (
                     <div className="p-4">
-                      <WorkerForm pw={pw} onSave={saveWorker} onCancel={() => setEditW(null)} />
+                      <WorkerForm pw={pw} project={project} onSave={saveWorker} onCancel={() => setEditW(null)} />
                     </div>
                   ) : (
                     <div className="flex items-start gap-3 px-5 py-4">
@@ -4750,9 +4818,6 @@ function CostsTab({ project, onReload, fmt = pkr, view = 'all' }) {
 function BoxesTab({ project, onSave, onDelete, onReload, onPrint }) {
   const [addingBox, setAddingBox]       = useState(false);
   const [editBox, setEditBox]           = useState(null);
-  const [pcsPerBox, setPcsPerBox]       = useState('');
-  const [autoCreating, setAutoCreating] = useState(false);
-  const [showAutoPanel, setShowAutoPanel] = useState(false);
 
   // Shipped-box force-delete modal state
   const [forceDeleteBox, setForceDeleteBox] = useState(null); // box object
@@ -4776,76 +4841,6 @@ function BoxesTab({ project, onSave, onDelete, onReload, onPrint }) {
     const boxed = alreadyBoxed[ppId]?.[sizeLabel] || 0;
     return Math.max(0, totalQty - boxed);
   };
-
-  // Auto-create boxes: SEQUENTIAL packing — only pack what isn't already in a box
-  async function handleAutoCreate() {
-    const pcs = parseInt(pcsPerBox, 10);
-    if (!pcs || pcs <= 0) return;
-
-    const products = project.products || [];
-
-    // Build a flat ordered queue using REMAINING (unboxed) quantities
-    const queue = [];
-    for (const pp of products) {
-      for (const sz of (pp.sizes || [])) {
-        const total   = parseFloat(sz.qty) || 0;
-        const rem     = remainingQty(pp.id, sz.size, total);
-        if (rem > 0) queue.push({
-          ppId:        pp.id,
-          productName: pp.product_name,
-          size:        sz.size,
-          remaining:   rem,
-        });
-      }
-    }
-
-    const totalUnboxed = queue.reduce((s, q) => s + q.remaining, 0);
-    if (totalUnboxed === 0) return alert('All pieces are already packed in existing boxes.');
-
-    const numBoxes = Math.ceil(totalUnboxed / pcs);
-    if (numBoxes > 500) return alert(`That would create ${numBoxes} boxes — reduce pieces per box.`);
-    if (!window.confirm(
-      `This will create ${numBoxes} box${numBoxes!==1?'es':''} of up to ${pcs} pieces each.\n` +
-      `Packing the remaining ${totalUnboxed} unboxed pieces (existing boxes are kept).\n` +
-      `Sizes are packed sequentially. Continue?`
-    )) return;
-
-    setAutoCreating(true);
-    try {
-      const boxForms = [];
-      let currentBox = {};
-      let boxSpace   = pcs;
-
-      for (const item of queue) {
-        while (item.remaining > 0) {
-          if (boxSpace === 0) {
-            boxForms.push(currentBox);
-            currentBox = {};
-            boxSpace   = pcs;
-          }
-          const take = Math.min(item.remaining, boxSpace);
-          if (!currentBox[item.ppId]) currentBox[item.ppId] = { productName: item.productName, sizes: {} };
-          currentBox[item.ppId].sizes[item.size] = (currentBox[item.ppId].sizes[item.size] || 0) + take;
-          item.remaining -= take;
-          boxSpace       -= take;
-        }
-      }
-      if (Object.keys(currentBox).length > 0) boxForms.push(currentBox);
-
-      for (const box of boxForms) {
-        const contents = Object.entries(box).map(([ppId, data]) => ({
-          project_product_id: Number(ppId),
-          product_name:       data.productName,
-          sizes: Object.entries(data.sizes).map(([size, qty]) => ({ size, qty })),
-        }));
-        await onSave({}, { contents, notes: '' });
-      }
-      setPcsPerBox('');
-      setShowAutoPanel(false);
-    } finally {
-      setAutoCreating(false);
-    }
-  }
 
   async function handleShipToggle(box) {
     await api.put(`/projects/${project.id}/boxes/${box.id}/ship`);
@@ -4882,9 +4877,6 @@ function BoxesTab({ project, onSave, onDelete, onReload, onPrint }) {
   const totalBoxed  = Object.values(alreadyBoxed).reduce((s, szMap) =>
     s + Object.values(szMap).reduce((ss, q) => ss + q, 0), 0);
   const totalLeft   = Math.max(0, totalQty - totalBoxed);
-
-  const pcsNum = parseInt(pcsPerBox, 10) || 0;
-  const previewBoxes = pcsNum > 0 && totalLeft > 0 ? Math.ceil(totalLeft / pcsNum) : 0;
 
   return (
     <div className="space-y-4">
@@ -4928,110 +4920,6 @@ function BoxesTab({ project, onSave, onDelete, onReload, onPrint }) {
         </div>
       )}
 
-      {/* ── Auto-box panel ── */}
-      <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-        <button
-          onClick={() => setShowAutoPanel(p => !p)}
-          className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-slate-50 transition-colors">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 bg-indigo-50 rounded-xl flex items-center justify-center">
-              <Wand2 size={14} className="text-indigo-600" />
-            </div>
-            <div className="text-left">
-              <p className="font-semibold text-slate-900 text-sm">Auto-Create Boxes</p>
-              <p className="text-xs text-slate-400">
-                {totalBoxed > 0
-                  ? `${totalBoxed} pieces already boxed · will pack remaining ${totalLeft}`
-                  : 'Sequential packing — fills one size completely before the next'}
-              </p>
-            </div>
-          </div>
-          {showAutoPanel ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
-        </button>
-
-        {showAutoPanel && (
-          <div className="border-t border-slate-100 px-5 py-4 space-y-4">
-            {/* Remaining qty preview */}
-            {(project.products||[]).length > 0 && (
-              <div className="bg-slate-50 rounded-xl p-3">
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Remaining to Pack</p>
-                <p className="text-2xs text-slate-400 mb-2">Already-boxed sizes are excluded automatically</p>
-                <div className="space-y-2">
-                  {(project.products||[]).map(pp => {
-                    const remSizes = (pp.sizes||[]).map(sz => ({
-                      ...sz,
-                      rem: remainingQty(pp.id, sz.size, parseFloat(sz.qty)||0),
-                    })).filter(sz => sz.rem > 0);
-                    if (!remSizes.length) return (
-                      <div key={pp.id} className="flex items-center gap-2">
-                        <p className="text-xs text-slate-500 font-semibold">{pp.product_name}</p>
-                        <span className="text-2xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full font-semibold">✓ All packed</span>
-                      </div>
-                    );
-                    const pcsN = parseInt(pcsPerBox,10) || 0;
-                    return (
-                      <div key={pp.id}>
-                        <p className="text-xs font-semibold text-slate-600 mb-1.5">{pp.product_name}</p>
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          {remSizes.map((sz, idx) => {
-                            const boxes = pcsN > 0 ? Math.ceil(sz.rem / pcsN) : 0;
-                            return (
-                              <div key={sz.size} className="flex items-center gap-1">
-                                {idx > 0 && <span className="text-slate-300 text-xs">→</span>}
-                                <span className="text-xs bg-white border border-indigo-200 text-indigo-700 px-2.5 py-1 rounded-lg font-semibold shadow-sm">
-                                  {sz.size}: {sz.rem} pcs
-                                  {pcsN > 0 && (
-                                    <span className="text-indigo-400 font-normal ml-1">
-                                      ({boxes} box{boxes!==1?'es':''})
-                                    </span>
-                                  )}
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Input + create */}
-            <div className="flex items-end gap-3">
-              <div className="flex-1">
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Pieces Per Box</label>
-                <input
-                  type="number" min="1" step="1"
-                  value={pcsPerBox}
-                  onChange={e => setPcsPerBox(e.target.value)}
-                  placeholder="e.g. 12"
-                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base font-semibold outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 bg-white"
-                />
-              </div>
-              {previewBoxes > 0 && (
-                <div className="flex-shrink-0 text-center bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-2.5">
-                  <p className="text-2xl font-bold text-indigo-700">{previewBoxes}</p>
-                  <p className="text-2xs text-indigo-400 font-semibold uppercase">New Boxes</p>
-                </div>
-              )}
-              <button
-                onClick={handleAutoCreate}
-                disabled={autoCreating || !pcsPerBox || parseInt(pcsPerBox,10)<=0 || totalLeft===0}
-                className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-colors flex-shrink-0">
-                {autoCreating
-                  ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Creating…</>
-                  : <><Wand2 size={14} /> Create Boxes</>
-                }
-              </button>
-            </div>
-            {totalLeft === 0 && totalQty > 0 && (
-              <p className="text-xs text-emerald-600 font-semibold">✓ All {totalQty} pieces are already packed.</p>
-            )}
-          </div>
-        )}
-      </div>
-
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <p className="text-sm text-slate-500">
           {project.boxes.length} box{project.boxes.length !== 1 ? 'es' : ''} ·{' '}
@@ -5050,15 +4938,15 @@ function BoxesTab({ project, onSave, onDelete, onReload, onPrint }) {
         </div>
       </div>
 
-      {(addingBox || editBox) && (
+      {addingBox && (
         <BoxEditor
-          box={editBox ?? null}
+          box={null}
           project={project}
           onSave={async form => {
-            await onSave(editBox ?? {}, form);
-            setAddingBox(false); setEditBox(null);
+            await onSave({}, form);
+            setAddingBox(false);
           }}
-          onCancel={() => { setAddingBox(false); setEditBox(null); }}
+          onCancel={() => setAddingBox(false)}
         />
       )}
 
@@ -5074,6 +4962,19 @@ function BoxesTab({ project, onSave, onDelete, onReload, onPrint }) {
         const totalPcs = (box.contents||[]).reduce((s,item) =>
           s + (item.sizes||[]).reduce((ss,sz) => ss + (parseFloat(sz.qty)||0), 0), 0);
         const isShipped = !!box.shipped;
+        // Edit in place — the editor replaces the box card so there's no scrolling to the top
+        if (editBox?.id === box.id) return (
+          <BoxEditor
+            key={box.id}
+            box={box}
+            project={project}
+            onSave={async form => {
+              await onSave(box, form);
+              setEditBox(null);
+            }}
+            onCancel={() => setEditBox(null)}
+          />
+        );
         return (
           <div key={box.id} className={`bg-white border rounded-2xl overflow-hidden shadow-sm ${isShipped ? 'border-emerald-200' : 'border-slate-200'}`}>
             {/* Shipped notice at top */}

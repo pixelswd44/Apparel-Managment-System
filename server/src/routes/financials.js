@@ -79,6 +79,17 @@ router.get('/summary', (req, res) => {
     } catch { return sum; }
   }, 0);
 
+  // Project-level bulk fabrics (projects.fabrics)
+  const allProjFabrics = db.prepare(`SELECT fabrics FROM projects WHERE fabrics IS NOT NULL`).all();
+  let projFabricPaid = 0, projFabricCost = 0;
+  for (const p of allProjFabrics) {
+    try {
+      const fabs = JSON.parse(p.fabrics || '[]');
+      projFabricPaid += fabs.reduce((s, f) => s + (parseFloat(f.amount_paid) || 0), 0);
+      projFabricCost += fabs.reduce((s, f) => s + (parseFloat(f.qty)||0) * (parseFloat(f.rate)||0), 0);
+    } catch {}
+  }
+
   const vendorPayments = db.prepare(`SELECT COALESCE(SUM(amount),0) as total FROM project_vendor_payments`).get().total;
   const workerPayments = db.prepare(`SELECT COALESCE(SUM(paid_amount),0) as total FROM project_workers WHERE paid_amount > 0`).get().total;
   // Only the portion of paid_amount NOT already recorded as a project_vendor_payments row —
@@ -94,7 +105,7 @@ router.get('/summary', (req, res) => {
     catch { return sum; }
   }, 0);
 
-  const totalProjectsPaid = productsPaid + vendorPayments + workerPayments + shippingPaid + extraCosts;
+  const totalProjectsPaid = productsPaid + projFabricPaid + vendorPayments + workerPayments + shippingPaid + extraCosts;
 
   // ── Total Projects Expense (Billed/Projected — mirrors fin_total_expense in projects route) ──
   // productCost: fabric rate×qty + process cost_per_piece×qty + external_costs total
@@ -129,7 +140,7 @@ router.get('/summary', (req, res) => {
   const totalShippingBilled = db.prepare(`SELECT COALESCE(SUM(amount),0) as total FROM project_shipping`).get().total;
 
   // totalProjectsExpense = full projected cost (what projects are expected to cost when all paid)
-  const totalProjectsExpense = totalProductCost + totalVendorBilled + totalWorkerAgreed + totalShippingBilled + extraCosts;
+  const totalProjectsExpense = totalProductCost + projFabricCost + totalVendorBilled + totalWorkerAgreed + totalShippingBilled + extraCosts;
 
   const totalExpenses = totalProjectsPaid + businessExpenses + salariesPaid;
 

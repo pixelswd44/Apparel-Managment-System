@@ -85,12 +85,13 @@ function enrichProject(project) {
 
   const extra_costs = JSON.parse(project.extra_costs || '[]');
   const images      = JSON.parse(project.images      || '[]');
+  const fabrics     = JSON.parse(project.fabrics     || '[]');
   const shipping    = db.prepare(`
     SELECT ps.*, v.name as vendor_name, v.phone as vendor_phone, v.contact_name as vendor_contact
     FROM project_shipping ps LEFT JOIN vendors v ON v.id = ps.vendor_id
     WHERE ps.project_id = ? ORDER BY ps.shipping_date DESC, ps.id DESC
   `).all(project.id);
-  return { ...project, products, stages, boxes, vendors, workers, extra_costs, images, shipping };
+  return { ...project, products, stages, boxes, vendors, workers, extra_costs, images, shipping, fabrics };
 }
 
 // ── GET list ──────────────────────────────────────────────────────────────────
@@ -151,6 +152,13 @@ router.get('/', (req, res) => {
                        + extCosts.reduce((s, c) => s + (parseFloat(c.amount_paid)||0), 0);
         } catch {}
       }
+
+      // ── Project-level bulk fabrics (projects.fabrics) ──
+      try {
+        const projFabrics = JSON.parse(row.fabrics || '[]');
+        productCost += projFabrics.reduce((s, f) => s + (parseFloat(f.qty)||0) * (parseFloat(f.rate)||0), 0);
+        fabricPaid  += projFabrics.reduce((s, f) => s + (parseFloat(f.amount_paid)||0), 0);
+      } catch {}
 
       // ── Vendor billed: tasks total, fallback to invoice_amount ──
       const vendorRows = db.prepare('SELECT tasks, invoice_amount FROM project_vendors WHERE project_id = ?').all(row.id);
@@ -213,11 +221,22 @@ router.post('/', (req, res) => {
     const { title, client_id, invoice_id, currency = 'PKR', amount_received = 0, exchange_rate_actual = 0, notes = '' } = req.body;
     if (!title?.trim()) return res.status(400).json({ error: 'Project title is required.' });
 
+    // Tech packs attached to the client flow straight into the project's reference
+    // images, so the cutting/stitching docs have them without re-uploading.
+    let images = [];
+    if (client_id) {
+      try {
+        const c = db.prepare('SELECT tech_packs FROM clients WHERE id = ?').get(client_id);
+        const packs = JSON.parse(c?.tech_packs || '[]');
+        images = packs.filter(p => p && p.filename).map(p => ({ ...p, from_client: true }));
+      } catch { /* ignore */ }
+    }
+
     const result = db.prepare(`
-      INSERT INTO projects (title, client_id, invoice_id, currency, amount_received, exchange_rate_actual, notes, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'planning')
+      INSERT INTO projects (title, client_id, invoice_id, currency, amount_received, exchange_rate_actual, notes, status, images)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'planning', ?)
     `).run(title.trim(), client_id || null, invoice_id || null, currency,
-           parseFloat(amount_received) || 0, parseFloat(exchange_rate_actual) || 0, notes || '');
+           parseFloat(amount_received) || 0, parseFloat(exchange_rate_actual) || 0, notes || '', JSON.stringify(images));
 
     const pid = result.lastInsertRowid;
 
@@ -268,6 +287,40 @@ router.put('/:id', (req, res) => {
 });
 
 // ── Images (tech-packs / reference photos) ────────────────────────────────────
+// ── POST sync tech packs from the linked client into project images ──────────
+router.post('/:id/sync-tech-packs', (req, res) => {
+  try {
+    const p = db.prepare('SELECT id, client_id, images FROM projects WHERE id = ?').get(req.params.id);
+    if (!p) return res.status(404).json({ error: 'Not found' });
+    if (!p.client_id) return res.status(400).json({ error: 'Project has no client linked.' });
+    const c = db.prepare('SELECT tech_packs FROM clients WHERE id = ?').get(p.client_id);
+    let packs = [], images = [];
+    try { packs  = JSON.parse(c?.tech_packs || '[]'); } catch {}
+    try { images = JSON.parse(p.images || '[]'); } catch {}
+    const have = new Set(images.map(i => i.filename));
+    const added = packs.filter(tp => tp?.filename && !have.has(tp.filename)).map(tp => ({ ...tp, from_client: true }));
+    if (added.length) {
+      db.prepare("UPDATE projects SET images=?, updated_at=datetime('now') WHERE id=?")
+        .run(JSON.stringify([...images, ...added]), p.id);
+    }
+    const project = db.prepare(`${PROJECT_WITH_CLIENT} WHERE p.id = ?`).get(p.id);
+    res.json({ added: added.length, project: enrichProject(project) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── PUT project-level bulk fabrics ────────────────────────────────────────────
+router.put('/:id/fabrics', (req, res) => {
+  try {
+    const fabrics = req.body.fabrics || [];
+    const fabricsStr = typeof fabrics === 'string' ? fabrics : JSON.stringify(fabrics);
+    db.prepare("UPDATE projects SET fabrics=?, updated_at=datetime('now') WHERE id=?")
+      .run(fabricsStr, req.params.id);
+    const project = db.prepare(`${PROJECT_WITH_CLIENT} WHERE p.id = ?`).get(req.params.id);
+    if (!project) return res.status(404).json({ error: 'Not found' });
+    res.json(enrichProject(project));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.put('/:id/images', (req, res) => {
   try {
     const images = req.body.images || [];

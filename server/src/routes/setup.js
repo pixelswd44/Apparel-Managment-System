@@ -38,8 +38,6 @@ router.post('/complete', (req, res) => {
       default_currency = 'USD',
       // Admin account
       admin_name, admin_username, admin_email, admin_password,
-      // Plan
-      plan = 'trial',   // 'trial' | 'demo'
     } = req.body;
 
     if (!admin_name || !admin_username || !admin_email || !admin_password)
@@ -82,15 +80,6 @@ router.post('/complete', (req, res) => {
     db.prepare("UPDATE currencies SET is_default = 0").run();
     db.prepare("UPDATE currencies SET is_default = 1 WHERE code = ?").run(default_currency);
 
-    // 5. Set plan & trial expiry
-    const now = new Date();
-    const trialDays = plan === 'demo' ? 14 : 30;
-    const expiresAt = new Date(now.getTime() + trialDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    upsert.run('plan',            plan === 'demo' ? 'demo' : 'trial');
-    upsert.run('plan_status',     'active');
-    upsert.run('plan_expires_at', expiresAt);
-    upsert.run('plan_started_at', now.toISOString().slice(0, 10));
-
     res.json({ success: true, message: 'Setup complete!' });
   } catch (err) {
     if (err.message.includes('UNIQUE'))
@@ -127,11 +116,6 @@ router.post('/demo', (req, res) => {
     const upsert = db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)");
     upsert.run('app_name',        'Apparel CRM — Demo');
     upsert.run('setup_complete',  '1');
-    upsert.run('plan',            'demo');
-    upsert.run('plan_status',     'active');
-    const expires = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
-    upsert.run('plan_expires_at', expires);
-    upsert.run('plan_started_at', new Date().toISOString().slice(0, 10));
 
     // Set USD as default
     db.prepare("UPDATE currencies SET is_default = 0").run();

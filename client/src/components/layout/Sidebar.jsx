@@ -102,8 +102,7 @@ function ChangePasswordModal({ onClose }) {
 }
 
 const ALL_NAV = [
-  { to: '/',           icon: LayoutDashboard, label: 'Overview'   },
-  { to: '/financials', icon: TrendingUp,      label: 'Financials' },
+  { to: '/',           icon: LayoutDashboard, label: 'Dashboard'  },
   { to: '/ledger',     icon: BookMarked,      label: 'Ledger'     },
   { to: '/clients',    icon: Users,           label: 'Clients'    },
   { to: '/quotations', icon: FileText,        label: 'Quotations' },

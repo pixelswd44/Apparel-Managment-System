@@ -272,13 +272,13 @@ export default function Ledger() {
         <PeriodPicker defaultMode="month" onChange={range => setPeriodRange(range)} />
       </div>
 
-      {/* Summary Cards */}
+      {/* Summary Cards — white with colored accent, like the dashboard */}
       {data && (
-        <div className={`grid gap-4 mb-5 ${(monthKey || summary.openingBalance) ? 'grid-cols-2 lg:grid-cols-5' : 'grid-cols-2 lg:grid-cols-4'}`}>
+        <div className={`grid gap-3 mb-5 ${(monthKey || summary.openingBalance) ? 'grid-cols-2 lg:grid-cols-5' : 'grid-cols-2 lg:grid-cols-4'}`}>
 
           {/* Opening Balance card — shown whenever one applies, or a month is being viewed (so it can be set) */}
           {(monthKey || summary.openingBalance) && (
-            <div className="bg-violet-50 border border-violet-200 rounded-2xl p-4">
+            <div className="bg-white border border-slate-200 border-t-4 border-t-violet-500 rounded-2xl p-4 shadow-sm">
               <div className="flex items-center justify-between gap-2 mb-2">
                 <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-violet-600">
                   <Wallet size={13} /> Opening Balance
@@ -327,71 +327,82 @@ export default function Ledger() {
             </div>
           )}
 
-          <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4">
+          <div className="bg-white border border-slate-200 border-t-4 border-t-emerald-500 rounded-2xl p-4 shadow-sm">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-emerald-600 mb-2">
               <TrendingUp size={13} /> Total Income
             </div>
             <p className="text-lg sm:text-2xl font-black text-emerald-700 break-all">{pkr(summary.totalCredit - (summary.openingBalance || 0))}</p>
-            <p className="text-xs text-emerald-500 mt-1">All payments received</p>
+            <p className="text-xs text-slate-500 mt-1">All payments received</p>
           </div>
 
-          <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4">
+          <div className="bg-white border border-slate-200 border-t-4 border-t-rose-500 rounded-2xl p-4 shadow-sm">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-rose-600 mb-2">
               <TrendingDown size={13} /> Total Expenses
             </div>
             <p className="text-lg sm:text-2xl font-black text-rose-700 break-all">{pkr(summary.totalDebit)}</p>
-            <p className="text-xs text-rose-500 mt-1">All costs paid out</p>
+            <p className="text-xs text-slate-500 mt-1">All costs paid out</p>
           </div>
 
-          <div className={`border rounded-2xl p-4 ${(summary.netBalance||0) >= 0 ? 'bg-indigo-50 border-indigo-200' : 'bg-rose-50 border-rose-200'}`}>
+          <div className={`bg-white border border-slate-200 border-t-4 rounded-2xl p-4 shadow-sm ${(summary.netBalance||0) >= 0 ? 'border-t-indigo-500' : 'border-t-rose-500'}`}>
             <div className={`flex items-center gap-2 text-xs font-bold uppercase tracking-wider mb-2 ${(summary.netBalance||0) >= 0 ? 'text-indigo-600' : 'text-rose-600'}`}>
               <Wallet size={13} /> Net Balance
             </div>
             <p className={`text-lg sm:text-2xl font-black break-all ${(summary.netBalance||0) >= 0 ? 'text-indigo-700' : 'text-rose-700'}`}>
               {(summary.netBalance||0) >= 0 ? '' : '−'}{pkr(Math.abs(summary.netBalance||0))}
             </p>
-            <p className="text-xs text-slate-400 mt-1">{summary.openingBalance > 0 ? 'Opening + Income − Expenses' : 'Income − Expenses'}</p>
+            <p className="text-xs text-slate-500 mt-1">{summary.openingBalance > 0 ? 'Opening + Income − Expenses' : 'Income − Expenses'}</p>
           </div>
 
-          {/* Section breakdown mini-card */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-4">
-            <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">By Section</p>
-            <div className="space-y-1">
-              {summary.bySection && Object.entries(summary.bySection).map(([sec, v]) => (
-                <div key={sec} className="flex justify-between text-xs">
-                  <span className={`font-semibold px-1.5 py-0.5 rounded ${SECTION_COLORS[sec] || 'text-slate-600 bg-slate-50'}`}>{sec}</span>
-                  <span className={`font-bold ${v.credit > v.debit ? 'text-emerald-600' : 'text-rose-600'}`}>
-                    {v.credit > 0 ? `+${pkr(v.credit)}` : `−${pkr(v.debit)}`}
-                  </span>
-                </div>
-              ))}
+          {/* Section breakdown — mini bars */}
+          <div className="bg-white border border-slate-200 border-t-4 border-t-slate-300 rounded-2xl p-4 shadow-sm">
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">By Section</p>
+            <div className="space-y-2">
+              {summary.bySection && (() => {
+                const entries = Object.entries(summary.bySection);
+                const max = Math.max(1, ...entries.map(([, v]) => Math.max(v.credit || 0, v.debit || 0)));
+                return entries.map(([sec, v]) => {
+                  const isIn = (v.credit || 0) > (v.debit || 0);
+                  const amt  = isIn ? v.credit : v.debit;
+                  return (
+                    <div key={sec}>
+                      <div className="flex justify-between text-xs mb-0.5">
+                        <span className="font-semibold text-slate-600 truncate">{sec}</span>
+                        <span className={`font-bold whitespace-nowrap ml-2 ${isIn ? 'text-emerald-600' : 'text-rose-600'}`}>{isIn ? '+' : '−'}{pkr(amt)}</span>
+                      </div>
+                      <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full ${isIn ? 'bg-emerald-500' : 'bg-rose-400'}`} style={{ width: `${Math.max(3, (amt / max) * 100)}%` }} />
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
             </div>
           </div>
         </div>
       )}
 
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mb-4">
-        <div className="flex gap-1 bg-slate-100 rounded-xl p-1 overflow-x-auto scrollbar-hide flex-shrink-0">
-          {SECTIONS.map(s => (
-            <button key={s} onClick={() => setSection(s)}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap flex-shrink-0
-                ${section === s ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-              {s}
-            </button>
-          ))}
-        </div>
-        <div className="relative flex-1">
-          <Filter size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Search description, party…"
-            className="pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 w-full" />
-        </div>
-        <span className="text-xs text-slate-400 text-right sm:ml-auto">{rows.length} entries</span>
-      </div>
-
-      {/* Table — desktop */}
+      {/* Table card — filters live in its toolbar */}
       <div className="hidden sm:block bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+        {/* Toolbar */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 px-4 py-3 border-b border-slate-200 bg-white">
+          <div className="flex gap-1 bg-slate-100 rounded-xl p-1 overflow-x-auto scrollbar-hide flex-shrink-0">
+            {SECTIONS.map(s => (
+              <button key={s} onClick={() => setSection(s)}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap flex-shrink-0
+                  ${section === s ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                {s}
+              </button>
+            ))}
+          </div>
+          <div className="relative flex-1">
+            <Filter size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input value={search} onChange={e => setSearch(e.target.value)}
+              placeholder="Search description, party…"
+              className="pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 w-full" />
+          </div>
+          <span className="text-xs text-slate-500 text-right sm:ml-auto whitespace-nowrap">{rows.length} entries</span>
+        </div>
+
         {loading ? (
           <div className="flex items-center justify-center py-24">
             <div className="w-7 h-7 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
@@ -402,51 +413,53 @@ export default function Ledger() {
             <p className="text-slate-400 text-sm mt-1">{search ? 'Try clearing the search' : 'No transactions in this period'}</p>
           </div>
         ) : (
-          <div className="overflow-x-auto" ref={tableRef}>
+          <div className="overflow-x-auto max-h-[70vh] overflow-y-auto" ref={tableRef}>
             <table className="w-full text-sm">
-              <thead>
+              <thead className="sticky top-0 z-10">
                 <tr className="border-b border-slate-200 bg-slate-50">
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap">Date</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">Section</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">Category</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">Description</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">Party</th>
-                  <th className="text-right px-4 py-3 text-xs font-semibold text-emerald-500 uppercase tracking-wider">Credit (In)</th>
-                  <th className="text-right px-4 py-3 text-xs font-semibold text-rose-500 uppercase tracking-wider">Debit (Out)</th>
-                  <th className="text-right px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">Balance</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">Date</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Entry</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Party</th>
+                  <th className="text-right px-4 py-3 text-xs font-bold text-emerald-600 uppercase tracking-wider">In</th>
+                  <th className="text-right px-4 py-3 text-xs font-bold text-rose-600 uppercase tracking-wider">Out</th>
+                  <th className="text-right px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Balance</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {rows.map((e, i) => (
-                  <tr key={i} className="hover:bg-slate-50/60 transition-colors">
-                    <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{fmtD(e.date)}</td>
-                    <td className="px-4 py-3">
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${SECTION_COLORS[e.section] || 'text-slate-600 bg-slate-100'}`}>
-                        {e.section}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-600">{e.category}</td>
-                    <td className="px-4 py-3 text-sm text-slate-800 font-medium max-w-xs truncate">{e.description}</td>
-                    <td className="px-4 py-3 text-xs text-slate-500 max-w-[140px] truncate">{e.party || '—'}</td>
-                    <td className="px-4 py-3 text-right">
-                      {e.credit > 0 ? <span className="font-bold text-emerald-600">{pkr(e.credit)}</span> : <span className="text-slate-300">—</span>}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {e.debit > 0 ? <span className="font-bold text-rose-500">{pkr(e.debit)}</span> : <span className="text-slate-300">—</span>}
-                    </td>
-                    <td className={`px-4 py-3 text-right font-black ${e.balance >= 0 ? 'text-indigo-700' : 'text-rose-600'}`}>
-                      {e.balance >= 0 ? '' : '−'}{pkr(Math.abs(e.balance))}
-                    </td>
-                  </tr>
-                ))}
+                {rows.map((e, i) => {
+                  const dot = (SECTION_COLORS[e.section] || 'text-slate-500').split(' ')[0].replace('text-', 'bg-');
+                  return (
+                    <tr key={i} className={`hover:bg-indigo-50/40 transition-colors ${i % 2 ? 'bg-slate-50/40' : ''}`}>
+                      <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap tabular-nums">{fmtD(e.date)}</td>
+                      <td className="px-4 py-3 max-w-md">
+                        <p className="text-sm text-slate-800 font-medium truncate">{e.description}</p>
+                        <p className="text-xs text-slate-500 flex items-center gap-1.5 mt-0.5 truncate">
+                          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dot}`} />
+                          <span className={`font-semibold ${(SECTION_COLORS[e.section] || 'text-slate-500').split(' ')[0]}`}>{e.section}</span>
+                          {e.category && e.category !== e.section && <><span className="text-slate-300">·</span><span>{e.category}</span></>}
+                        </p>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-slate-600 max-w-[160px] truncate">{e.party || <span className="text-slate-300">—</span>}</td>
+                      <td className="px-4 py-3 text-right tabular-nums">
+                        {e.credit > 0 ? <span className="font-bold text-emerald-600">+{pkr(e.credit)}</span> : <span className="text-slate-200">—</span>}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums">
+                        {e.debit > 0 ? <span className="font-bold text-rose-500">−{pkr(e.debit)}</span> : <span className="text-slate-200">—</span>}
+                      </td>
+                      <td className={`px-4 py-3 text-right font-black tabular-nums ${e.balance >= 0 ? 'text-slate-900' : 'text-rose-600'}`}>
+                        {e.balance >= 0 ? '' : '−'}{pkr(Math.abs(e.balance))}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
-              <tfoot>
-                <tr className="bg-slate-50 border-t-2 border-slate-200">
-                  <td colSpan={5} className="px-4 py-3 text-sm font-bold text-slate-700">Total</td>
-                  <td className="px-4 py-3 text-right font-black text-emerald-600">{pkr(rows.reduce((s,e)=>s+e.credit,0))}</td>
-                  <td className="px-4 py-3 text-right font-black text-rose-500">{pkr(rows.reduce((s,e)=>s+e.debit,0))}</td>
-                  <td className={`px-4 py-3 text-right font-black ${(rows[rows.length-1]?.balance||0) >= 0 ? 'text-indigo-700' : 'text-rose-600'}`}>
-                    {pkr(rows[rows.length-1]?.balance || 0)}
+              <tfoot className="sticky bottom-0">
+                <tr className="bg-white border-t-2 border-slate-300 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
+                  <td colSpan={3} className="px-4 py-3 text-sm font-bold text-slate-700">Period total</td>
+                  <td className="px-4 py-3 text-right font-black text-emerald-600 tabular-nums">+{pkr(rows.reduce((s,e)=>s+e.credit,0))}</td>
+                  <td className="px-4 py-3 text-right font-black text-rose-500 tabular-nums">−{pkr(rows.reduce((s,e)=>s+e.debit,0))}</td>
+                  <td className={`px-4 py-3 text-right font-black tabular-nums ${(rows[rows.length-1]?.balance||0) >= 0 ? 'text-indigo-700' : 'text-rose-600'}`}>
+                    {(rows[rows.length-1]?.balance||0) >= 0 ? '' : '−'}{pkr(Math.abs(rows[rows.length-1]?.balance || 0))}
                   </td>
                 </tr>
               </tfoot>

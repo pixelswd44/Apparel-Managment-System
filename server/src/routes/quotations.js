@@ -115,6 +115,24 @@ router.put('/:id', (req, res) => {
     const shipping    = parseFloat(shipping_cost) || 0;
     const { subtotal, tax_amount, total } = calcTotals(parsedItems, tax_rate, discount, shipping, parsedCustomFields);
 
+    // Accepted quotations (or ones already invoiced/paid) are locked — any change to
+    // pricing or items requires a note explaining why. The note is appended to a
+    // change log so there's a paper trail.
+    const prev = db.prepare('SELECT status, items, total, change_log FROM quotations WHERE id = ?').get(req.params.id);
+    if (!prev) return res.status(404).json({ error: 'Not found' });
+    const linkedInvoice = db.prepare('SELECT id, amount_paid FROM invoices WHERE quotation_id = ?').get(req.params.id);
+    const isLocked = prev.status === 'accepted' || !!linkedInvoice;
+    const contentChanged = prev.items !== JSON.stringify(parsedItems) || Math.abs((parseFloat(prev.total)||0) - total) > 0.005;
+    const changeNote = (req.body.change_note || '').trim();
+    if (isLocked && contentChanged && !changeNote) {
+      return res.status(400).json({ error: 'This quotation is accepted/invoiced. Please add a note explaining why it is being changed.', requires_change_note: true });
+    }
+    let changeLog = [];
+    try { changeLog = JSON.parse(prev.change_log || '[]'); } catch {}
+    if (changeNote) {
+      changeLog.push({ at: new Date().toISOString(), note: changeNote, from_total: parseFloat(prev.total)||0, to_total: total, user: req.user?.username || req.user?.name || null });
+    }
+
     db.prepare(`
       UPDATE quotations SET
         number=?, client_id=?, company_id=?, status=?, items=?,
@@ -122,6 +140,7 @@ router.put('/:id', (req, res) => {
         notes=?, valid_until=?, is_sampling=?,
         currency=?, shipping_name=?, shipping_address=?, shipping_city=?, shipping_country=?,
         shipping_phone=?, bank_details=?, customer_notes=?, terms_conditions=?, subject=?,
+        change_log=?,
         updated_at=datetime('now')
       WHERE id=?
     `).run(
@@ -132,6 +151,7 @@ router.put('/:id', (req, res) => {
       shipping_city || null, shipping_country || null,
       shipping_phone || null, bank_details || null, customer_notes || null,
       terms_conditions || null, subject || null,
+      JSON.stringify(changeLog),
       req.params.id,
     );
     const row = db.prepare(WITH_CLIENT + ' WHERE q.id = ?').get(req.params.id);

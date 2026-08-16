@@ -18,6 +18,9 @@ server/src/db/*.db-wal
 server/uploads/*
 !server/uploads/.gitkeep
 
+# Timestamped server snapshots (14MB+ each) — only data/latest-backup.json.gz is committed
+data/backups/
+
 # Logs
 server/server.log
 server/*.log

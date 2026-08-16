@@ -276,7 +276,7 @@ function CapitalForm({ type, item, onClose, onSave }) {
 
 // ── Main ───────────────────────────────────────────────────────────────────
 export default function Financials() {
-  const [tab, setTab] = useState('pl');
+  const [tab, setTab] = useState('investments'); // P&L now lives on the Dashboard (Overview)
   const [summary, setSummary] = useState(null);
   const [monthly, setMonthly] = useState([]);
   const [transactions, setTransactions] = useState([]);
@@ -415,8 +415,8 @@ export default function Financials() {
       {/* Header */}
       <div className="flex items-center justify-between mb-4 gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Financials</h1>
-          <p className="text-sm text-slate-500 mt-0.5">P&L, investments &amp; loans</p>
+          <h1 className="text-2xl font-bold text-slate-900">Investments &amp; Loans</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Capital tracking · P&amp;L now lives on the Dashboard</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {currencies.length > 0 && (
@@ -441,7 +441,6 @@ export default function Financials() {
       {/* Tabs */}
       <div className="flex gap-1 bg-slate-100 rounded-xl p-1 mb-5 overflow-x-auto scrollbar-hide">
         {[
-          { key: 'pl',          label: 'P&L Overview' },
           { key: 'investments', label: 'Investments' },
           { key: 'loans',       label: 'Loans' },
         ].map(({ key, label }) => (

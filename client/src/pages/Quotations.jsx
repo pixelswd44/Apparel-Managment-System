@@ -34,7 +34,8 @@ const fmt = d => {
   return `${String(dt.getDate()).padStart(2,'0')} ${MONTHS[dt.getMonth()]} ${dt.getFullYear()}`;
 };
 const fmtMoney = (v, sym = '$') => `${sym}${(parseFloat(v) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const getSym   = code => ({ PKR: '₨', EUR: '€', GBP: '£', AED: 'د.إ' }[code] ?? '$');
+// AED uses its ISO code — the RTL "د.إ" glyph gets reordered next to digits and renders as garbage
+const getSym   = code => ({ PKR: '₨', EUR: '€', GBP: '£', AED: 'AED ', SAR: 'SAR ', QAR: 'QAR ' }[code] ?? '$');
 
 const inputCls = 'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-3 focus:ring-indigo-100 transition-all duration-150 bg-white placeholder:text-slate-400';
 
@@ -593,16 +594,28 @@ export default function Quotations() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
+  // Accepted value per currency — never mix currencies into one number
+  const acceptedByCur = quotations.filter(q => q.status === 'accepted').reduce((acc, q) => {
+    const c = q.currency || 'USD'; acc[c] = (acc[c] || 0) + (parseFloat(q.total) || 0); return acc;
+  }, {});
+  const acceptedLabel = Object.entries(acceptedByCur)
+    .map(([c, v]) => `${getSym(c)}${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`)
+    .join(' + ') || '—';
+  const kpi = [
+    { label: 'Total',     value: total,    sub: 'all quotations',                     tint: 'border-slate-200 border-t-4 border-t-indigo-500',   pill: 'bg-indigo-100/70 text-indigo-700 border-indigo-200/70',   dot: 'bg-indigo-500',  filter: '' },
+    { label: 'Draft',     value: draft,    sub: 'not yet sent',                       tint: 'border-slate-200 border-t-4 border-t-slate-300',               pill: 'bg-slate-100 text-slate-600 border-slate-200',           dot: 'bg-slate-400',   filter: 'draft' },
+    { label: 'Sent',      value: sent,     sub: 'awaiting response',                  tint: 'border-slate-200 border-t-4 border-t-sky-500',           pill: 'bg-sky-100/70 text-sky-700 border-sky-200/70',           dot: 'bg-sky-500',     filter: 'sent' },
+    { label: 'Accepted',  value: accepted, sub: `${acceptedLabel} won`, tint: 'border-slate-200 border-t-4 border-t-emerald-500', pill: 'bg-emerald-100/70 text-emerald-700 border-emerald-200/70', dot: 'bg-emerald-500', filter: 'accepted' },
+  ];
+
   return (
-    <div className="flex flex-col" style={{ height: 'calc(100vh - 8.5rem)' }}>
+    <div className="flex flex-col">
 
       {/* ── Page header ── */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4 flex-shrink-0">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Quotations</h1>
-          <p className="text-sm text-slate-500 mt-0.5">
-            {total} total · {draft} draft · {sent} sent · {accepted} accepted
-          </p>
+          <p className="text-sm text-slate-500 mt-0.5">Send quotes, track responses, convert to invoices</p>
         </div>
         <button
           onClick={() => navigate('/quotations/new')}
@@ -611,11 +624,25 @@ export default function Quotations() {
         </button>
       </div>
 
-      {/* ── Two-panel split ── */}
-      <div className="flex-1 min-h-0 flex flex-col lg:flex-row rounded-2xl border border-slate-200 shadow-sm overflow-hidden bg-white print:border-0 print:rounded-none print:shadow-none print:overflow-visible">
+      {/* ── KPI tiles (click to filter) ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4 print:hidden">
+        {kpi.map(k => (
+          <button key={k.label} onClick={() => setFilterStatus(filterStatus === k.filter ? '' : k.filter)}
+            className={`text-left rounded-2xl p-4 bg-white border shadow-sm transition-all ${k.tint} ${filterStatus === k.filter && k.filter ? 'ring-2 ring-indigo-300' : 'hover:shadow'}`}>
+            <span className={`inline-flex items-center gap-1.5 text-2xs font-bold uppercase tracking-wider border px-2.5 py-1 rounded-full ${k.pill}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${k.dot}`} />{k.label}
+            </span>
+            <p className="text-2xl font-black text-slate-900 mt-2 leading-none">{k.value}</p>
+            <p className="text-2xs text-slate-500 mt-1">{k.sub}</p>
+          </button>
+        ))}
+      </div>
 
-        {/* LEFT: Quotation list */}
-        <div className={`w-full lg:w-80 flex-1 min-h-0 lg:flex-none flex flex-col border-b lg:border-b-0 lg:border-r border-slate-200 bg-white print:hidden ${viewId ? 'hidden lg:flex' : ''}`}>
+      {/* ── Two-panel split — page scrolls; only the list has its own scroll ── */}
+      <div className="flex flex-col lg:flex-row lg:items-start rounded-2xl border border-slate-200 shadow-sm bg-white print:border-0 print:rounded-none print:shadow-none">
+
+        {/* LEFT: Quotation list (sticky on desktop) */}
+        <div className={`w-full lg:w-80 lg:flex-none flex flex-col border-b lg:border-b-0 lg:border-r border-slate-200 bg-white print:hidden lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] rounded-t-2xl lg:rounded-tr-none lg:rounded-l-2xl overflow-hidden ${viewId ? 'hidden lg:flex' : ''}`}>
 
           {/* Search */}
           <div className="px-3 py-3 border-b border-slate-100">

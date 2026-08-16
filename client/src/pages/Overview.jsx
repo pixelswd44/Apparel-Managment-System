@@ -18,8 +18,13 @@ const CURRENCY_SYMBOLS = {
   INR: '₹', BDT: '৳', TRY: '₺', MYR: 'RM ', QAR: 'QAR ',
 };
 
+// Right-to-left / non-Latin symbols (e.g. AED "د.إ") get visually reordered next to
+// digits in mixed text, producing "195.6د.إK". For those we use the ISO code instead.
+const isLatinSymbol = s => !!s && !/[؀-ۿ֐-׿]/.test(s);
 function symFor(code, dbSymbol) {
-  return dbSymbol || CURRENCY_SYMBOLS[code] || `${code} `;
+  if (dbSymbol && isLatinSymbol(dbSymbol)) return dbSymbol;
+  if (dbSymbol) return `${code} `;
+  return CURRENCY_SYMBOLS[code] || `${code} `;
 }
 
 // ratesToPkr = { USD: 280, AED: 76, PKR: 1, … }
@@ -86,7 +91,7 @@ function CurrencySelector({ selected, currencies, onChange }) {
   }, [open]);
 
   const current = currencies.find(c => c.code === selected);
-  const getSymbol = c => c.symbol || symFor(c.code);
+  const getSymbol = c => symFor(c.code, c.symbol);
 
   return (
     <div className="relative" ref={ref}>
@@ -582,12 +587,116 @@ function DraggableStatCards({ cards }) {
 
 const STORAGE_KEY = 'overview_currency';
 
+// ── SVG area chart (revenue trend inside the hero card) ──────────────────────
+function AreaChart({ values, labels = [], height = 120, light = false }) {
+  const w = 100, h = 40; // viewBox units — scales to container
+  const max = Math.max(...values, 1);
+  const pts = values.map((v, i) => [
+    values.length > 1 ? (i / (values.length - 1)) * w : w / 2,
+    h - 4 - (v / max) * (h - 10),
+  ]);
+  const line = pts.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(2)},${y.toFixed(2)}`).join(' ');
+  const area = `${line} L${w},${h} L0,${h} Z`;
+  const gradId = light ? 'areaLight' : 'areaDark';
+  const stroke = light ? '#6366f1' : 'rgba(255,255,255,0.9)';
+  return (
+    <div>
+      <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ width: '100%', height }}>
+        <defs>
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"  stopColor={light ? 'rgba(99,102,241,0.28)' : 'rgba(255,255,255,0.45)'} />
+            <stop offset="100%" stopColor={light ? 'rgba(99,102,241,0.02)' : 'rgba(255,255,255,0.02)'} />
+          </linearGradient>
+        </defs>
+        <path d={area} fill={`url(#${gradId})`} />
+        <path d={line} fill="none" stroke={stroke} strokeWidth="1.5" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
+        {pts.map(([x, y], i) => (
+          <circle key={i} cx={x} cy={y} r="0.8" fill={light ? '#6366f1' : '#fff'} opacity={i === pts.length - 1 ? 1 : 0} />
+        ))}
+      </svg>
+      {labels.length > 0 && (
+        <div className="flex justify-between mt-1">
+          {labels.map((l, i) => <span key={i} className={`text-2xs ${light ? 'text-slate-400' : 'text-white/50'}`}>{l}</span>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Category badge pill — soft tinted, like a status chip
+function CardBadge({ color, children }) {
+  const map = {
+    indigo:  'text-indigo-700 bg-indigo-100/70 border-indigo-200/70',
+    emerald: 'text-emerald-700 bg-emerald-100/70 border-emerald-200/70',
+    rose:    'text-rose-700 bg-rose-100/70 border-rose-200/70',
+    orange:  'text-orange-700 bg-orange-100/70 border-orange-200/70',
+    sky:     'text-sky-700 bg-sky-100/70 border-sky-200/70',
+    violet:  'text-violet-700 bg-violet-100/70 border-violet-200/70',
+    amber:   'text-amber-700 bg-amber-100/70 border-amber-200/70',
+    slate:   'text-slate-200 bg-white/10 border-white/10',
+  };
+  const dot = { indigo: 'bg-indigo-500', emerald: 'bg-emerald-500', rose: 'bg-rose-500', orange: 'bg-orange-500', sky: 'bg-sky-500', violet: 'bg-violet-500', amber: 'bg-amber-500', slate: 'bg-emerald-400' };
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-2xs font-bold uppercase tracking-wider border px-2.5 py-1 rounded-full ${map[color]}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${dot[color]}`} /> {children}
+    </span>
+  );
+}
+
+// ── Grouped bars: income vs spend per month ──────────────────────────────────
+function DuoBars({ data, fmtC }) {
+  const max = Math.max(...data.map(m => Math.max(m.in, m.out)), 1);
+  return (
+    <div className="flex items-end gap-3 h-40">
+      {data.map(m => (
+        <div key={m.label} className="flex-1 flex flex-col items-center gap-1.5 min-w-0 h-full justify-end group">
+          <div className="w-full flex items-end justify-center gap-1 flex-1">
+            <div className="w-1/3 max-w-[18px] bg-indigo-500 rounded-t-md transition-all group-hover:bg-indigo-600"
+              title={`In: ${fmtC(m.in)}`}
+              style={{ height: `${Math.max(2, (m.in / max) * 100)}%` }} />
+            <div className="w-1/3 max-w-[18px] bg-rose-300 rounded-t-md transition-all group-hover:bg-rose-400"
+              title={`Out: ${fmtC(m.out)}`}
+              style={{ height: `${Math.max(2, (m.out / max) * 100)}%` }} />
+          </div>
+          <span className="text-2xs text-slate-400 truncate">{m.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function Overview() {
   const navigate = useNavigate();
   const [data,    setData]    = useState(null);
+  const [fin,     setFin]     = useState(null);   // /financials/summary
+  const [monthly, setMonthly] = useState([]);     // /financials/monthly
   const [loading, setLoading] = useState(true);
   const [clients, setClients] = useState([]);
   const [periodRange, setPeriodRange] = useState({ from: null, to: null, label: 'All Time' });
+
+  // Draggable bento order (persisted)
+  const BENTO_DEFAULT = ['revenue', 'profit', 'expenses', 'wallet', 'received', 'outstanding', 'projectsPaid', 'bizSpend'];
+  const [bentoOrder, setBentoOrder] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('dashboard_bento_order') || '[]');
+      if (Array.isArray(saved) && saved.length) {
+        const valid = saved.filter(k => BENTO_DEFAULT.includes(k));
+        return [...valid, ...BENTO_DEFAULT.filter(k => !valid.includes(k))];
+      }
+    } catch { /* ignore */ }
+    return BENTO_DEFAULT;
+  });
+  const dragKey = useRef(null);
+  const [dragOverKey, setDragOverKey] = useState(null);
+  function reorderBento(targetKey) {
+    const from = bentoOrder.indexOf(dragKey.current);
+    const to   = bentoOrder.indexOf(targetKey);
+    if (from < 0 || to < 0 || from === to) return;
+    const next = [...bentoOrder];
+    next.splice(to, 0, next.splice(from, 1)[0]);
+    setBentoOrder(next);
+    localStorage.setItem('dashboard_bento_order', JSON.stringify(next));
+  }
 
   // Persist selected currency across sessions
   // Initial value: localStorage preference or empty (resolved after settings load)
@@ -602,9 +711,13 @@ export default function Overview() {
       api.get('/overview', { params }),
       api.get('/clients'),
       api.get('/settings'),
-    ]).then(([ov, cl, st]) => {
+      api.get('/financials/summary', { params }).catch(() => ({ data: null })),
+      api.get('/financials/monthly', { params }).catch(() => ({ data: [] })),
+    ]).then(([ov, cl, st, fs, fm]) => {
       setData(ov.data);
       setClients(cl.data || []);
+      setFin(fs.data);
+      setMonthly(Array.isArray(fm.data) ? fm.data : []);
       const codes      = (ov.data.currencies || []).map(c => c.code);
       const baseCurr   = (st.data && st.data.base_currency) || 'USD';
       const savedCurr  = localStorage.getItem(STORAGE_KEY);
@@ -640,7 +753,7 @@ export default function Overview() {
     ? d.currencies
     : [{ code: 'USD', name: 'US Dollar', symbol: '$' }, { code: 'PKR', name: 'Pakistani Rupee', symbol: '₨' }];
 
-  const symbolMap = Object.fromEntries(currencies.map(c => [c.code, c.symbol || symFor(c.code)]));
+  const symbolMap = Object.fromEntries(currencies.map(c => [c.code, symFor(c.code, c.symbol)]));
   const sym = code => symbolMap[code] || symFor(code);
 
   const conv    = pkrAmt     => fromPKR(pkrAmt, selectedCurrency, ratesToPkr);
@@ -676,73 +789,216 @@ export default function Overview() {
     ? periodRange.label
     : `${fmt$C(d.month_revenue_pkr)} this month`;
 
-  const statCards = [
-    {
-      label: 'Total Revenue',
-      value: fmt$C(d.revenue_pkr),
-      full:  fmt$(d.revenue_pkr),
-      sub:   revSubLabel,
-      icon:  TrendingUp,
-      iconBg: 'bg-indigo-50',
-      iconCl: 'text-indigo-600',
-      dot:    'bg-indigo-500',
-    },
-    {
-      label: 'Active Clients',
-      value: d.active_clients ?? 0,
-      sub:   `${d.total_clients ?? 0} total`,
-      icon:  Users,
-      iconBg: 'bg-emerald-50',
-      iconCl: 'text-emerald-600',
-      dot:    'bg-emerald-500',
-    },
-    {
-      label: 'Open Quotations',
-      value: d.open_quotations ?? 0,
-      sub:   `${fmt$C(d.pipeline_pkr)} pipeline`,
-      icon:  FileText,
-      iconBg: 'bg-amber-50',
-      iconCl: 'text-amber-600',
-      dot:    'bg-amber-500',
-    },
-    {
-      label: 'Accepted Quotations',
-      value: d.accepted_quotations ?? 0,
-      sub:   fmt$C(d.accepted_pkr),
-      icon:  CheckCircle,
-      iconBg: 'bg-violet-50',
-      iconCl: 'text-violet-600',
-      dot:    'bg-violet-500',
-    },
-    {
-      label: 'Unpaid Invoices',
-      value: d.unpaid_invoices ?? 0,
-      sub:   `${fmt$C(d.unpaid_pkr)} outstanding`,
-      icon:  Receipt,
-      iconBg: 'bg-rose-50',
-      iconCl: 'text-rose-600',
-      dot:    'bg-rose-500',
-    },
-    {
-      label: 'Overdue Invoices',
-      value: d.overdue_invoices ?? 0,
-      sub:   d.overdue_invoices > 0 ? 'Needs attention' : 'All on track',
-      icon:  AlertCircle,
-      iconBg: d.overdue_invoices > 0 ? 'bg-orange-50' : 'bg-slate-50',
-      iconCl: d.overdue_invoices > 0 ? 'text-orange-600' : 'text-slate-400',
-      dot:    d.overdue_invoices > 0 ? 'bg-orange-500' : 'bg-slate-300',
-    },
+  // ── Financial summary (PKR values from /financials/summary) ──
+  const f = fin || {};
+  const received      = f.totalRevenue  ?? d.revenue_pkr ?? 0;
+  const outstanding   = f.outstanding   ?? 0;
+  const totalExpenses = f.totalExpenses ?? 0;
+  const projectedPL   = f.projectedPL   ?? 0;
+  const outOfPocket   = f.outOfPocket   ?? 0;
+  const margin        = (received + outstanding) > 0 ? (projectedPL / (received + outstanding)) * 100 : 0;
+
+  // Monthly series for the charts, converted to the selected currency
+  const series     = monthly.slice(-12);
+  const areaValues = series.map(m => conv(m.revenue));
+  const monthLbl   = m => MONTHS_SHORT[parseInt(String(m.month).slice(5), 10) - 1] || '';
+  const areaLabels = series.length > 1
+    ? series.map((m, i) => (i === 0 || i === series.length - 1 || i === Math.floor((series.length - 1) / 2)) ? monthLbl(m) : '')
+    : [];
+  const duoData = monthly.slice(-8).map(m => ({ label: monthLbl(m), in: conv(m.revenue), out: conv(m.totalOut) }));
+  const last2   = monthly.slice(-2);
+  const revChange = last2.length === 2 && last2[0].revenue > 0
+    ? ((last2[1].revenue - last2[0].revenue) / last2[0].revenue) * 100
+    : null;
+
+  const miniTiles = [
+    { label: 'Active Clients',  value: d.active_clients ?? 0,      sub: `${d.total_clients ?? 0} total`,          icon: Users,       chip: 'bg-emerald-50 text-emerald-600' },
+    { label: 'Open Quotations', value: d.open_quotations ?? 0,     sub: `${fmt$C(d.pipeline_pkr)} pipeline`,      icon: FileText,    chip: 'bg-amber-50 text-amber-600' },
+    { label: 'Accepted',        value: d.accepted_quotations ?? 0, sub: fmt$C(d.accepted_pkr),                    icon: CheckCircle, chip: 'bg-violet-50 text-violet-600' },
+    { label: 'Unpaid Invoices', value: d.unpaid_invoices ?? 0,
+      sub: d.overdue_invoices > 0 ? `${d.overdue_invoices} overdue!` : `${fmt$C(d.unpaid_pkr)} due`,
+      icon: Receipt, chip: d.overdue_invoices > 0 ? 'bg-rose-50 text-rose-600' : 'bg-sky-50 text-sky-600' },
   ];
 
+  // Per-currency received breakdown, e.g. "USD 53,251 · AED 102,660"
+  const ccSub = Object.entries(f.revenueByCC || {})
+    .filter(([, v]) => v > 0)
+    .map(([cc, v]) => `${cc} ${Number(v).toLocaleString()}`)
+    .join(' · ');
+
+  const bizSpendTotal = (f.businessExpenses ?? 0) + (f.salariesPaid ?? 0);
+
+  // ── Bento cards (draggable, order persisted) ──
+  const bentoCards = {
+    revenue: {
+      span: 'col-span-2 lg:row-span-2',
+      el: (
+        <div className="h-full rounded-3xl p-6 bg-white border border-slate-200 border-t-4 border-t-indigo-500 shadow-sm flex flex-col justify-between gap-4 relative overflow-hidden">
+          
+          <div className="flex items-start justify-between relative">
+            <div>
+              <CardBadge color="indigo">Revenue</CardBadge>
+              <p className="text-4xl font-black mt-3 tracking-tight text-slate-900" title={fmt$(received)}>{fmtSelC(conv(received))}</p>
+              <p className="text-xs text-slate-500 mt-1">
+                {periodRange.from ? periodRange.label : `${fmt$C(d.month_revenue_pkr)} collected this month`}
+              </p>
+            </div>
+            {revChange !== null && (
+              <span className={`flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full border ${
+                revChange >= 0 ? 'bg-emerald-50 text-emerald-600 border-emerald-200/70' : 'bg-rose-50 text-rose-600 border-rose-200/70'}`}>
+                <TrendingUp size={11} className={revChange < 0 ? 'rotate-180' : ''} />
+                {Math.abs(revChange).toFixed(1)}%
+              </span>
+            )}
+          </div>
+          {areaValues.some(v => v > 0)
+            ? <AreaChart values={areaValues} labels={areaLabels} height={100} light />
+            : <div className="h-20 flex items-center justify-center text-slate-300 text-sm">No payment data yet</div>}
+          <div className="flex items-center gap-5 relative flex-wrap">
+            <div>
+              <p className="text-2xs text-slate-400 uppercase tracking-wider">Outstanding</p>
+              <p className="text-sm font-bold text-slate-800" title={fmt$(outstanding)}>{fmt$C(outstanding)}</p>
+            </div>
+            <div className="w-px h-8 bg-indigo-100" />
+            <div>
+              <p className="text-2xs text-slate-400 uppercase tracking-wider">Pipeline</p>
+              <p className="text-sm font-bold text-slate-800" title={fmt$(d.pipeline_pkr)}>{fmt$C(d.pipeline_pkr)}</p>
+            </div>
+            <div className="w-px h-8 bg-indigo-100" />
+            <div>
+              <p className="text-2xs text-slate-400 uppercase tracking-wider">New Quotes · Month</p>
+              <p className="text-sm font-bold text-slate-800">{d.month_quotations ?? 0}</p>
+            </div>
+          </div>
+        </div>
+      ),
+    },
+    profit: {
+      span: '',
+      el: (
+        <div className={`h-full rounded-3xl p-5 flex flex-col justify-between min-h-[150px] shadow-sm border relative overflow-hidden ${
+          projectedPL >= 0
+            ? 'bg-white border-slate-200 border-t-4 border-t-emerald-500'
+            : 'bg-white border-slate-200 border-t-4 border-t-rose-500'}`}>
+          <div className="flex items-center justify-between">
+            <CardBadge color={projectedPL >= 0 ? 'emerald' : 'rose'}>{projectedPL >= 0 ? 'Profit' : 'Loss'}</CardBadge>
+            <TrendingUp size={14} className={`${projectedPL >= 0 ? 'text-emerald-300' : 'text-rose-300 rotate-180'}`} />
+          </div>
+          <div>
+            <p className={`text-2xl font-black tracking-tight ${projectedPL >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}
+              title={fmt$(Math.abs(projectedPL))}>{projectedPL < 0 && '−'}{fmt$C(Math.abs(projectedPL))}</p>
+            <p className="text-xs text-slate-500 mt-0.5">{Math.abs(margin).toFixed(1)}% margin · projected</p>
+          </div>
+        </div>
+      ),
+    },
+    expenses: {
+      span: '',
+      el: (
+        <div className="h-full rounded-3xl p-5 bg-white border border-slate-200 border-t-4 border-t-orange-500 shadow-sm flex flex-col justify-between min-h-[150px] relative overflow-hidden">
+          <div className="flex items-center justify-between">
+            <CardBadge color="orange">Expenses</CardBadge>
+            <Banknote size={14} className="text-orange-300" />
+          </div>
+          <div>
+            <p className="text-2xl font-black tracking-tight text-slate-900" title={fmt$(totalExpenses)}>{fmt$C(totalExpenses)}</p>
+            <p className="text-xs text-slate-500 mt-0.5">everything paid out, all sources</p>
+          </div>
+        </div>
+      ),
+    },
+    wallet: {
+      span: 'col-span-2',
+      el: (
+        <div className={`h-full rounded-3xl p-5 border shadow-sm flex items-center justify-between gap-4 relative overflow-hidden ${
+          outOfPocket > 0
+            ? 'bg-white border-slate-200 border-t-4 border-t-rose-500'
+            : 'bg-white border-slate-200 border-t-4 border-t-emerald-500'}`}>
+          <div>
+            <CardBadge color={outOfPocket > 0 ? 'rose' : 'emerald'}>{outOfPocket > 0 ? 'Out of Pocket' : 'In Wallet'}</CardBadge>
+            <p className={`text-2xl font-black tracking-tight mt-2 ${outOfPocket > 0 ? 'text-rose-700' : 'text-emerald-700'}`}
+              title={fmt$(Math.abs(outOfPocket))}>
+              {outOfPocket > 0 ? '−' : '+'}{fmt$C(Math.abs(outOfPocket))}
+            </p>
+          </div>
+          <div className="text-right text-xs text-slate-500 leading-relaxed">
+            <p>Received <span className="text-emerald-600 font-semibold">{fmt$C(received)}</span></p>
+            <p>Spent <span className="text-rose-500 font-semibold">{fmt$C(totalExpenses)}</span></p>
+          </div>
+        </div>
+      ),
+    },
+    received: {
+      span: '',
+      el: (
+        <div className="h-full rounded-3xl p-5 bg-white border border-slate-200 border-t-4 border-t-sky-500 shadow-sm flex flex-col justify-between min-h-[150px]">
+          <div className="flex items-center justify-between">
+            <CardBadge color="sky">Received</CardBadge>
+            <Banknote size={14} className="text-sky-300" />
+          </div>
+          <div>
+            <p className="text-2xl font-black tracking-tight text-slate-900" title={fmt$(received)}>{fmt$C(received)}</p>
+            <p className="text-xs text-slate-500 mt-0.5 truncate" title={ccSub}>{ccSub || 'cash collected'}</p>
+          </div>
+        </div>
+      ),
+    },
+    outstanding: {
+      span: '',
+      el: (
+        <div className="h-full rounded-3xl p-5 bg-white border border-slate-200 border-t-4 border-t-rose-500 shadow-sm flex flex-col justify-between min-h-[150px]">
+          <div className="flex items-center justify-between">
+            <CardBadge color="rose">Outstanding</CardBadge>
+            <Clock size={14} className="text-rose-300" />
+          </div>
+          <div>
+            <p className="text-2xl font-black tracking-tight text-rose-700" title={fmt$(outstanding)}>{fmt$C(outstanding)}</p>
+            <p className="text-xs text-slate-500 mt-0.5">{d.unpaid_invoices ?? 0} unpaid invoice{(d.unpaid_invoices ?? 0) !== 1 ? 's' : ''}</p>
+          </div>
+        </div>
+      ),
+    },
+    projectsPaid: {
+      span: '',
+      el: (
+        <div className="h-full rounded-3xl p-5 bg-white border border-slate-200 border-t-4 border-t-violet-500 shadow-sm flex flex-col justify-between min-h-[150px]">
+          <div className="flex items-center justify-between">
+            <CardBadge color="violet">Projects Paid</CardBadge>
+            <CheckCircle size={14} className="text-violet-300" />
+          </div>
+          <div>
+            <p className="text-2xl font-black tracking-tight text-slate-900" title={fmt$(f.totalProjectsPaid)}>{fmt$C(f.totalProjectsPaid)}</p>
+            <p className="text-xs text-slate-500 mt-0.5">of {fmt$C(f.totalProjectsExpense)} projected</p>
+          </div>
+        </div>
+      ),
+    },
+    bizSpend: {
+      span: '',
+      el: (
+        <div className="h-full rounded-3xl p-5 bg-white border border-slate-200 border-t-4 border-t-amber-500 shadow-sm flex flex-col justify-between min-h-[150px]">
+          <div className="flex items-center justify-between">
+            <CardBadge color="amber">Business + Payroll</CardBadge>
+            <Users size={14} className="text-amber-300" />
+          </div>
+          <div>
+            <p className="text-2xl font-black tracking-tight text-slate-900" title={fmt$(bizSpendTotal)}>{fmt$C(bizSpendTotal)}</p>
+            <p className="text-xs text-slate-500 mt-0.5">Biz {fmt$C(f.businessExpenses)} · Salaries {fmt$C(f.salariesPaid)}</p>
+          </div>
+        </div>
+      ),
+    },
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
 
       {/* ── Header ── */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Overview</h1>
+          <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
           <p className="text-slate-500 text-sm mt-0.5">
-            Showing values in <span className="font-semibold text-slate-700">{selectedCurrency}</span>
+            Business overview & financials in <span className="font-semibold text-slate-700">{selectedCurrency}</span>
             <span className="ml-2 text-slate-400">· {rateLabel}</span>
             {periodRange.from && <span className="ml-2 font-medium text-indigo-600">· {periodRange.label}</span>}
           </p>
@@ -753,6 +1009,10 @@ export default function Overview() {
             currencies={currencies}
             onChange={handleCurrencyChange}
           />
+          <button onClick={() => navigate('/expenses')}
+            className="flex items-center gap-2 px-4 py-2.5 bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-xl text-sm font-semibold shadow-sm transition-colors">
+            <Banknote size={14} /> Record Expense
+          </button>
           <button onClick={() => navigate('/quotations/new')}
             className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-sm shadow-indigo-200 transition-colors">
             <FileText size={14} /> New Quotation
@@ -763,45 +1023,57 @@ export default function Overview() {
       {/* ── Period Filter ── */}
       <PeriodPicker onChange={range => setPeriodRange(range)} />
 
-      {/* ── Draggable Stat cards ── */}
-      <DraggableStatCards cards={statCards} />
+      {/* ── Bento grid — drag cards to rearrange, order is remembered ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 grid-flow-dense">
+        {bentoOrder.map(k => {
+          const c = bentoCards[k];
+          if (!c) return null;
+          return (
+            <div
+              key={k}
+              draggable
+              onDragStart={() => { dragKey.current = k; }}
+              onDragOver={e => { e.preventDefault(); if (dragOverKey !== k) setDragOverKey(k); }}
+              onDragLeave={() => setDragOverKey(o => (o === k ? null : o))}
+              onDrop={e => { e.preventDefault(); reorderBento(k); setDragOverKey(null); }}
+              onDragEnd={() => { dragKey.current = null; setDragOverKey(null); }}
+              className={`${c.span} cursor-grab active:cursor-grabbing select-none transition-transform ${
+                dragOverKey === k ? 'ring-2 ring-indigo-300 rounded-3xl scale-[1.01]' : ''
+              }`}
+            >
+              {c.el}
+            </div>
+          );
+        })}
+      </div>
 
-      {/* ── Revenue trend + This month ── */}
+      {/* ── Cash flow chart + mini tiles ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-
-        {/* Revenue trend */}
-        <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+        <div className="lg:col-span-2 bg-white border border-slate-200 rounded-3xl p-6 shadow-sm">
           <div className="flex items-center justify-between mb-5">
             <div>
-              <h2 className="font-bold text-slate-800">Revenue Trend</h2>
-              <p className="text-xs text-slate-400 mt-0.5">Last 6 months · {selectedCurrency}</p>
+              <h2 className="font-bold text-slate-800">Cash Flow</h2>
+              <p className="text-xs text-slate-400 mt-0.5">Money in vs out · {selectedCurrency}</p>
             </div>
-            <div className="text-right">
-              <p className="text-2xl font-bold text-indigo-600" title={fmt$(d.revenue_pkr)}>{fmt$C(d.revenue_pkr)}</p>
-              <p className="text-xs text-slate-400">total collected</p>
+            <div className="flex items-center gap-3 text-xs text-slate-500">
+              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 bg-indigo-500 rounded-sm" /> In</span>
+              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 bg-rose-300 rounded-sm" /> Out</span>
             </div>
           </div>
-          {d.trend?.length > 0
-            ? <TrendBar trend={d.trend} currency={selectedCurrency} ratesToPkr={ratesToPkr} />
-            : <div className="h-16 flex items-center justify-center text-slate-300 text-sm">No payment data yet</div>
-          }
+          {duoData.some(m => m.in > 0 || m.out > 0)
+            ? <DuoBars data={duoData} fmtC={fmtSelC} />
+            : <div className="h-32 flex items-center justify-center text-slate-300 text-sm">No activity yet</div>}
         </div>
 
-        {/* This month */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
-          <h2 className="font-bold text-slate-800">This Month</h2>
-          {[
-            { label: 'Revenue',        value: fmt$C(d.month_revenue_pkr), full: fmt$(d.month_revenue_pkr), icon: Banknote,   cl: 'text-indigo-600' },
-            { label: 'New Quotations', value: d.month_quotations ?? 0,    icon: FileText,   cl: 'text-amber-600'  },
-            { label: 'Pipeline',       value: fmt$C(d.pipeline_pkr),      full: fmt$(d.pipeline_pkr),      icon: TrendingUp, cl: 'text-violet-600' },
-            { label: 'Overdue',        value: d.overdue_invoices ?? 0,    icon: Clock,      cl: 'text-rose-600'   },
-          ].map(({ label, value, full, icon: Icon, cl }) => (
-            <div key={label} className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <Icon size={14} className={`${cl} flex-shrink-0`} />
-                <span className="text-sm text-slate-600">{label}</span>
+        <div className="grid grid-cols-2 gap-4">
+          {miniTiles.map(({ label, value, sub, icon: Icon, chip }) => (
+            <div key={label} className="bg-white border border-slate-200 rounded-3xl p-4 shadow-sm flex flex-col justify-between min-h-[100px]">
+              <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${chip}`}><Icon size={15} /></div>
+              <div className="mt-2">
+                <p className="text-xl font-black text-slate-900 leading-none">{value}</p>
+                <p className="text-2xs font-semibold text-slate-400 uppercase tracking-wide mt-1">{label}</p>
+                <p className="text-2xs text-slate-400 mt-0.5 truncate">{sub}</p>
               </div>
-              <span className="text-sm font-bold text-slate-800" title={full || undefined}>{value}</span>
             </div>
           ))}
         </div>

@@ -1,41 +1,8 @@
 import { Outlet, useLocation } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import Sidebar from './Sidebar';
-import api, { apiFetch, imgUrl } from '../../lib/api';
-import { useAuth } from '../../lib/authContext';
-import { Zap, X, Menu, Layers } from 'lucide-react';
-
-function TrialBanner() {
-  const { user } = useAuth();
-  const [plan, setPlan]           = useState(null);
-  const [dismissed, setDismissed] = useState(false);
-
-  useEffect(() => {
-    if (!user) return;
-    api.get('/settings').then(r => {
-      const s = r.data;
-      if (s.plan && s.plan_expires_at && s.plan_status === 'active') {
-        const daysLeft = Math.ceil((new Date(s.plan_expires_at) - new Date()) / 86400000);
-        setPlan({ type: s.plan, daysLeft });
-      }
-    }).catch(() => {});
-  }, [user]);
-
-  if (!plan || dismissed) return null;
-  const urgent = plan.daysLeft <= 7;
-  const show   = plan.type === 'demo' || plan.daysLeft <= 10;
-  if (!show) return null;
-
-  return (
-    <div className={`flex items-center gap-2 px-3 py-2 text-xs font-medium print:hidden flex-wrap ${urgent ? 'bg-rose-600/90 text-white' : 'bg-amber-500/90 text-white'}`}>
-      <Zap size={12} className="flex-shrink-0" />
-      <span>{plan.type === 'demo' ? `Demo — ${plan.daysLeft}d left` : `Trial — ${plan.daysLeft}d left`}</span>
-      {urgent && <span className="font-bold">Upgrade to keep your data.</span>}
-      <a href="mailto:sales@apparelcrm.com" className="underline hover:no-underline whitespace-nowrap">Upgrade →</a>
-      <button onClick={() => setDismissed(true)} className="ml-auto p-0.5 hover:opacity-70"><X size={12} /></button>
-    </div>
-  );
-}
+import { apiFetch, imgUrl } from '../../lib/api';
+import { Menu, Layers } from 'lucide-react';
 
 export default function Layout() {
   const { pathname }        = useLocation();
@@ -79,7 +46,7 @@ export default function Layout() {
       )}
 
       {/* Main content */}
-      <main className="flex-1 min-h-screen overflow-x-hidden print:ml-0 lg:ml-60 flex flex-col">
+      <main className="flex-1 min-h-screen overflow-x-clip print:ml-0 lg:ml-60 flex flex-col">
 
         {/* Mobile top bar */}
         <div className="lg:hidden flex-shrink-0 sticky top-0 z-20 bg-[#1c1c1e] border-b border-white/[0.06] px-4 py-3 flex items-center gap-3">
@@ -99,9 +66,6 @@ export default function Layout() {
             <span className="text-white font-semibold text-sm truncate">{appName}</span>
           </div>
         </div>
-
-        {/* Trial banner */}
-        <TrialBanner />
 
         {/* Page content */}
         <div key={pathname} className="animate-page p-4 md:p-6 lg:p-8 flex-1">

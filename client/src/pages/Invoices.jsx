@@ -38,7 +38,8 @@ const fmt = d => {
   return `${String(dt.getDate()).padStart(2,'0')} ${MONTHS[dt.getMonth()]} ${dt.getFullYear()}`;
 };
 const fmtMoney = (v, sym = '$') => `${sym}${(parseFloat(v) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const getSym   = code => ({ PKR: '₨', EUR: '€', GBP: '£', AED: 'د.إ' }[code] ?? '$');
+// AED uses its ISO code — the RTL "د.إ" glyph gets reordered next to digits and renders as garbage
+const getSym   = code => ({ PKR: '₨', EUR: '€', GBP: '£', AED: 'AED ', SAR: 'SAR ', QAR: 'QAR ' }[code] ?? '$');
 const methodLabel = m => PAY_METHODS.find(p => p.value === m)?.label ?? m;
 
 const inputCls = 'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-3 focus:ring-indigo-100 transition-all duration-150 bg-white placeholder:text-slate-400';
@@ -1343,14 +1344,34 @@ export default function Invoices() {
     );
   }
 
+  // Outstanding per currency — never add USD to AED etc.
+  const outstandingByCur = invoices.reduce((acc, i) => {
+    const due = Math.max(0, (parseFloat(i.total)||0) - (parseFloat(i.amount_paid)||0));
+    if (due > 0) { const c = i.currency || 'USD'; acc[c] = (acc[c] || 0) + due; }
+    return acc;
+  }, {});
+  const outstandingLabel = Object.entries(outstandingByCur)
+    .map(([c, v]) => `${getSym(c)}${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`)
+    .join(' + ');
+  const kpi = [
+    { label: 'All',     value: total,   sub: 'invoices',                tint: 'border-slate-200 border-t-4 border-t-indigo-500', pill: 'bg-indigo-100/70 text-indigo-700 border-indigo-200/70',   dot: 'bg-indigo-500',  filter: '' },
+    { label: 'Unpaid',  value: unpaid,  sub: 'no payment yet',          tint: 'border-slate-200 border-t-4 border-t-amber-500',   pill: 'bg-amber-100/70 text-amber-700 border-amber-200/70',     dot: 'bg-amber-500',   filter: 'unpaid' },
+    { label: 'Partial', value: partial, sub: 'partly paid',             tint: 'border-slate-200 border-t-4 border-t-sky-500',         pill: 'bg-sky-100/70 text-sky-700 border-sky-200/70',           dot: 'bg-sky-500',     filter: 'partial' },
+    { label: 'Paid',    value: paid,    sub: 'settled',                 tint: 'border-slate-200 border-t-4 border-t-emerald-500', pill: 'bg-emerald-100/70 text-emerald-700 border-emerald-200/70', dot: 'bg-emerald-500', filter: 'paid' },
+    { label: 'Overdue', value: overdue, sub: overdue > 0 ? 'need follow-up' : 'all on track', tint: overdue > 0 ? 'border-slate-200 border-t-4 border-t-rose-500' : 'border-slate-200 border-t-4 border-t-slate-300', pill: overdue > 0 ? 'bg-rose-100/70 text-rose-700 border-rose-200/70' : 'bg-slate-100 text-slate-500 border-slate-200', dot: overdue > 0 ? 'bg-rose-500' : 'bg-slate-400', filter: 'overdue' },
+  ];
+
   return (
-    <div className="flex flex-col" style={{ height: 'calc(100vh - 8.5rem)' }}>
+    <div className="flex flex-col">
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4 flex-shrink-0">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Invoices & Payments</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Manage invoices and track all payment records</p>
+          <p className="text-sm text-slate-500 mt-0.5">
+            Manage invoices and track all payment records
+            {outstandingLabel && <span className="text-rose-500 font-semibold"> · {outstandingLabel} outstanding</span>}
+          </p>
         </div>
         <button onClick={() => navigate('/quotations/new')}
           className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-sm shadow-indigo-200 transition-colors">
@@ -1380,7 +1401,7 @@ export default function Invoices() {
 
       {/* ── Payments tab ── */}
       {activeTab === 'payments' && (
-        <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className="mt-4">
           <PaymentsTab
             settings={settings}
             onPrintReceipt={data => setPaymentsReceipt(data)}
@@ -1389,34 +1410,28 @@ export default function Invoices() {
         </div>
       )}
 
-      {/* ── Invoices tab: Two-panel split ── */}
+      {/* ── KPI tiles (click to filter) ── */}
       {activeTab === 'invoices' && (
-        <div className="flex-1 min-h-0 flex flex-col lg:flex-row rounded-2xl border border-slate-200 shadow-sm overflow-hidden bg-white print:border-0 print:rounded-none print:shadow-none print:overflow-visible">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 my-4 print:hidden">
+          {kpi.map(k => (
+            <button key={k.label} onClick={() => setFilterStatus(filterStatus === k.filter ? '' : k.filter)}
+              className={`text-left rounded-2xl p-4 bg-white border shadow-sm transition-all ${k.tint} ${filterStatus === k.filter && k.filter ? 'ring-2 ring-indigo-300' : 'hover:shadow'}`}>
+              <span className={`inline-flex items-center gap-1.5 text-2xs font-bold uppercase tracking-wider border px-2.5 py-1 rounded-full ${k.pill}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${k.dot}`} />{k.label}
+              </span>
+              <p className="text-2xl font-black text-slate-900 mt-2 leading-none">{k.value}</p>
+              <p className="text-2xs text-slate-500 mt-1">{k.sub}</p>
+            </button>
+          ))}
+        </div>
+      )}
 
-          {/* LEFT: Invoice list */}
-          <div className={`w-full lg:w-80 flex-1 min-h-0 lg:flex-none flex flex-col border-b lg:border-b-0 lg:border-r border-slate-200 bg-white print:hidden ${viewId ? 'hidden lg:flex' : ''}`}>
+      {/* ── Invoices tab: Two-panel split — page scrolls; only the list has its own scroll ── */}
+      {activeTab === 'invoices' && (
+        <div className="flex flex-col lg:flex-row lg:items-start rounded-2xl border border-slate-200 shadow-sm bg-white print:border-0 print:rounded-none print:shadow-none">
 
-            {/* Stats strip */}
-            <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-100 bg-slate-50/50">
-              {[
-                { label: 'All',     val: total,   dot: 'bg-slate-400'   },
-                { label: 'Unpaid',  val: unpaid,  dot: 'bg-amber-400'   },
-                { label: 'Partial', val: partial, dot: 'bg-blue-400'    },
-                { label: 'Paid',    val: paid,    dot: 'bg-emerald-500' },
-                { label: 'Overdue', val: overdue, dot: 'bg-rose-500'    },
-              ].map(({ label, val, dot }) => (
-                <button key={label}
-                  onClick={() => setFilterStatus(label === 'All' ? '' : label.toLowerCase())}
-                  className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-all flex-1 justify-center ${
-                    (label === 'All' && !filterStatus) || filterStatus === label.toLowerCase()
-                      ? 'bg-white shadow-sm text-slate-800 border border-slate-200'
-                      : 'text-slate-500 hover:bg-white/60'
-                  }`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
-                  {val}
-                </button>
-              ))}
-            </div>
+          {/* LEFT: Invoice list (sticky on desktop) */}
+          <div className={`w-full lg:w-80 lg:flex-none flex flex-col border-b lg:border-b-0 lg:border-r border-slate-200 bg-white print:hidden lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] rounded-t-2xl lg:rounded-tr-none lg:rounded-l-2xl overflow-hidden ${viewId ? 'hidden lg:flex' : ''}`}>
 
             {/* Search */}
             <div className="px-3 py-2 border-b border-slate-100">
@@ -1446,9 +1461,9 @@ export default function Invoices() {
                   const isOverdue = inv.due_date && inv.due_date < new Date().toISOString().split('T')[0] && inv.status !== 'paid';
                   const isSelected = viewId === inv.id;
                   return (
-                    <button key={inv.id}
+                    <div key={inv.id}
                       onClick={() => setViewId(isSelected ? null : inv.id)}
-                      className={`w-full text-left px-4 py-3.5 border-b border-slate-100 transition-colors flex flex-col gap-1 relative group ${
+                      className={`w-full text-left px-4 py-3.5 border-b border-slate-100 transition-colors flex flex-col gap-1 relative group cursor-pointer ${
                         isSelected
                           ? 'bg-indigo-50 border-l-[3px] border-l-indigo-600'
                           : 'hover:bg-slate-50/80 border-l-[3px] border-l-transparent'
@@ -1488,7 +1503,7 @@ export default function Invoices() {
                           <Trash2 size={11} />
                         </button>
                       </div>
-                    </button>
+                    </div>
                   );
                 })
               )}

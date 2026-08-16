@@ -1,25 +1,154 @@
-﻿import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Plus, Search, Pencil, Trash2, X, Mail, Phone,
   MapPin, Building2, FileText, ChevronRight, ArrowLeft,
   AlertTriangle, Check, Truck, Upload, File, XCircle,
   User, CreditCard, Clock, DollarSign, Package,
-  ChevronDown, Receipt, Users,
+  ChevronDown, Receipt, Users, FileImage, MessageSquare, Send,
 } from 'lucide-react';
 import api, { imgUrl } from '../lib/api';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function Badge({ status }) {
-  const map = {
-    active:   'bg-emerald-100 text-emerald-700',
-    inactive: 'bg-slate-100 text-slate-500',
-    lead:     'bg-amber-100 text-amber-700',
-  };
+const LEAD_SOURCES = ['WhatsApp', 'Instagram', 'Facebook', 'Email', 'Website', 'Referral', 'Alibaba', 'Walk-in', 'Other'];
+
+const fmtSize = bytes => {
+  const n = parseFloat(bytes) || 0;
+  if (n >= 1_048_576) return `${(n / 1_048_576).toFixed(1)} MB`;
+  if (n >= 1024)      return `${Math.round(n / 1024)} KB`;
+  return `${n} B`;
+};
+
+// ── Client messages / initial conversation log ───────────────────────────────
+function ClientMessages({ client, onPatch }) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const list = (() => { try { const v = typeof client.messages === 'string' ? JSON.parse(client.messages || '[]') : (client.messages || []); return Array.isArray(v) ? v : []; } catch { return []; } })();
+
+  async function add() {
+    const t = text.trim();
+    if (!t) return;
+    setBusy(true);
+    try {
+      await onPatch({ messages: [...list, { id: Date.now(), text: t, at: new Date().toISOString(), source: client.lead_source || '' }] });
+      setText('');
+    } finally { setBusy(false); }
+  }
+  async function remove(id) {
+    await onPatch({ messages: list.filter(m => m.id !== id) });
+  }
+
   return (
-    <span className={`text-xs px-2 py-0.5 rounded-full font-semibold capitalize ${map[status] ?? map.inactive}`}>
-      {status}
+    <div className="rounded-2xl p-4 bg-white border border-slate-200 h-full flex flex-col">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5"><MessageSquare size={12} /> Conversation</p>
+        <span className="text-xs text-slate-500">{list.length} message{list.length !== 1 ? 's' : ''}</span>
+      </div>
+      <div className="flex-1 space-y-2 max-h-56 overflow-y-auto pr-1">
+        {list.length === 0 && <p className="text-sm text-slate-500 italic">Log the first messages / requirements the client sent you.</p>}
+        {list.map(m => (
+          <div key={m.id} className="group bg-slate-50 border border-slate-100 rounded-xl px-3 py-2">
+            <p className="text-sm text-slate-700 whitespace-pre-wrap leading-snug">{m.text}</p>
+            <div className="flex items-center justify-between mt-1">
+              <span className="text-xs text-slate-500">{fmt(m.at)}{m.source ? ` · ${m.source}` : ''}</span>
+              <button onClick={() => remove(m.id)} className="text-xs text-slate-400 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity">remove</button>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-2 mt-3">
+        <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()}
+          placeholder="Paste a message or note…"
+          className="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
+        <button onClick={add} disabled={busy || !text.trim()}
+          className="px-3 py-2 bg-indigo-600 text-white rounded-xl text-xs font-semibold hover:bg-indigo-700 disabled:opacity-40 flex items-center gap-1">
+          <Send size={12} /> Add
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Reusable file list with upload (documents / tech packs) ──────────────────
+function ClientFiles({ title, hint, icon: Icon, accent = 'slate', files, onChange }) {
+  const inputRef = useRef();
+  const [uploading, setUploading] = useState(false);
+  const isImg = f => /\.(png|jpe?g|gif|webp|svg)$/i.test(f.filename || f.originalName || '');
+  const tone = accent === 'indigo'
+    ? { head: 'text-indigo-700', box: 'bg-white border-slate-200 border-t-4 border-t-indigo-500', btn: 'border-indigo-200 text-indigo-600 hover:bg-indigo-50' }
+    : { head: 'text-slate-600',  box: 'bg-white border-slate-200',        btn: 'border-slate-200 text-slate-600 hover:bg-slate-50' };
+
+  async function handleFiles(e) {
+    const picked = [...e.target.files];
+    if (!picked.length) return;
+    setUploading(true);
+    try {
+      const uploaded = await Promise.all(picked.map(async file => {
+        const fd = new FormData(); fd.append('file', file);
+        const { data } = await api.post('/uploads', fd);
+        return data;
+      }));
+      await onChange([...files, ...uploaded]);
+    } finally { setUploading(false); e.target.value = ''; }
+  }
+  async function remove(f) {
+    await api.delete(`/uploads/${f.filename}`).catch(() => {});
+    await onChange(files.filter(x => x.filename !== f.filename));
+  }
+
+  return (
+    <div className={`rounded-2xl p-4 border h-full ${tone.box}`}>
+      <div className="flex items-center justify-between mb-2 gap-2">
+        <div className="min-w-0">
+          <p className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${tone.head}`}><Icon size={12} /> {title} <span className="font-normal normal-case text-slate-500">({files.length})</span></p>
+          {hint && <p className="text-xs text-slate-500 mt-0.5 truncate">{hint}</p>}
+        </div>
+        <button onClick={() => inputRef.current?.click()} disabled={uploading}
+          className={`flex items-center gap-1 text-xs font-semibold border bg-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0 ${tone.btn}`}>
+          <Upload size={12} /> {uploading ? 'Uploading…' : 'Upload'}
+        </button>
+        <input ref={inputRef} type="file" multiple className="hidden" onChange={handleFiles} />
+      </div>
+      {files.length === 0 ? (
+        <p className="text-sm text-slate-500 italic py-2">No files yet.</p>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {files.map(f => (
+            <div key={f.filename} className="group relative bg-white border border-slate-200 rounded-xl overflow-hidden">
+              <a href={imgUrl(f.url || f.filename)} target="_blank" rel="noreferrer" className="block">
+                {isImg(f)
+                  ? <img src={imgUrl(f.url || f.filename)} alt={f.originalName} className="w-full h-20 object-cover" />
+                  : <div className="w-full h-20 flex items-center justify-center bg-slate-50"><File size={20} className="text-slate-300" /></div>}
+                <div className="px-2 py-1.5">
+                  <p className="text-2xs font-medium text-slate-700 truncate">{f.originalName || f.filename}</p>
+                  {f.size && <p className="text-2xs text-slate-400">{fmtSize(f.size)}</p>}
+                </div>
+              </a>
+              <button onClick={() => remove(f)}
+                className="absolute top-1 right-1 w-5 h-5 bg-white/90 border border-slate-200 rounded-full text-slate-400 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                <X size={10} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Deal-status badge (replaces the old active/inactive/lead status)
+function Badge({ status, deal }) {
+  const key = deal || 'open';
+  const map = {
+    open:        { label: 'Open', cls: 'bg-amber-100 text-amber-700' },
+    closed_won:  { label: 'Won',  cls: 'bg-emerald-100 text-emerald-700' },
+    closed_lost: { label: 'Lost', cls: 'bg-rose-100 text-rose-700' },
+  };
+  const cfg = map[key] || map.open;
+  return (
+    <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${cfg.cls}`}>
+      {cfg.label}
     </span>
   );
 }
@@ -47,7 +176,6 @@ const fmtMoney = (v, codeOrSym = '$') => {
   const num = (parseFloat(v) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return `${sym}${num}`;
 };
-const fmtSize = b => b < 1024 * 1024 ? `${(b / 1024).toFixed(0)} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`;
 
 const STATUS_COLORS = {
   draft: 'bg-slate-100 text-slate-600', sent: 'bg-blue-100 text-blue-700',
@@ -136,7 +264,7 @@ function ClientListItem({ client, isSelected, onClick }) {
         )}
       </div>
       <div className="flex flex-col items-end gap-1 flex-shrink-0">
-        <Badge status={client.status} />
+        <Badge deal={client.deal_status} />
         {(client.city || client.country) && (
           <p className="text-2xs text-slate-300 truncate max-w-[80px]">
             {[client.city, client.country].filter(Boolean).join(', ')}
@@ -151,7 +279,7 @@ function ClientListItem({ client, isSelected, onClick }) {
 
 const DETAIL_TABS = ['Overview', 'Transactions', 'Statement'];
 
-function ClientDetailPanel({ client, stats, statsLoading, onEdit, onDelete, onClose }) {
+function ClientDetailPanel({ client, stats, statsLoading, onEdit, onDelete, onClose, onPatch }) {
   const [tab, setTab] = useState('Overview');
 
   // Reset to Overview when client changes
@@ -159,17 +287,19 @@ function ClientDetailPanel({ client, stats, statsLoading, onEdit, onDelete, onCl
 
   if (!client) return null;
 
-  const docs     = (() => { try { return JSON.parse(client.documents ?? '[]'); } catch { return []; } })();
+  const parseList = v => { try { const x = typeof v === 'string' ? JSON.parse(v || '[]') : (v || []); return Array.isArray(x) ? x : []; } catch { return []; } };
+  const docs      = parseList(client.documents);
+  const techPacks = parseList(client.tech_packs);
   const billing  = [client.address, client.city, client.zip, client.country].filter(Boolean).join(', ') || null;
   const shipping = [client.shipping_address, client.shipping_city, client.shipping_zip, client.shipping_country].filter(Boolean).join(', ') || null;
   const receiver = [client.shipping_receiver_name, client.shipping_receiver_phone].filter(Boolean).join(' · ') || null;
   const sym      = client.currency || 'USD';
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="flex flex-col">
 
       {/* ── Header ── */}
-      <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-200 flex-shrink-0 bg-white">
+      <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-200 flex-shrink-0 bg-white rounded-tr-2xl">
         {/* Row 1: back + avatar + name + edit/delete */}
         <div className="flex items-center gap-3 min-w-0">
           {onClose && (
@@ -188,7 +318,7 @@ function ClientDetailPanel({ client, stats, statsLoading, onEdit, onDelete, onCl
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="font-bold text-slate-900 text-base leading-tight truncate">{client.display_name || client.name}</h2>
-              <Badge status={client.status} />
+              <Badge deal={client.deal_status} />
             </div>
             {client.company && <p className="text-slate-400 text-xs truncate">{client.company}</p>}
             {client.customer_number && <p className="text-slate-300 text-xs">#{client.customer_number}</p>}
@@ -222,176 +352,158 @@ function ClientDetailPanel({ client, stats, statsLoading, onEdit, onDelete, onCl
         ))}
       </div>
 
-      {/* ── Body ── */}
-      <div className="flex-1 min-h-0 overflow-y-auto bg-slate-50/40">
+      {/* ── Body — no inner scroll; the page scrolls ── */}
+      <div className="flex-1 bg-slate-50/40 rounded-br-2xl">
 
-        {/* ── Overview ── */}
-        {tab === 'Overview' && (
-          <div className="grid grid-cols-1 lg:grid-cols-5 divide-y lg:divide-y-0 divide-x-0 lg:divide-x divide-slate-100 min-h-full">
+        {/* ── Overview — bento grid ── */}
+        {tab === 'Overview' && (() => {
+          const out    = stats?.stats?.outstanding   ?? 0;
+          const rev    = stats?.stats?.total_revenue ?? 0;
+          const pipe   = stats?.stats?.pipeline_value ?? 0;
+          const deal   = client.deal_status || 'open';
+          const dealCfg = {
+            open:        { label: 'Open',        cls: 'bg-amber-100/70 text-amber-700 border-amber-200/70',     dot: 'bg-amber-500' },
+            closed_won:  { label: 'Closed · Won',  cls: 'bg-emerald-100/70 text-emerald-700 border-emerald-200/70', dot: 'bg-emerald-500' },
+            closed_lost: { label: 'Closed · Lost', cls: 'bg-rose-100/70 text-rose-700 border-rose-200/70',       dot: 'bg-rose-500' },
+          }[deal] || { label: deal, cls: 'bg-slate-100 text-slate-600 border-slate-200', dot: 'bg-slate-400' };
+          const paidUp = !statsLoading && rev > 0 && out <= 0.005;
+          const pill = (children, cls) => (
+            <span className={`inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider border px-2.5 py-1 rounded-full ${cls}`}>{children}</span>
+          );
+          return (
+            <div className="p-4 sm:p-5 grid grid-cols-2 lg:grid-cols-4 gap-3 auto-rows-min">
 
-            {/* Left */}
-            <div className="lg:col-span-3 px-6 py-5 space-y-6">
-
-              {/* Contact */}
-              <div>
-                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Contact</h3>
-                <div className="space-y-2">
-                  {client.phone && (
-                    <div className="flex items-center gap-2.5 text-sm text-slate-700">
-                      <Phone size={13} className="text-slate-400 flex-shrink-0" />
-                      {client.phone}
-                    </div>
-                  )}
-                  {client.email && (
-                    <div className="flex items-center gap-2.5 text-sm text-slate-700">
-                      <Mail size={13} className="text-slate-400 flex-shrink-0" />
-                      <a href={`mailto:${client.email}`} className="text-indigo-600 hover:underline">{client.email}</a>
-                    </div>
-                  )}
-                  {!client.phone && !client.email && (
-                    <p className="text-slate-400 text-sm italic">No contact info</p>
-                  )}
-                </div>
-              </div>
-
-              {/* Address */}
-              <div>
-                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Address</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-xs text-slate-500 font-medium mb-1 flex items-center gap-1">
-                      <MapPin size={11} className="text-indigo-400" /> Billing
-                    </p>
-                    <p className="text-sm text-slate-700">{billing ?? <span className="text-slate-400 italic">No billing address</span>}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500 font-medium mb-1 flex items-center gap-1">
-                      <Truck size={11} className="text-violet-400" /> Shipping
-                    </p>
-                    {receiver && <p className="text-xs text-indigo-600 font-medium mb-0.5">{receiver}</p>}
-                    <p className="text-sm text-slate-700">{shipping ?? <span className="text-slate-400 italic">No shipping address</span>}</p>
+              {/* Deal / source — 2 wide */}
+              <div className="col-span-2 rounded-2xl p-4 bg-white border border-slate-200 border-t-4 border-t-indigo-500">
+                <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Deal</span>
+                  <div className="flex items-center gap-1.5">
+                    {['open','closed_won','closed_lost'].map(k => {
+                      const c = { open: 'Open', closed_won: 'Won', closed_lost: 'Lost' }[k];
+                      const on = deal === k;
+                      return (
+                        <button key={k} onClick={() => onPatch({ deal_status: k })}
+                          className={`text-xs px-2.5 py-1.5 rounded-lg border font-semibold transition-colors ${
+                            on ? (k === 'closed_won' ? 'bg-emerald-600 border-emerald-600 text-white' : k === 'closed_lost' ? 'bg-rose-600 border-rose-600 text-white' : 'bg-amber-500 border-amber-500 text-white')
+                               : 'bg-white border-slate-200 text-slate-500 hover:border-indigo-300'
+                          }`}>{c}</button>
+                      );
+                    })}
                   </div>
                 </div>
-              </div>
-
-              {/* Other Details */}
-              <div>
-                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Details</h3>
-                <div className="grid grid-cols-2 gap-y-3 gap-x-6">
-                  {[
-                    { label: 'Customer Type',    value: client.customer_type },
-                    { label: 'Customer #',       value: client.customer_number },
-                    { label: 'Currency',         value: client.currency },
-                    { label: 'Products Origin',  value: client.products_origin },
-                    { label: 'Payment Terms',    value: client.payment_terms },
-                    { label: 'Owner',            value: client.customer_owner },
-                    { label: 'Language',         value: client.customer_language },
-                    { label: 'Added',            value: fmt(client.created_at) },
-                  ].filter(({ value }) => value).map(({ label, value }) => (
-                    <div key={label}>
-                      <p className="text-xs text-slate-400">{label}</p>
-                      <p className="text-sm text-slate-800 font-medium capitalize">{value}</p>
-                    </div>
-                  ))}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {pill(<><span className={`w-1.5 h-1.5 rounded-full ${dealCfg.dot}`} />{dealCfg.label}</>, dealCfg.cls)}
+                  {paidUp && pill(<><Check size={10} />Paid up</>, 'bg-emerald-100/70 text-emerald-700 border-emerald-200/70')}
+                  {deal === 'closed_won' && paidUp && pill(<>Tech packs sync to projects</>, 'bg-indigo-100/70 text-indigo-700 border-indigo-200/70')}
                 </div>
-              </div>
-
-              {/* Notes */}
-              {client.notes && (
-                <div>
-                  <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Notes</h3>
-                  <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
-                    {client.notes}
-                  </div>
-                </div>
-              )}
-
-              {/* Documents */}
-              {docs.length > 0 && (
-                <div>
-                  <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Documents</h3>
-                  <div className="space-y-2">
-                    {docs.map(doc => (
-                      <a key={doc.filename} href={doc.url} target="_blank" rel="noreferrer"
-                        className="flex items-center gap-3 bg-white hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 rounded-xl px-3 py-2.5 transition-colors group">
-                        <File size={14} className="text-indigo-500 flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-slate-700 group-hover:text-indigo-700 truncate">{doc.originalName}</p>
-                          <p className="text-xs text-slate-400">{fmtSize(doc.size)}</p>
-                        </div>
-                      </a>
+                <div className="mt-3">
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Lead source · where the conversation started</p>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {LEAD_SOURCES.map(s => (
+                      <button key={s} onClick={() => onPatch({ lead_source: client.lead_source === s ? '' : s })}
+                        className={`text-xs px-2.5 py-1.5 rounded-lg border font-medium transition-colors ${
+                          client.lead_source === s ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-indigo-600'
+                        }`}>{s}</button>
                     ))}
                   </div>
                 </div>
-              )}
-            </div>
-
-            {/* Right: Financials */}
-            <div className="lg:col-span-2 px-5 py-5 space-y-5 bg-white">
-              <div>
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Payment Due Period</p>
-                <p className="text-sm font-semibold text-slate-800">{client.payment_terms || 'Due on Receipt'}</p>
               </div>
 
-              <div>
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Receivables</p>
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="text-slate-400 border-b border-slate-100">
-                      <th className="text-left pb-2 font-semibold">Currency</th>
-                      <th className="text-right pb-2 font-semibold">Outstanding</th>
-                      <th className="text-right pb-2 font-semibold">Revenue</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className="text-slate-700">
-                      <td className="py-2">{sym}</td>
-                      <td className="py-2 text-right font-medium text-rose-600">
-                        {statsLoading ? '…' : fmtMoney(stats?.stats?.outstanding ?? 0, sym)}
-                      </td>
-                      <td className="py-2 text-right font-medium text-emerald-700">
-                        {statsLoading ? '…' : fmtMoney(stats?.stats?.total_revenue ?? 0, sym)}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              {!statsLoading && (stats?.stats?.pipeline_value ?? 0) > 0 && (
-                <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs text-indigo-600 font-semibold">Pipeline (Quotations)</p>
-                    <span className="text-2xs font-mono text-indigo-500 bg-indigo-100 px-2 py-0.5 rounded-full">
-                      {stats.stats.currency || sym}
-                    </span>
-                  </div>
-                  <p className="text-lg font-bold text-indigo-700 mt-0.5">
-                    {fmtMoney(stats.stats.pipeline_value, sym)}
-                  </p>
-                  {stats.quotations?.some(q => (q.currency || sym) !== sym) && (
-                    <p className="text-2xs text-indigo-500/70 mt-1">
-                      Includes quotes in other currencies, converted via your exchange rates.
-                    </p>
-                  )}
+              {/* Revenue tile */}
+              <div className="rounded-2xl p-4 bg-white border border-slate-200 border-t-4 border-t-emerald-500 flex flex-col justify-between min-h-[110px]">
+                {pill(<><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />Revenue</>, 'bg-emerald-100/70 text-emerald-700 border-emerald-200/70')}
+                <div>
+                  <p className="text-2xl font-black text-slate-900 tracking-tight">{statsLoading ? '…' : fmtMoney(rev, sym)}</p>
+                  <p className="text-sm text-slate-600 mt-1">{stats?.stats?.payments_count ?? 0} payments</p>
                 </div>
-              )}
+              </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  { label: 'Quotations', value: statsLoading ? '…' : (stats?.stats?.quotations_count ?? 0) },
-                  { label: 'Invoices',   value: statsLoading ? '…' : (stats?.stats?.invoices_count  ?? 0) },
-                  { label: 'Payments',   value: statsLoading ? '…' : (stats?.stats?.payments_count  ?? 0) },
-                  { label: 'Revenue',    value: statsLoading ? '…' : fmtMoney(stats?.stats?.total_revenue ?? 0, sym) },
-                ].map(({ label, value }) => (
-                  <div key={label} className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
-                    <p className="text-sm font-bold text-slate-800 truncate">{value}</p>
-                    <p className="text-xs text-slate-400">{label}</p>
+              {/* Outstanding tile */}
+              <div className={`rounded-2xl p-4 border flex flex-col justify-between min-h-[110px] ${
+                out > 0 ? 'bg-white border-slate-200 border-t-4 border-t-rose-500' : 'bg-white border-slate-200 border-t-4 border-t-slate-300'}`}>
+                {pill(<><span className={`w-1.5 h-1.5 rounded-full ${out > 0 ? 'bg-rose-500' : 'bg-slate-400'}`} />Outstanding</>,
+                  out > 0 ? 'bg-rose-100/70 text-rose-700 border-rose-200/70' : 'bg-slate-100 text-slate-500 border-slate-200')}
+                <div>
+                  <p className={`text-2xl font-black tracking-tight ${out > 0 ? 'text-rose-700' : 'text-slate-900'}`}>{statsLoading ? '…' : fmtMoney(out, sym)}</p>
+                  <p className="text-sm text-slate-600 mt-1">{stats?.stats?.invoices_count ?? 0} invoices · {client.payment_terms || 'Due on receipt'}</p>
+                </div>
+              </div>
+
+              {/* Contact — 2 wide */}
+              <div className="col-span-2 rounded-2xl p-4 bg-white border border-slate-200">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Contact & Address</p>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                  <div className="space-y-1.5">
+                    {client.phone && <p className="flex items-center gap-2 text-slate-700"><Phone size={12} className="text-slate-400" />{client.phone}</p>}
+                    {client.email && <p className="flex items-center gap-2 text-slate-700 min-w-0"><Mail size={12} className="text-slate-400 flex-shrink-0" /><a href={`mailto:${client.email}`} className="text-indigo-600 hover:underline truncate">{client.email}</a></p>}
+                    {!client.phone && !client.email && <p className="text-slate-500 italic text-sm">No contact info</p>}
                   </div>
+                  <div className="space-y-2 text-sm">
+                    <p className="flex items-start gap-2 text-slate-700"><MapPin size={11} className="text-indigo-400 mt-0.5 flex-shrink-0" />{billing || <span className="text-slate-500 italic">No billing address</span>}</p>
+                    <p className="flex items-start gap-2 text-slate-700"><Truck size={11} className="text-violet-400 mt-0.5 flex-shrink-0" />{shipping || <span className="text-slate-500 italic">No shipping address</span>}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Pipeline tile */}
+              <div className="rounded-2xl p-4 bg-white border border-slate-200 border-t-4 border-t-violet-500 flex flex-col justify-between min-h-[110px]">
+                {pill(<><span className="w-1.5 h-1.5 rounded-full bg-violet-500" />Pipeline</>, 'bg-violet-100/70 text-violet-700 border-violet-200/70')}
+                <div>
+                  <p className="text-2xl font-black text-slate-900 tracking-tight">{statsLoading ? '…' : fmtMoney(pipe, sym)}</p>
+                  <p className="text-sm text-slate-600 mt-1">{stats?.stats?.quotations_count ?? 0} quotations</p>
+                </div>
+              </div>
+
+              {/* Details tile */}
+              <div className="rounded-2xl p-4 bg-white border border-slate-200 text-sm space-y-2">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Details</p>
+                {[
+                  ['Type', client.customer_type], ['Currency', client.currency], ['Origin', client.products_origin],
+                  ['Owner', client.customer_owner], ['Since', fmt(client.created_at)],
+                ].filter(([, v]) => v).map(([k, v]) => (
+                  <p key={k} className="flex justify-between gap-2"><span className="text-slate-500">{k}</span><span className="font-semibold text-slate-700 capitalize truncate">{v}</span></p>
                 ))}
               </div>
+
+              {/* Messages — 2 wide */}
+              <div className="col-span-2">
+                <ClientMessages client={client} onPatch={onPatch} />
+              </div>
+
+              {/* Tech packs — 2 wide */}
+              <div className="col-span-2">
+                <ClientFiles
+                  title="Tech Packs"
+                  hint="Design specs & references — auto-copied into new projects for this client"
+                  icon={FileImage}
+                  accent="indigo"
+                  files={techPacks}
+                  onChange={list => onPatch({ tech_packs: list })}
+                />
+              </div>
+
+              {/* Documents — 2 wide */}
+              <div className="col-span-2">
+                <ClientFiles
+                  title="Documents"
+                  hint="Contracts, IDs, PO copies and other files"
+                  icon={File}
+                  accent="slate"
+                  files={docs}
+                  onChange={list => onPatch({ documents: list })}
+                />
+              </div>
+
+              {/* Notes — 2 wide */}
+              <div className="col-span-2 rounded-2xl p-4 bg-white border border-slate-200 border-t-4 border-t-amber-400">
+                <p className="text-xs font-bold uppercase tracking-wider text-amber-700 mb-1.5">Notes</p>
+                {client.notes
+                  ? <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{client.notes}</p>
+                  : <p className="text-sm text-amber-600/80 italic">No notes — use Edit to add.</p>}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* ── Transactions ── */}
         {tab === 'Transactions' && (
@@ -615,7 +727,13 @@ function EmptyIllustration({ text, sub }) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
-const FILTERS = ['All', 'Active', 'Inactive', 'Lead'];
+// Filters are deal-status based (status active/inactive/lead is legacy)
+const FILTERS = [
+  { key: 'All',         label: 'All' },
+  { key: 'open',        label: 'Open' },
+  { key: 'closed_won',  label: 'Won' },
+  { key: 'closed_lost', label: 'Lost' },
+];
 
 export default function Clients() {
   const navigate                        = useNavigate();
@@ -662,42 +780,61 @@ export default function Clients() {
     } finally { setDeleting(false); }
   };
 
+  const dealOf = c => c.deal_status || 'open';
   const filtered = clients.filter(c => {
-    const matchStatus = filter === 'All' || c.status === filter.toLowerCase();
+    const matchStatus = filter === 'All' || dealOf(c) === filter;
     const matchSearch = !search || [c.name, c.company, c.display_name, c.email, c.phone, c.city, c.customer_number]
       .some(f => f?.toLowerCase().includes(search.toLowerCase()));
     return matchStatus && matchSearch;
   });
 
   const stats_counts = {
-    total:    clients.length,
-    active:   clients.filter(c => c.status === 'active').length,
-    inactive: clients.filter(c => c.status === 'inactive').length,
-    lead:     clients.filter(c => c.status === 'lead').length,
+    total: clients.length,
+    open:  clients.filter(c => dealOf(c) === 'open').length,
+    won:   clients.filter(c => dealOf(c) === 'closed_won').length,
+    lost:  clients.filter(c => dealOf(c) === 'closed_lost').length,
   };
+  const kpi = [
+    { key: 'All',         label: 'Clients', value: stats_counts.total, sub: 'all customers',        tint: 'border-slate-200 border-t-4 border-t-indigo-500',   pill: 'bg-indigo-100/70 text-indigo-700 border-indigo-200/70',   dot: 'bg-indigo-500' },
+    { key: 'open',        label: 'Open',    value: stats_counts.open,  sub: 'deals in progress',    tint: 'border-slate-200 border-t-4 border-t-amber-500',     pill: 'bg-amber-100/70 text-amber-700 border-amber-200/70',     dot: 'bg-amber-500' },
+    { key: 'closed_won',  label: 'Won',     value: stats_counts.won,   sub: 'closed · producing',   tint: 'border-slate-200 border-t-4 border-t-emerald-500',   pill: 'bg-emerald-100/70 text-emerald-700 border-emerald-200/70', dot: 'bg-emerald-500' },
+    { key: 'closed_lost', label: 'Lost',    value: stats_counts.lost,  sub: 'did not convert',      tint: stats_counts.lost > 0 ? 'border-slate-200 border-t-4 border-t-rose-500' : 'border-slate-200 border-t-4 border-t-slate-300', pill: stats_counts.lost > 0 ? 'bg-rose-100/70 text-rose-700 border-rose-200/70' : 'bg-slate-100 text-slate-500 border-slate-200', dot: stats_counts.lost > 0 ? 'bg-rose-500' : 'bg-slate-400' },
+  ];
 
   return (
-    <div className="flex flex-col" style={{ height: 'calc(100vh - 8.5rem)' }}>
+    <div className="flex flex-col">
 
       {/* ── Page Header ── */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-5 flex-shrink-0">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4 flex-shrink-0">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Clients</h1>
-          <p className="text-slate-500 text-sm mt-0.5">
-            {stats_counts.active} active · {stats_counts.lead} leads · {stats_counts.total} total
-          </p>
+          <p className="text-slate-500 text-sm mt-0.5">Leads, deals, conversations and tech packs — everything about a customer</p>
         </div>
         <button onClick={() => navigate('/clients/new')}
-          className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-indigo-700 transition-colors shadow-sm">
+          className="flex items-center gap-2 bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-indigo-700 transition-colors shadow-sm shadow-indigo-200">
           <Plus size={16} /> New Customer
         </button>
       </div>
 
-      {/* ── Split Pane ── */}
-      <div className="flex-1 min-h-0 flex flex-col lg:flex-row rounded-2xl border border-slate-200 shadow-sm overflow-hidden bg-white">
+      {/* ── KPI tiles (click to filter by deal status) ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        {kpi.map(k => (
+          <button key={k.key} onClick={() => setFilter(filter === k.key ? 'All' : k.key)}
+            className={`text-left rounded-2xl p-4 bg-white border shadow-sm transition-all ${k.tint} ${filter === k.key && k.key !== 'All' ? 'ring-2 ring-indigo-300' : 'hover:shadow'}`}>
+            <span className={`inline-flex items-center gap-1.5 text-2xs font-bold uppercase tracking-wider border px-2.5 py-1 rounded-full ${k.pill}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${k.dot}`} />{k.label}
+            </span>
+            <p className="text-2xl font-black text-slate-900 mt-2 leading-none">{k.value}</p>
+            <p className="text-2xs text-slate-500 mt-1">{k.sub}</p>
+          </button>
+        ))}
+      </div>
 
-        {/* LEFT: Client List */}
-        <div className={`w-full lg:w-72 flex-1 min-h-0 lg:flex-none flex flex-col border-b lg:border-b-0 lg:border-r border-slate-200 ${selected ? 'hidden lg:flex' : ''}`}>
+      {/* ── Split Pane — page scrolls naturally; only the client list has its own scroll ── */}
+      <div className="flex flex-col lg:flex-row lg:items-start rounded-2xl border border-slate-200 shadow-sm bg-white">
+
+        {/* LEFT: Client List (sticky on desktop) */}
+        <div className={`w-full lg:w-72 lg:flex-none flex flex-col border-b lg:border-b-0 lg:border-r border-slate-200 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] rounded-t-2xl lg:rounded-tr-none lg:rounded-l-2xl overflow-hidden ${selected ? 'hidden lg:flex' : ''}`}>
 
           {/* Search & Filter */}
           <div className="p-3 border-b border-slate-100 space-y-2 flex-shrink-0 bg-white">
@@ -712,11 +849,11 @@ export default function Clients() {
             </div>
             <div className="flex gap-1">
               {FILTERS.map(f => (
-                <button key={f} onClick={() => setFilter(f)}
+                <button key={f.key} onClick={() => setFilter(f.key)}
                   className={`flex-1 py-1 text-xs rounded-lg font-medium transition-all ${
-                    filter === f ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
+                    filter === f.key ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
                   }`}>
-                  {f}
+                  {f.label}
                 </button>
               ))}
             </div>
@@ -752,8 +889,8 @@ export default function Clients() {
           </div>
         </div>
 
-        {/* RIGHT: Detail Panel */}
-        <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+        {/* RIGHT: Detail Panel — grows with content */}
+        <div className="flex-1 min-w-0 flex flex-col min-h-[60vh]">
           {/* Inline delete confirmation */}
           {delTarget && (
             <div className="flex items-center gap-3 px-5 py-3 bg-rose-50 border-b border-rose-200 text-sm flex-shrink-0">
@@ -778,6 +915,12 @@ export default function Clients() {
               onEdit={c => navigate(`/clients/${c.id}/edit`)}
               onDelete={c => setDelTarget(c)}
               onClose={() => setSelected(null)}
+              onPatch={async patch => {
+                // Partial update — server only writes the fields present in the body
+                const { data } = await api.put(`/clients/${selected.id}`, patch);
+                setSelected(data);
+                setClients(cs => cs.map(c => c.id === data.id ? data : c));
+              }}
             />
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-slate-50/40">

@@ -715,9 +715,9 @@ export default function Payroll() {
             ) : filtered.map(emp => {
               const isSelected = selected?.id === emp.id;
               return (
-                <button key={emp.id}
+                <div key={emp.id}
                   onClick={() => setSelected(isSelected ? null : emp)}
-                  className={`w-full text-left px-4 py-3.5 border-b border-slate-100 transition-colors flex flex-col gap-1.5 relative group ${
+                  className={`w-full text-left px-4 py-3.5 border-b border-slate-100 transition-colors flex flex-col gap-1.5 relative group cursor-pointer ${
                     isSelected
                       ? 'bg-indigo-50 border-l-[3px] border-l-indigo-600'
                       : 'hover:bg-slate-50/80 border-l-[3px] border-l-transparent'
@@ -757,7 +757,7 @@ export default function Payroll() {
                       <Trash2 size={11} />
                     </button>
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>

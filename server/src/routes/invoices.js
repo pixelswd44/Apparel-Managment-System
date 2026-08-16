@@ -240,6 +240,16 @@ router.post('/:id/duplicate', (req, res) => {
 
 router.delete('/:id', (req, res) => {
   try {
+    const inv = db.prepare('SELECT id, quotation_id, amount_paid FROM invoices WHERE id = ?').get(req.params.id);
+    if (!inv) return res.status(404).json({ error: 'Not found' });
+    // Deleting is safe when the source quotation still exists (the invoice can be re-generated).
+    // Without a quotation, block if money has been received against it.
+    const quoteExists = inv.quotation_id
+      ? !!db.prepare('SELECT id FROM quotations WHERE id = ?').get(inv.quotation_id)
+      : false;
+    if (!quoteExists && (parseFloat(inv.amount_paid) || 0) > 0) {
+      return res.status(400).json({ error: 'This invoice has payments recorded and no source quotation to fall back on. Remove the payments first, or keep the invoice.' });
+    }
     db.prepare('DELETE FROM payments WHERE invoice_id = ?').run(req.params.id);
     db.prepare('DELETE FROM invoices WHERE id = ?').run(req.params.id);
     res.json({ success: true });

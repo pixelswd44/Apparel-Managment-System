@@ -380,6 +380,46 @@ input, select, textarea {
   color: var(--tp) !important;
 }
 
+/* ── BOLD layout — heavy left accent stripe, tinted zebra table, colored total ── */
+[data-layout="bold"] {
+  border-left: 10px solid var(--tp) !important;
+}
+[data-layout="bold"] .doc-title {
+  color: var(--tp) !important;
+  font-size: 1.75rem !important;
+  letter-spacing: -0.02em !important;
+}
+[data-layout="bold"] .doc-header-band {
+  background: color-mix(in srgb, var(--tp) 6%, #fff) !important;
+  border-bottom: 3px solid var(--tp) !important;
+}
+[data-layout="bold"] .doc-table thead tr {
+  background: color-mix(in srgb, var(--tp) 12%, #fff) !important;
+  border-bottom: 2px solid var(--tp) !important;
+}
+[data-layout="bold"] .doc-table thead th {
+  color: var(--tp) !important;
+  font-weight: 800 !important;
+}
+[data-layout="bold"] .doc-table tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--tp) 4%, #fff) !important;
+}
+[data-layout="bold"] .doc-total-box {
+  background: color-mix(in srgb, var(--tp) 8%, #fff) !important;
+  border: 2px solid var(--tp) !important;
+  border-radius: 12px !important;
+  padding: 8px 14px !important;
+}
+[data-layout="bold"] .doc-total-box > div:last-of-type span {
+  color: var(--tp) !important;
+}
+[data-layout="bold"] .doc-notes-block,
+[data-layout="bold"] .doc-bank-block,
+[data-layout="bold"] .doc-terms-block {
+  border-left: 3px solid var(--tp) !important;
+  padding-left: 12px !important;
+}
+
 /* ── Watermark overlay ─────────────────────────────────────────────────────── */
 .doc-watermark {
   position: absolute;

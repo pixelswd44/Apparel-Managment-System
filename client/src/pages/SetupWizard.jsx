@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import {
-  Layers, Building2, Palette, User, CreditCard, Check,
+  Layers, Building2, Palette, User, Check,
   ChevronRight, ChevronLeft, Upload, Eye, EyeOff,
   Zap, Shield, Globe, BarChart2, FileText, Package,
   Sparkles, ArrowRight, Play,
@@ -108,7 +108,6 @@ function StepWelcome({ onNext, onDemo, demoLoading }) {
           {demoLoading ? 'Loading demo…' : 'Try Live Demo'}
         </button>
       </div>
-      <p className="text-white/25 text-xs mt-4">No credit card required · 30-day free trial</p>
     </div>
   );
 }
@@ -267,80 +266,7 @@ function StepAdmin({ data, onChange }) {
   );
 }
 
-// ── STEP 5: Plan ──────────────────────────────────────────────────────────
-function StepPlan({ data, onChange }) {
-  const plans = [
-    {
-      key: 'trial',
-      title: 'Free Trial',
-      price: 'Free for 30 days',
-      badge: 'Most Popular',
-      badgeColor: 'bg-emerald-500/20 text-emerald-400',
-      features: ['Full access to all modules', 'Unlimited clients & products', 'All 3 user roles', 'Priority support'],
-      border: 'border-indigo-500',
-      bg: 'bg-indigo-500/5',
-    },
-    {
-      key: 'demo',
-      title: 'Demo Mode',
-      price: '14-day preview',
-      badge: 'Quick Look',
-      badgeColor: 'bg-amber-500/20 text-amber-400',
-      features: ['Full feature access', 'Pre-loaded sample data', 'Perfect for evaluation', 'No commitment'],
-      border: 'border-white/15',
-      bg: 'bg-white/[0.03]',
-    },
-  ];
-
-  return (
-    <div className="space-y-5">
-      <div>
-        <h2 className="text-xl font-bold text-white mb-1">Choose Your Plan</h2>
-        <p className="text-white/40 text-sm">Start free — upgrade any time for continued access</p>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        {plans.map(p => (
-          <button key={p.key} type="button" onClick={() => onChange('plan', p.key)}
-            className={`text-left border-2 rounded-2xl p-5 transition-all ${p.border} ${p.bg} ${
-              data.plan === p.key ? 'ring-2 ring-indigo-500/30' : 'hover:border-white/25'
-            }`}>
-            <div className="flex items-start justify-between mb-3">
-              <div>
-                <p className="text-white font-bold text-base">{p.title}</p>
-                <p className="text-indigo-300 text-sm font-semibold mt-0.5">{p.price}</p>
-              </div>
-              <div className="flex flex-col items-end gap-2">
-                <span className={`text-2xs font-bold px-2 py-0.5 rounded-full ${p.badgeColor}`}>{p.badge}</span>
-                {data.plan === p.key && (
-                  <div className="w-5 h-5 bg-indigo-500 rounded-full flex items-center justify-center">
-                    <Check size={11} className="text-white" />
-                  </div>
-                )}
-              </div>
-            </div>
-            <ul className="space-y-1.5">
-              {p.features.map(f => (
-                <li key={f} className="flex items-center gap-2 text-xs text-white/60">
-                  <Check size={11} className="text-indigo-400 flex-shrink-0" />{f}
-                </li>
-              ))}
-            </ul>
-          </button>
-        ))}
-      </div>
-
-      <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-4 text-center">
-        <p className="text-white/40 text-xs">
-          After your trial, continue at <span className="text-white/70 font-semibold">$49/month</span> · Cancel anytime ·{' '}
-          <span className="text-indigo-400 cursor-pointer hover:underline">Contact us</span> for volume pricing
-        </p>
-      </div>
-    </div>
-  );
-}
-
-// ── STEP 6: Done ──────────────────────────────────────────────────────────
+// ── STEP 5: Done ──────────────────────────────────────────────────────────
 function StepDone({ data }) {
   return (
     <div className="text-center py-4">
@@ -350,14 +276,12 @@ function StepDone({ data }) {
       <h2 className="text-2xl font-bold text-white mb-2">You're all set!</h2>
       <p className="text-white/50 text-sm mb-6">
         {data.company_name ? `${data.company_name} is` : 'Your workspace is'} ready to use.
-        {data.plan === 'trial' ? ' Your 30-day free trial starts now.' : ' Your 14-day demo is active.'}
       </p>
 
-      <div className="grid grid-cols-3 gap-3 mb-8 text-center max-w-sm mx-auto">
+      <div className="grid grid-cols-2 gap-3 mb-8 text-center max-w-sm mx-auto">
         {[
           { label: 'Admin',    value: data.admin_username || 'admin', icon: User },
           { label: 'Currency', value: data.default_currency || 'USD', icon: Globe },
-          { label: 'Plan',     value: data.plan === 'trial' ? '30-day trial' : '14-day demo', icon: CreditCard },
         ].map(({ label, value, icon: Icon }) => (
           <div key={label} className="bg-white/[0.05] border border-white/[0.08] rounded-xl p-3">
             <Icon size={16} className="text-indigo-400 mx-auto mb-1.5" />
@@ -376,7 +300,6 @@ const STEPS = [
   { label: 'Company' },
   { label: 'Currency' },
   { label: 'Account' },
-  { label: 'Plan' },
   { label: 'Done' },
 ];
 
@@ -398,7 +321,6 @@ export default function SetupWizard({ onComplete }) {
     admin_username:   'admin',
     admin_email:      '',
     admin_password:   '',
-    plan:             'trial',
   });
 
   function set(k, v) { setData(d => ({ ...d, [k]: v })); }
@@ -417,12 +339,12 @@ export default function SetupWizard({ onComplete }) {
 
   async function handleNext() {
     if (!validate()) return;
-    if (step < 5) { setStep(s => s + 1); return; }
-    // Step 5 → submit
+    if (step < 4) { setStep(s => s + 1); return; }
+    // Step 4 → submit
     setSaving(true); setError('');
     try {
       await api.post('/setup/complete', data);
-      setStep(6);
+      setStep(5);
     } catch (err) {
       setError(err?.response?.data?.error || 'Setup failed. Please try again.');
     } finally { setSaving(false); }
@@ -443,8 +365,8 @@ export default function SetupWizard({ onComplete }) {
   }
 
   const showSteps = step > 1;
-  const isLastSetupStep = step === 5;
-  const isDone = step === 6;
+  const isLastSetupStep = step === 4;
+  const isDone = step === 5;
 
   return (
     <div className="min-h-screen bg-[#0a0a0c] flex items-center justify-center p-4">
@@ -487,8 +409,7 @@ export default function SetupWizard({ onComplete }) {
             {step === 2 && <StepCompany  data={data} onChange={set} />}
             {step === 3 && <StepCurrency data={data} onChange={set} />}
             {step === 4 && <StepAdmin    data={data} onChange={set} />}
-            {step === 5 && <StepPlan     data={data} onChange={set} />}
-            {step === 6 && <StepDone     data={data} />}
+            {step === 5 && <StepDone     data={data} />}
           </div>
 
           {/* Footer nav */}

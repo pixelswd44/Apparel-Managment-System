@@ -29,6 +29,11 @@ export const LAYOUTS = [
     label: 'Elegant',
     desc: 'Accent stripe, centered branding, refined spacing.',
   },
+  {
+    key: 'bold',
+    label: 'Bold',
+    desc: 'Heavy side stripe, tinted zebra rows, framed total.',
+  },
 ];
 
 const DOC_TYPES = [
@@ -252,6 +257,45 @@ function PreviewElegant({ primary }) {
   );
 }
 
+function PreviewBold({ primary }) {
+  const p = primary || '#ef4444';
+  return (
+    <div className="bg-white w-full h-full flex text-[3px] overflow-hidden">
+      {/* Heavy left stripe */}
+      <div className="w-1.5 flex-shrink-0" style={{ background: p }} />
+      <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex justify-between items-start px-2.5 pt-2 pb-1.5" style={{ background: p + '10', borderBottom: `1.5px solid ${p}` }}>
+          <div>
+            <div className="w-6 h-2 rounded bg-slate-300 mb-1" />
+            <div className="w-8 h-0.5 rounded bg-slate-300" />
+          </div>
+          <div className="text-[6px] font-black" style={{ color: p }}>INVOICE</div>
+        </div>
+        <div className="px-2.5 flex-1 pt-1">
+          <div className="flex gap-1 py-0.5 mb-0.5" style={{ background: p + '18', borderBottom: `1px solid ${p}` }}>
+            <div className="flex-1 h-0.5 rounded" style={{ background: p }} />
+            <div className="w-2 h-0.5 rounded" style={{ background: p }} />
+            <div className="w-3 h-0.5 rounded" style={{ background: p }} />
+          </div>
+          {[1,2,3,4].map(i => (
+            <div key={i} className="flex gap-1 py-0.5 items-center" style={{ background: i % 2 === 0 ? p + '08' : 'transparent' }}>
+              <div className="flex-1 h-0.5 rounded bg-slate-300" />
+              <div className="w-2 h-0.5 rounded bg-slate-200" />
+              <div className="w-3 h-0.5 rounded bg-slate-400" />
+            </div>
+          ))}
+        </div>
+        <div className="flex justify-end px-2.5 pb-2">
+          <div className="rounded px-1.5 py-1 flex items-center gap-1" style={{ border: `1px solid ${p}`, background: p + '12' }}>
+            <div className="w-3 h-0.5 rounded bg-slate-400" />
+            <div className="w-5 h-1 rounded" style={{ background: p }} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function LayoutPreview({ layout, primaryColor, className = '' }) {
   const props = { primary: primaryColor };
   return (
@@ -260,6 +304,7 @@ export function LayoutPreview({ layout, primaryColor, className = '' }) {
       {layout === 'modern'   && <PreviewModern   {...props} />}
       {layout === 'minimal'  && <PreviewMinimal  {...props} />}
       {layout === 'elegant'  && <PreviewElegant  {...props} />}
+      {layout === 'bold'     && <PreviewBold     {...props} />}
     </div>
   );
 }

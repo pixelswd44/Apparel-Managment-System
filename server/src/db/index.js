@@ -745,6 +745,16 @@ const migrations = [
   // exchange rate (bank fees, tax withholding, etc.) — overrides the auto-converted
   // figure everywhere revenue is calculated, when set.
   `ALTER TABLE payments ADD COLUMN amount_pkr_actual REAL`,
+  // Project-level bulk fabrics/materials — fabric is usually bought in bulk for the
+  // whole project, not per product. Same row shape as project_products.fabrics.
+  `ALTER TABLE projects ADD COLUMN fabrics TEXT DEFAULT '[]'`,
+  // Audit trail of edits made to an accepted/invoiced quotation: [{at, note, from_total, to_total, user}]
+  `ALTER TABLE quotations ADD COLUMN change_log TEXT DEFAULT '[]'`,
+  // Client management: where the lead came from, deal state, and attached material
+  `ALTER TABLE clients ADD COLUMN lead_source TEXT DEFAULT ''`,
+  `ALTER TABLE clients ADD COLUMN deal_status TEXT DEFAULT 'open'`,
+  `ALTER TABLE clients ADD COLUMN messages    TEXT DEFAULT '[]'`,
+  `ALTER TABLE clients ADD COLUMN tech_packs  TEXT DEFAULT '[]'`,
 ];
 
 for (const sql of migrations) {
@@ -961,15 +971,26 @@ seedRateToPkr();
 
 // ── Seed default document templates ────────────────────────────────────────
 export function seedDocumentTemplates() {
-  const count = db.prepare('SELECT COUNT(*) as n FROM document_templates').get().n;
-  if (count === 0) {
-    const ins = db.prepare(
-      "INSERT INTO document_templates (name, type, layout, is_default, config) VALUES (?, ?, ?, 1, ?)"
-    );
-    const defaultConfig = JSON.stringify({ primaryColor: '#4f46e5', showBankDetails: true, showTerms: true, showWatermark: false, watermarkText: '', footerText: '' });
-    ins.run('Default', 'quotation', 'classic', defaultConfig);
-    ins.run('Default', 'invoice',   'classic', defaultConfig);
-    ins.run('Default', 'voucher',   'classic', defaultConfig);
+  // 5 ready-to-use templates per document type. Idempotent: only inserts a
+  // (type, name) pair that doesn't exist yet, so user edits are never clobbered.
+  const cfg = (primaryColor, extra = {}) => JSON.stringify({
+    primaryColor, showBankDetails: true, showTerms: true, showWatermark: false, watermarkText: '', footerText: '', ...extra,
+  });
+  const PRESETS = [
+    { name: 'Classic',  layout: 'classic', config: cfg('#4f46e5') },
+    { name: 'Modern',   layout: 'modern',  config: cfg('#0f172a') },
+    { name: 'Minimal',  layout: 'minimal', config: cfg('#000000') },
+    { name: 'Elegant',  layout: 'elegant', config: cfg('#7c3aed') },
+    { name: 'Bold',     layout: 'bold',    config: cfg('#ef4444') },
+  ];
+  const exists = db.prepare('SELECT id FROM document_templates WHERE type = ? AND name = ?');
+  const ins    = db.prepare("INSERT INTO document_templates (name, type, layout, is_default, config) VALUES (?, ?, ?, ?, ?)");
+  for (const type of ['quotation', 'invoice', 'voucher']) {
+    const hasDefault = db.prepare('SELECT COUNT(*) as n FROM document_templates WHERE type = ? AND is_default = 1').get(type).n > 0;
+    PRESETS.forEach((p, i) => {
+      if (exists.get(type, p.name)) return;
+      ins.run(p.name, type, p.layout, (!hasDefault && i === 0) ? 1 : 0, p.config);
+    });
   }
 }
 seedDocumentTemplates();

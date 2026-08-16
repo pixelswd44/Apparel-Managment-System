@@ -1775,41 +1775,34 @@ function BackupRestore() {
   }
 
   // ── Restore ──────────────────────────────────────────────────────────────
+  // Uploads the ORIGINAL compressed file (multipart) — typically 5–10× smaller
+  // than the decoded JSON, so it stays well under proxy body limits on a live
+  // server and doesn't need to be re-serialised in the browser.
   async function handleImport() {
-    if (!importMeta) return;
+    if (!importFile) return;
     setStep('restoring'); setError('');
     try {
-      // Strip base64 image files from the payload unless the user opted in —
-      // they can be 10–200 MB and make the upload/parse take minutes.
-      const payload = { ...importMeta };
-      if (!restoreFiles) {
-        delete payload.files;
-        payload.file_count = 0;
-      }
+      const fd = new FormData();
+      fd.append('file', importFile, importFile.name);
+      fd.append('restore_files', restoreFiles ? '1' : '0');
       const controller = new AbortController();
-      const timeoutId  = setTimeout(() => controller.abort(), 120_000); // 2-min timeout
+      const timeoutId  = setTimeout(() => controller.abort(), 300_000); // 5-min timeout
       let r;
       try {
-        r = await apiFetch('/api/backup/import', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify(payload),
-          signal:  controller.signal,
-        });
+        r = await apiFetch('/api/backup/import-file', { method: 'POST', body: fd, signal: controller.signal });
       } catch (fetchErr) {
-        if (fetchErr.name === 'AbortError') throw new Error('Restore timed out after 2 minutes. The server may still be processing — reload in a moment to check.');
+        if (fetchErr.name === 'AbortError') throw new Error('Restore timed out after 5 minutes. The server may still be processing — reload in a moment to check.');
         throw fetchErr;
       } finally {
         clearTimeout(timeoutId);
       }
 
-      // Guard: if the server (or a proxy) returned an HTML error page instead
-      // of JSON (e.g. nginx 413 "Request Entity Too Large"), give a clear message.
+      // Guard: nginx 413 etc. return HTML, not JSON
       const ct = r.headers.get('content-type') || '';
       if (!ct.includes('application/json')) {
         const hint = r.status === 413
-          ? 'The backup file is too large for the server to accept. Try restoring without the "Also restore images" option, or ask your host to increase the upload size limit.'
-          : `Server returned an unexpected response (HTTP ${r.status}). The file may be too large for the server.`;
+          ? `The backup file (${(importFile.size / 1048576).toFixed(1)} MB) is larger than the server's upload limit. Raise client_max_body_size in nginx, or restore from a server-side snapshot instead.`
+          : `Server returned an unexpected response (HTTP ${r.status}).`;
         throw new Error(hint);
       }
 
@@ -1821,6 +1814,40 @@ function BackupRestore() {
       setError(e.message || 'Restore failed.');
       setStep('error');
     }
+  }
+
+  // ── Server-side snapshot list ────────────────────────────────────────────
+  const [snapshots, setSnapshots] = useState([]);
+  const [snapBusy,  setSnapBusy]  = useState(null); // name being restored/deleted
+  const loadSnapshots = () => apiFetch('/api/backup/snapshots').then(r => r.json()).then(d => setSnapshots(d.snapshots || [])).catch(() => {});
+  useEffect(() => { loadSnapshots(); }, [snapshotResult]);
+
+  async function restoreNamedSnapshot(name) {
+    if (!window.confirm(`Restore "${name}"?\n\nThis wipes ALL current data and replaces it with that snapshot.`)) return;
+    setSnapBusy(name); setStep('restoring'); setError('');
+    try {
+      const r = await apiFetch(`/api/backup/snapshots/${encodeURIComponent(name)}/restore`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ restore_files: restoreFiles }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || `Server returned ${r.status}`);
+      setImportResult(data); setStep('done');
+    } catch (e) { setError(e.message || 'Restore failed.'); setStep('error'); }
+    finally { setSnapBusy(null); }
+  }
+  async function deleteSnapshot(name) {
+    if (!window.confirm(`Delete snapshot "${name}"?`)) return;
+    setSnapBusy(name);
+    try { await apiFetch(`/api/backup/snapshots/${encodeURIComponent(name)}`, { method: 'DELETE' }); await loadSnapshots(); }
+    finally { setSnapBusy(null); }
+  }
+  async function downloadSnapshot(name) {
+    const token = localStorage.getItem('crm_token');
+    const r = await fetch(`/api/backup/snapshots/${encodeURIComponent(name)}/download`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!r.ok) { setError(`Download failed (HTTP ${r.status})`); return; }
+    const url = URL.createObjectURL(await r.blob());
+    const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
   }
 
   function reset() {
@@ -1933,10 +1960,11 @@ function BackupRestore() {
             <ShieldCheck size={18} className="text-indigo-700" />
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-slate-900 text-sm">Save Snapshot to GitHub</h3>
+            <h3 className="font-semibold text-slate-900 text-sm">Server Snapshots</h3>
             <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-              Saves the latest data to <code className="bg-indigo-100 text-indigo-700 px-1 rounded">data/latest-backup.json.gz</code> on the server.
-              Commit &amp; push that file to keep a copy on GitHub.
+              Saves a timestamped snapshot (data + all uploaded images) to <code className="bg-indigo-100 text-indigo-700 px-1 rounded">data/backups/</code> on this server
+              and refreshes <code className="bg-indigo-100 text-indigo-700 px-1 rounded">data/latest-backup.json.gz</code> (commit &amp; push that to keep a copy on GitHub).
+              The newest 20 are kept. Set <code className="bg-indigo-100 text-indigo-700 px-1 rounded">BACKUP_AUTO_DAILY=1</code> in the server .env for automatic daily snapshots.
             </p>
             <button
               onClick={handleSaveSnapshot}
@@ -1955,6 +1983,36 @@ function BackupRestore() {
             )}
             {snapshotResult?.error && (
               <p className="mt-2 text-xs text-red-600">{snapshotResult.error}</p>
+            )}
+
+            {/* Snapshot list */}
+            {snapshots.length > 0 && (
+              <div className="mt-4 bg-white border border-indigo-100 rounded-xl overflow-hidden">
+                <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 px-3 py-2 bg-indigo-50/60 text-2xs font-bold uppercase tracking-wider text-indigo-700">
+                  <span>Snapshot</span><span className="text-right">Size</span><span className="text-right">Actions</span>
+                </div>
+                <div className="divide-y divide-slate-100 max-h-64 overflow-y-auto">
+                  {snapshots.map(s => (
+                    <div key={s.name} className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center px-3 py-2 text-xs">
+                      <div className="min-w-0">
+                        <p className="font-mono text-slate-700 truncate">{s.name}</p>
+                        <p className="text-slate-400">{s.saved_at.slice(0, 19).replace('T', ' ')}</p>
+                      </div>
+                      <span className="text-slate-500 text-right whitespace-nowrap">{s.size_kb >= 1024 ? `${(s.size_kb / 1024).toFixed(1)} MB` : `${s.size_kb} KB`}</span>
+                      <div className="flex items-center gap-1 justify-end">
+                        <button onClick={() => downloadSnapshot(s.name)} title="Download"
+                          className="px-2 py-1 rounded-lg text-indigo-600 hover:bg-indigo-50 font-semibold">↓</button>
+                        <button onClick={() => restoreNamedSnapshot(s.name)} disabled={!!snapBusy}
+                          className="px-2 py-1 rounded-lg text-amber-700 hover:bg-amber-50 font-semibold disabled:opacity-40">
+                          {snapBusy === s.name ? '…' : 'Restore'}
+                        </button>
+                        <button onClick={() => deleteSnapshot(s.name)} disabled={!!snapBusy} title="Delete"
+                          className="px-2 py-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-40">×</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         </div>

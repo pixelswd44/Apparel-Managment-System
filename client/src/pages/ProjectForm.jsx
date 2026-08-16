@@ -43,6 +43,9 @@ export default function ProjectForm() {
 
   const [clients,  setClients]  = useState([]);
   const [invoices, setInvoices] = useState([]);
+  const [projects, setProjects] = useState([]);   // for per-client order numbering
+  const [subject,  setSubject]  = useState('');   // optional descriptor, e.g. "Rash Guards"
+  const [titleTouched, setTitleTouched] = useState(false); // user edited the title by hand
   const [pageLoading, setPageLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState('');
@@ -54,13 +57,15 @@ export default function ProjectForm() {
     let cancelled = false;
     async function init() {
       try {
-        const [cRes, iRes] = await Promise.all([
+        const [cRes, iRes, pRes0] = await Promise.all([
           api.get('/clients'),
           api.get('/invoices'),
+          api.get('/projects').catch(() => ({ data: [] })),
         ]);
         if (cancelled) return;
         setClients(Array.isArray(cRes.data) ? cRes.data : []);
         setInvoices(Array.isArray(iRes.data) ? iRes.data : []);
+        setProjects(Array.isArray(pRes0.data) ? pRes0.data : []);
 
         if (isEdit) {
           const pRes = await api.get(`/projects/${id}`);
@@ -91,6 +96,22 @@ export default function ProjectForm() {
   const clientInvoices = invoices.filter(i =>
     !form.client_id || String(i.client_id) === String(form.client_id)
   );
+
+  // ── Professional auto-title: "<Company or Client> · <Subject> · Order #N" ──
+  // N = this client's next order number (existing projects for them + 1).
+  const selClient  = clients.find(c => String(c.id) === String(form.client_id));
+  const clientLbl  = selClient ? (selClient.company || selClient.display_name || selClient.name || '').trim() : '';
+  const orderNo    = selClient
+    ? projects.filter(p => String(p.client_id) === String(selClient.id) && String(p.id) !== String(id)).length + 1
+    : 0;
+  const autoTitle  = clientLbl
+    ? [clientLbl, subject.trim(), `Order #${String(orderNo).padStart(2, '0')}`].filter(Boolean).join(' · ')
+    : '';
+  useEffect(() => {
+    if (isEdit || titleTouched) return;          // never overwrite an existing/manual title
+    if (autoTitle) set('title', autoTitle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoTitle]);
 
   // ── Submit ─────────────────────────────────────────────────────────────────
   async function handleSubmit() {
@@ -184,13 +205,8 @@ export default function ProjectForm() {
       <div className="mt-6 max-w-3xl">
         <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 space-y-5">
 
-          <Field label="Project Title" required>
-            <input value={form.title} onChange={e => set('title', e.target.value)}
-              className={inputCls} placeholder="e.g. Spring Collection 2026 — XYZ Fashion" autoFocus />
-          </Field>
-
           <Field label="Client">
-            <select value={form.client_id} onChange={e => {
+            <select value={form.client_id} autoFocus={!isEdit} onChange={e => {
               const cid = e.target.value;
               const client = clients.find(c => String(c.id) === cid);
               set('client_id', cid);
@@ -205,6 +221,29 @@ export default function ProjectForm() {
               ))}
             </select>
           </Field>
+
+          {/* Title — auto-built from client + subject + order number, editable */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <Field label="What is it? (optional)">
+              <input value={subject} onChange={e => setSubject(e.target.value)}
+                className={inputCls} placeholder="e.g. Rash Guards, Spring Kit" />
+            </Field>
+            <div className="sm:col-span-2">
+              <Field label="Project Title" required>
+                <input value={form.title}
+                  onChange={e => { setTitleTouched(true); set('title', e.target.value); }}
+                  className={inputCls} placeholder="Select a client to auto-generate…" />
+              </Field>
+              {!isEdit && selClient && (
+                <p className="text-2xs text-slate-400 mt-1">
+                  Order #{String(orderNo).padStart(2, '0')} for {clientLbl}
+                  {titleTouched && autoTitle && (
+                    <> · <button type="button" onClick={() => { setTitleTouched(false); set('title', autoTitle); }} className="text-indigo-600 font-semibold hover:underline">reset to auto</button></>
+                  )}
+                </p>
+              )}
+            </div>
+          </div>
 
           {/* Payment source toggle */}
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">

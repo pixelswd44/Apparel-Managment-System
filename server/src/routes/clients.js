@@ -19,7 +19,9 @@ const FIELDS = [
   'shipping_receiver_name', 'shipping_receiver_phone',
   'shipping_address', 'shipping_city', 'shipping_zip', 'shipping_country',
   'documents', 'notes', 'status',
+  'lead_source', 'deal_status', 'messages', 'tech_packs',
 ];
+const JSON_FIELDS = new Set(['documents', 'messages', 'tech_packs']);
 
 router.get('/', (req, res) => {
   try {
@@ -47,7 +49,10 @@ router.post('/', (req, res) => {
       const v = req.body[f];
       if (f === 'customer_number') return v?.trim() || autoNumber;
       if (f === 'status' && !v) return 'active';
-      if (f === 'documents') return typeof v === 'string' ? v : JSON.stringify(v ?? []);
+      if (f === 'deal_status' && !v) return 'open';
+      // Who added this client — defaults to the logged-in user (multi-user tracking)
+      if (f === 'customer_owner' && !(v || '').trim()) return req.user?.name || req.user?.username || null;
+      if (JSON_FIELDS.has(f)) return typeof v === 'string' ? v : JSON.stringify(v ?? []);
       return v ?? null;
     });
     const placeholders = FIELDS.map(() => '?').join(', ');
@@ -62,12 +67,16 @@ router.post('/', (req, res) => {
 
 router.put('/:id', (req, res) => {
   try {
-    const vals = FIELDS.map(f => {
+    // Partial update: only fields present in the body are written, so the new
+    // client-detail widgets can PATCH one field without resending the whole record.
+    const present = FIELDS.filter(f => Object.prototype.hasOwnProperty.call(req.body, f));
+    if (present.length === 0) return res.status(400).json({ error: 'Nothing to update.' });
+    const vals = present.map(f => {
       const v = req.body[f];
-      if (f === 'documents') return typeof v === 'string' ? v : JSON.stringify(v ?? []);
+      if (JSON_FIELDS.has(f)) return typeof v === 'string' ? v : JSON.stringify(v ?? []);
       return v ?? null;
     });
-    const sets = FIELDS.map(f => `${f} = ?`).join(', ');
+    const sets = present.map(f => `${f} = ?`).join(', ');
     db.prepare(`UPDATE clients SET ${sets}, updated_at = datetime('now') WHERE id = ?`).run(...vals, req.params.id);
     const row = db.prepare('SELECT * FROM clients WHERE id = ?').get(req.params.id);
     if (!row) return res.status(404).json({ error: 'Client not found' });

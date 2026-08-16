@@ -278,7 +278,13 @@ function ClientSelect({ value, onChange, clients, onClientsChange }) {
               </button>
             ))}
             {filtered.length === 0 && (
-              <p className="px-4 py-3 text-sm text-slate-400 italic">No clients found</p>
+              <button type="button"
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => { setOpen(false); setDrawerOpen(true); }}
+                className="w-full text-left px-4 py-3 hover:bg-indigo-50 transition-colors">
+                <p className="text-sm text-slate-500">No client named <b className="text-slate-800">"{query.trim()}"</b></p>
+                <p className="text-xs font-semibold text-indigo-600 mt-0.5 flex items-center gap-1"><Plus size={12} /> Create this client now</p>
+              </button>
             )}
           </div>
           {/* Add new client — always visible at the bottom */}
@@ -894,21 +900,32 @@ export default function QuotationForm() {
     navigate('/quotations');
   }
 
-  async function handleSubmit() {
+  // Locked quotations (accepted / invoiced) need a reason for changes
+  const [changeNotePrompt, setChangeNotePrompt] = useState(null); // { status } when open
+  const [changeNote, setChangeNote] = useState('');
+
+  async function handleSubmit(noteOverride) {
     if (items.every(i => !(i.name || '').trim() && !(i.description || '').trim())) {
       setError('Add at least one line item before saving.'); return;
     }
     setSaving(true); setError('');
     try {
+      const payload = buildPayload();
+      if (noteOverride) payload.change_note = noteOverride;
       if (isEdit) {
-        await api.put(`/quotations/${id}`, buildPayload());
+        await api.put(`/quotations/${id}`, payload);
       } else {
-        await api.post('/quotations', buildPayload());
+        await api.post('/quotations', payload);
       }
       setDirty(false);
+      setChangeNotePrompt(null);
       navigate('/quotations');
     } catch (err) {
-      setError(err?.response?.data?.error ?? 'Failed to save. Please try again.');
+      if (err?.response?.data?.requires_change_note) {
+        setChangeNotePrompt({ status: undefined });
+      } else {
+        setError(err?.response?.data?.error ?? 'Failed to save. Please try again.');
+      }
     } finally { setSaving(false); }
   }
 
@@ -944,6 +961,41 @@ export default function QuotationForm() {
 
   return (
     <div>
+      {/* ── Change-note modal (locked quotation) ── */}
+      {changeNotePrompt && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100] p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-modal">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <FileText size={18} className="text-indigo-600" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-slate-900">Why is this quotation changing?</h3>
+                <p className="text-xs text-slate-400 mt-0.5">It's already accepted / invoiced — a note is required</p>
+              </div>
+            </div>
+            <textarea
+              rows={3}
+              value={changeNote}
+              onChange={e => setChangeNote(e.target.value)}
+              placeholder="e.g. Client requested 20 extra pieces; unit price renegotiated…"
+              className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 resize-none mb-4"
+              autoFocus
+            />
+            <div className="flex gap-3">
+              <button onClick={() => { setChangeNotePrompt(null); setChangeNote(''); }}
+                className="flex-1 px-4 py-2.5 text-sm border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-colors font-medium">
+                Cancel
+              </button>
+              <button onClick={() => handleSubmit(changeNote.trim())} disabled={!changeNote.trim() || saving}
+                className="flex-1 px-4 py-2.5 text-sm bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors font-medium">
+                {saving ? 'Saving…' : 'Save with Note'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Unsaved changes modal ── */}
       {leaveConfirm && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100] p-4">
@@ -1013,7 +1065,7 @@ export default function QuotationForm() {
               : <><Save size={13} />Save as Draft</>
             }
           </button>
-          <button onClick={handleSubmit} disabled={saving || savingDraft}
+          <button onClick={() => handleSubmit()} disabled={saving || savingDraft}
             className="flex items-center gap-2 px-5 py-2 text-sm bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-60 transition-all font-semibold shadow-sm shadow-indigo-200">
             {saving
               ? <><Loader2 size={13} className="animate-spin" />Saving…</>
@@ -1341,7 +1393,7 @@ export default function QuotationForm() {
               className="flex items-center gap-2 px-5 py-2.5 text-sm border border-slate-200 bg-white text-slate-700 rounded-xl hover:bg-slate-50 hover:border-slate-300 disabled:opacity-50 transition-all font-semibold">
               {savingDraft ? 'Saving…' : 'Save as Draft'}
             </button>
-            <button onClick={handleSubmit} disabled={saving || savingDraft}
+            <button onClick={() => handleSubmit()} disabled={saving || savingDraft}
               className="flex items-center gap-2 px-6 py-2.5 text-sm bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-60 transition-all font-semibold shadow-sm shadow-indigo-200">
               {saving
                 ? 'Saving…'
