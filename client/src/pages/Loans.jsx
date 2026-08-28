@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, ChevronDown, ChevronUp, Check, X, HandCoins } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, ChevronUp, Check, X, HandCoins, AlertCircle } from 'lucide-react';
 import api from '../lib/api';
 
 const pkr  = n => `Rs ${Number(n || 0).toLocaleString('en-PK', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
@@ -281,21 +281,26 @@ export default function Loans() {
 
       {/* Summary cards */}
       {!loading && loans.length > 0 && (
-        <div className="grid grid-cols-3 gap-4 mb-5">
-          <div className="bg-white border border-slate-200 rounded-2xl p-4">
-            <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Total {tab === 'borrowed' ? 'Borrowed' : 'Lent'}</p>
-            <p className="text-xl font-black text-slate-800">{pkr(totalAmt)}</p>
-          </div>
-          <div className={`border rounded-2xl p-4 ${tab === 'borrowed' ? 'bg-emerald-50 border-emerald-200' : 'bg-emerald-50 border-emerald-200'}`}>
-            <p className="text-xs font-bold uppercase tracking-wider text-emerald-600 mb-1">Total Repaid</p>
-            <p className="text-xl font-black text-emerald-700">{pkr(totalPaid)}</p>
-          </div>
-          <div className={`border rounded-2xl p-4 ${tab === 'borrowed' ? 'bg-rose-50 border-rose-200' : 'bg-amber-50 border-amber-200'}`}>
-            <p className={`text-xs font-bold uppercase tracking-wider mb-1 ${tab === 'borrowed' ? 'text-rose-600' : 'text-amber-600'}`}>
-              {tab === 'borrowed' ? 'I Still Owe' : 'Still Owed to Me'}
-            </p>
-            <p className={`text-xl font-black ${tab === 'borrowed' ? 'text-rose-700' : 'text-amber-700'}`}>{pkr(totalOut)}</p>
-          </div>
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-5">
+          {[
+            { label: `Total ${tab === 'borrowed' ? 'Borrowed' : 'Lent'}`, value: pkr(totalAmt), sub: `${loans.length} ${loans.length === 1 ? 'entry' : 'entries'}`,
+              icon: HandCoins, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+            { label: 'Total Repaid', value: pkr(totalPaid), sub: totalAmt > 0 ? `${Math.round((totalPaid / totalAmt) * 100)}% settled` : '—',
+              icon: Check, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+            { label: tab === 'borrowed' ? 'I Still Owe' : 'Still Owed to Me', value: pkr(totalOut), sub: 'outstanding balance',
+              icon: AlertCircle,
+              color: totalOut > 0 ? (tab === 'borrowed' ? 'text-rose-600' : 'text-amber-600') : 'text-slate-400',
+              bg:    totalOut > 0 ? (tab === 'borrowed' ? 'bg-rose-50' : 'bg-amber-50') : 'bg-slate-100' },
+          ].map(({ label, value, sub, icon: Icon, color, bg }) => (
+            <div key={label} className="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-3 shadow-sm">
+              <div className={`${bg} ${color} p-2.5 rounded-xl flex-shrink-0`}><Icon size={18} /></div>
+              <div className="min-w-0">
+                <p className="text-lg font-bold text-slate-900 truncate">{value}</p>
+                <p className="text-xs text-slate-500">{label}</p>
+                <p className="text-2xs text-slate-400">{sub}</p>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
