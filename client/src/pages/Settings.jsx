@@ -27,7 +27,8 @@ function Toggle({ enabled, onChange }) {
 }
 
 // ── Cost Breakdown Items section ──────────────────────────────────────────────
-
+// Kept for a future move into the Products area — not shown in Settings for now.
+// eslint-disable-next-line no-unused-vars
 function CostBreakdownItems() {
   const [items, setItems]         = useState([]);
   const [loading, setLoading]     = useState(true);
@@ -2323,7 +2324,6 @@ const SECTIONS = [
   { id: 'app-branding',     label: 'App Branding',          icon: Palette,    description: 'Change the application name and logo shown in the sidebar' },
   { id: 'companies',        label: 'Companies',             icon: Building2,  description: 'Manage your companies — each with its own logo and details for quotations & invoices' },
   { id: 'currencies',       label: 'Currencies & Rates',    icon: Globe,      description: 'Manage currencies and exchange rates. Set your default currency — used across all quotations, invoices and conversions.' },
-  { id: 'cost-breakdown',   label: 'Cost Breakdown Items',  icon: Calculator, description: 'Customize the cost categories used in the product price calculator' },
   { id: 'opening-balance',  label: 'Opening Balance',       icon: Wallet,     description: 'Set a starting account balance and date so the ledger tracks from a clean slate' },
   { id: 'backup-restore',   label: 'Backup & Restore',      icon: Save,       description: 'Download a backup of all your data, or restore from a previous backup file' },
 ];
@@ -2375,7 +2375,6 @@ export default function Settings() {
           {activeSection === 'app-branding'   && <AppBranding />}
           {activeSection === 'companies'      && <Companies />}
           {activeSection === 'currencies'     && <Currencies />}
-          {activeSection === 'cost-breakdown'  && <CostBreakdownItems />}
           {activeSection === 'opening-balance' && <OpeningBalance />}
           {activeSection === 'backup-restore'  && <BackupRestore />}
         </div>
