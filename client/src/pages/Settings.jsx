@@ -492,21 +492,16 @@ function Currencies() {
     </div>
   );
 
-  // PKR's own rate (how many PKR = 1 USD) — derive from USD row for display
-  const usdRow = currencies.find(c => c.code === 'USD');
-  const pkrPerUsd = usdRow ? (parseFloat(usdRow.rate_to_pkr) || 1) : 1;
-
   return (
     <div>
       <div className="bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3 text-sm text-indigo-700 mb-6 flex items-start gap-2.5">
         <DollarSign size={15} className="text-indigo-500 mt-0.5 flex-shrink-0" />
         <span>
-          Set the exchange rate for each currency relative to your{' '}
-          <span className="font-semibold">
-            {currencies.find(c => c.is_default === 1)?.code || 'base'} ({currencies.find(c => c.is_default === 1)?.name || 'default currency'})
-          </span>.
-          All invoice and quotation values are converted using these rates.
-          The <span className="font-semibold text-indigo-600">Default</span> currency is pre-selected when creating new quotations and invoices.
+          Enter each rate as <span className="font-semibold">PKR per 1 unit</span> of that currency
+          (e.g. 1&nbsp;USD&nbsp;=&nbsp;₨275). <span className="font-semibold">PKR is the fixed base</span> for
+          every conversion in the app and its rate is always&nbsp;1.
+          The <span className="font-semibold text-indigo-600">Default</span> currency is pre-selected on new
+          quotations &amp; invoices and is what the Dashboard totals display in.
         </span>
       </div>
 
@@ -543,30 +538,20 @@ function Currencies() {
                 className={inputCls} placeholder="e.g. Euro" />
             </div>
             <div>
-              {(() => {
-                const defCur = currencies.find(c => c.is_default === 1);
-                const baseCode = defCur?.code || 'BASE';
-                const baseSym  = defCur?.symbol || '';
-                return (
-                  <>
-                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-                      1 {form.code || 'CURRENCY'} = ? {baseCode} <span className="text-rose-400">*</span>
-                    </label>
-                    <div className="relative">
-                      <input type="number" min="0" step="any" value={form.rate_to_pkr} onChange={e => setF('rate_to_pkr', e.target.value)}
-                        className={`${inputCls} pr-16`} placeholder="e.g. 1.08" />
-                      <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-semibold">{baseCode}</span>
-                    </div>
-                    {form.rate_to_pkr && parseFloat(form.rate_to_pkr) > 0 && (
-                      <p className="text-xs text-slate-400 mt-1.5">
-                        Preview: <span className="font-semibold text-slate-700">1 {form.code || '?'} = {baseSym}{parseFloat(form.rate_to_pkr).toLocaleString('en-US', { maximumFractionDigits: 4 })} {baseCode}</span>
-                        <span className="ml-2">·</span>
-                        <span className="ml-2">1 {baseCode} = {(1 / parseFloat(form.rate_to_pkr)).toFixed(6)} {form.code || '?'}</span>
-                      </p>
-                    )}
-                  </>
-                );
-              })()}
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                1 {form.code || 'CURRENCY'} = ? PKR <span className="text-rose-400">*</span>
+              </label>
+              <div className="relative">
+                <input type="number" min="0" step="any" value={form.rate_to_pkr} onChange={e => setF('rate_to_pkr', e.target.value)}
+                  className={`${inputCls} pr-16`} placeholder="e.g. 275" />
+                <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-semibold">PKR</span>
+              </div>
+              {form.rate_to_pkr && parseFloat(form.rate_to_pkr) > 0 && (
+                <p className="text-xs text-slate-400 mt-1.5">
+                  <span className="font-semibold text-slate-700">1 {form.code || '?'} = ₨{parseFloat(form.rate_to_pkr).toLocaleString('en-US', { maximumFractionDigits: 4 })}</span>
+                  <span className="ml-2">· ₨1 = {(1 / parseFloat(form.rate_to_pkr)).toFixed(6)} {form.code || '?'}</span>
+                </p>
+              )}
             </div>
           </div>
           <div className="flex gap-2 pt-1">
@@ -596,10 +581,7 @@ function Currencies() {
           <tbody className="divide-y divide-slate-100">
             {currencies.map(c => {
               const isEditing  = editing?.id === c.id;
-              const isDefault  = c.is_default === 1;
-              const defCur     = currencies.find(x => x.is_default === 1);
-              const baseCode   = defCur?.code || 'BASE';
-              const baseSym    = defCur?.symbol || '';
+              const isPkr      = c.code === 'PKR';
               const pkrVal     = parseFloat(c.rate_to_pkr) || 1;
 
               if (isEditing) {
@@ -626,13 +608,13 @@ function Currencies() {
                       <div className="relative w-40 ml-auto">
                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-semibold whitespace-nowrap">1 {editing.code || '?'} =</span>
                         <input type="number" min="0" step="any"
-                          value={editing.rate_to_pkr}
+                          value={editing.code === 'PKR' ? 1 : editing.rate_to_pkr}
                           onChange={e => setE('rate_to_pkr', e.target.value)}
-                          disabled={isDefault}
+                          disabled={editing.code === 'PKR'}
                           className="w-full border border-indigo-300 rounded-lg pl-16 pr-12 py-1.5 text-sm text-right outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 bg-white font-mono disabled:bg-slate-100 disabled:text-slate-400"
                           placeholder="0"
                         />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-semibold">{baseCode}</span>
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-semibold">PKR</span>
                       </div>
                     </td>
                     <td className="px-4 py-3">
@@ -652,7 +634,7 @@ function Currencies() {
               }
 
               return (
-                <tr key={c.id} className={`transition-colors ${c.is_default === 1 ? 'bg-indigo-50/40' : 'hover:bg-slate-50/60'}`}>
+                <tr key={c.id} className={`transition-colors ${isPkr ? 'bg-slate-50/60' : c.is_default === 1 ? 'bg-indigo-50/40' : 'hover:bg-slate-50/60'}`}>
                   {/* Symbol */}
                   <td className="px-3 py-3 text-center">
                     <span className="text-base font-semibold text-slate-500">{c.symbol || '—'}</span>
@@ -667,17 +649,17 @@ function Currencies() {
                       )}
                     </div>
                   </td>
-                  {/* Exchange rate — single clear column */}
+                  {/* Exchange rate — always PKR-referenced */}
                   <td className="px-4 py-3 text-right">
-                    {isDefault ? (
-                      <span className="text-xs text-slate-400 italic">Base currency</span>
+                    {isPkr ? (
+                      <span className="text-xs text-slate-400 italic">Base currency · rate fixed at 1</span>
                     ) : (
                       <>
                         <div className="font-mono font-bold text-slate-800 text-sm">
-                          1 {c.code} = {baseSym}{pkrVal.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 4 })} {baseCode}
+                          1 {c.code} = ₨{pkrVal.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 4 })}
                         </div>
                         <div className="text-2xs text-slate-400 font-mono mt-0.5">
-                          {baseSym}1 = {pkrVal > 0 ? (1 / pkrVal).toFixed(4) : '—'} {c.code}
+                          ₨1 = {pkrVal > 0 ? (1 / pkrVal).toFixed(4) : '—'} {c.code}
                         </div>
                       </>
                     )}

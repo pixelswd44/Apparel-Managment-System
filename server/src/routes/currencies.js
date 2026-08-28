@@ -37,8 +37,14 @@ router.post('/', (req, res) => {
 router.put('/:id', (req, res) => {
   try {
     const { code, name, symbol, rate_to_pkr } = req.body;
-    const rPkr = parseFloat(rate_to_pkr);
-    if (!rPkr || rPkr <= 0) return res.status(400).json({ error: 'Valid rate_to_pkr is required' });
+    const existing = db.prepare('SELECT * FROM currencies WHERE id = ?').get(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+
+    // PKR is the fixed pivot for every conversion in the app — its rate is always 1
+    // and cannot be changed, regardless of which currency is set as "default".
+    const isPkr = (code || existing.code).toUpperCase().trim() === 'PKR';
+    const rPkr  = isPkr ? 1 : parseFloat(rate_to_pkr);
+    if (!isPkr && (!rPkr || rPkr <= 0)) return res.status(400).json({ error: 'Valid exchange rate (PKR per 1 unit) is required' });
 
     const usdRow = db.prepare("SELECT rate_to_pkr FROM currencies WHERE code = 'USD'").get();
     const usdPkr = usdRow ? (parseFloat(usdRow.rate_to_pkr) || 280) : 280;
