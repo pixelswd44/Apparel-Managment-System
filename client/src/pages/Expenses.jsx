@@ -382,10 +382,9 @@ function IncomeModal({ income, onClose, onSave }) {
 }
 
 // ── DetailReport ──────────────────────────────────────────────────────────
-function DetailReport({ expenses, summary, month }) {
+function DetailReport({ expenses }) {
   const total = expenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
   const count = expenses.length;
-  const avg   = count > 0 ? total / count : 0;
 
   // Build category rows from live expenses (not just summary) so counts are accurate
   const catMap = {};
@@ -414,28 +413,8 @@ function DetailReport({ expenses, summary, month }) {
   // Top 5 by amount
   const top5 = [...expenses].sort((a, b) => parseFloat(b.amount) - parseFloat(a.amount)).slice(0, 5);
 
-  const monthLabel = month
-    ? new Date(month + '-01').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
-    : '';
-
   return (
     <div className="space-y-5 pb-4">
-
-      {/* ── Key metrics ── */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
-        {[
-          { label: 'Total Spent',       value: pkr(total),                         sub: monthLabel || 'this period',  color: 'text-slate-900' },
-          { label: 'No. of Expenses',   value: String(count),                      sub: 'entries recorded',           color: 'text-slate-900' },
-          { label: 'Average per Entry', value: count > 0 ? pkr(avg) : '—',         sub: 'per transaction',            color: 'text-slate-900' },
-          { label: 'Recurring / Month', value: pkr(summary.recurringMonthly || 0), sub: 'fixed monthly cost',         color: 'text-indigo-600' },
-        ].map(m => (
-          <div key={m.label} className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">{m.label}</p>
-            <p className={`text-lg sm:text-2xl font-bold break-all ${m.color}`}>{m.value}</p>
-            {m.sub && <p className="text-xs text-slate-400 mt-1">{m.sub}</p>}
-          </div>
-        ))}
-      </div>
 
       {/* ── Expenses by Category ── */}
       {catRows.length > 0 && (
@@ -635,11 +614,8 @@ export default function Expenses() {
           <h1 className="text-2xl font-bold text-slate-900">{activeTab === 'income' ? 'Other Income' : 'Expenses'}</h1>
           <p className="text-sm text-slate-500 mt-0.5">
             {activeTab === 'income'
-              ? <>{pkr(incomeSummary.thisMonth || 0)} this period</>
-              : <>
-                  {pkr(summary.thisMonth || 0)} this period
-                  {(summary.recurringMonthly || 0) > 0 && ` · ${pkr(summary.recurringMonthly)}/mo recurring`}
-                </>}
+              ? 'Miscellaneous income outside the invoice flow'
+              : 'Track business spending and recurring costs'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -726,33 +702,57 @@ export default function Expenses() {
       )}
 
       {activeTab === 'expenses' && (<>
-      {/* ── Top filter bar (desktop) ── */}
-      <div className="hidden lg:flex items-center gap-3 mb-3 flex-shrink-0 flex-wrap">
-        {/* Period picker */}
-        <div className="flex-shrink-0">
-          <PeriodPicker defaultMode="month" onChange={range => setPeriodRange(range)} />
-        </div>
-        {!periodRange.from && (
-          <div className="flex items-center gap-2">
-            <input type="month" value={month} onChange={e => setMonth(e.target.value)}
-              className="px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
-            {month && (
-              <button onClick={() => setMonth('')}
-                className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1.5 rounded-lg hover:bg-slate-100 transition-colors whitespace-nowrap">
-                Show All
-              </button>
-            )}
+      {/* ── Stats ── */}
+      {(() => {
+        const total = summary.thisMonth || 0;
+        const count = expenses.length;
+        const stats = [
+          { label: 'Total Spent',   value: pkr(total),                        sub: periodRange.label || 'this period',    icon: TrendingDown, color: 'text-rose-600',    bg: 'bg-rose-50' },
+          { label: 'Entries',       value: String(count),                     sub: 'expenses recorded',                   icon: Receipt,      color: 'text-indigo-600',  bg: 'bg-indigo-50' },
+          { label: 'Avg / Entry',   value: count > 0 ? pkr(total / count) : '—', sub: 'per transaction',                  icon: BarChart2,    color: 'text-slate-700',   bg: 'bg-slate-100' },
+          { label: 'Recurring / mo', value: pkr(summary.recurringMonthly || 0), sub: 'fixed monthly cost',                icon: Repeat,       color: 'text-violet-600',  bg: 'bg-violet-50' },
+        ];
+        return (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4 flex-shrink-0">
+            {stats.map(({ label, value, sub, icon: Icon, color, bg }) => (
+              <div key={label} className="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-3 shadow-sm">
+                <div className={`${bg} ${color} p-2.5 rounded-xl flex-shrink-0`}><Icon size={18} /></div>
+                <div className="min-w-0">
+                  <p className="text-lg font-bold text-slate-900 truncate">{value}</p>
+                  <p className="text-xs text-slate-500">{label}</p>
+                  <p className="text-2xs text-slate-400 truncate">{sub}</p>
+                </div>
+              </div>
+            ))}
           </div>
-        )}
-        {/* Category filter pills */}
+        );
+      })()}
+
+      {/* ── Filters (desktop) ── */}
+      <div className="hidden lg:flex flex-col gap-2.5 mb-4 flex-shrink-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <PeriodPicker defaultMode="month" onChange={range => setPeriodRange(range)} />
+          {!periodRange.from && (
+            <>
+              <input type="month" value={month} onChange={e => setMonth(e.target.value)}
+                className="px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+              {month && (
+                <button onClick={() => setMonth('')}
+                  className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1.5 rounded-lg hover:bg-slate-100 transition-colors whitespace-nowrap">
+                  Show All
+                </button>
+              )}
+            </>
+          )}
+        </div>
         <div className="flex items-center gap-1.5 flex-wrap">
           <button onClick={() => setCatFilter('')}
-            className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors ${!catFilter ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 hover:text-slate-700'}`}>
+            className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${!catFilter ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:text-slate-700'}`}>
             All
           </button>
           {categories.map(c => (
             <button key={c.id} onClick={() => setCatFilter(catFilter === String(c.id) ? '' : String(c.id))}
-              className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors ${catFilter === String(c.id) ? 'text-white' : 'bg-slate-100 text-slate-500 hover:text-slate-700'}`}
+              className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${catFilter === String(c.id) ? 'text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:text-slate-700'}`}
               style={catFilter === String(c.id) ? { background: c.color } : {}}>
               {c.name}
             </button>
@@ -933,9 +933,9 @@ export default function Expenses() {
               </div>
 
               {/* Amount */}
-              <div className="bg-slate-900 rounded-2xl p-5 text-white">
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
                 <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Amount Paid</p>
-                <p className="text-xl sm:text-3xl font-bold break-all">{pkr(selected.amount)}</p>
+                <p className="text-xl sm:text-3xl font-bold text-rose-600 break-all">{pkr(selected.amount)}</p>
               </div>
 
               {/* Details grid */}
@@ -985,7 +985,7 @@ export default function Expenses() {
               </button>
             </div>
           ) : (
-            <DetailReport expenses={expenses} summary={summary} month={month} />
+            <DetailReport expenses={expenses} />
           )}
         </div>
       </div>
@@ -999,19 +999,21 @@ export default function Expenses() {
           </div>
 
           {/* Summary cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3 flex-shrink-0">
-            <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-emerald-600 mb-1">Total Income</p>
-              <p className="text-lg sm:text-2xl font-bold text-emerald-700 break-all">{pkr(filteredIncomeTotal)}</p>
-            </div>
-            <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Entries</p>
-              <p className="text-lg sm:text-2xl font-bold text-slate-900">{filteredIncome.length}</p>
-            </div>
-            <div className="hidden sm:block bg-slate-50 border border-slate-100 rounded-2xl p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Top Source</p>
-              <p className="text-sm font-bold text-slate-900 truncate">{incomeSummary.bySource?.[0]?.category || '—'}</p>
-            </div>
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-4 flex-shrink-0">
+            {[
+              { label: 'Total Income', value: pkr(filteredIncomeTotal),                         sub: incomePeriodRange.label || 'this period', icon: TrendingUp, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+              { label: 'Entries',      value: String(filteredIncome.length),                    sub: 'income recorded',                        icon: Banknote,   color: 'text-indigo-600',  bg: 'bg-indigo-50' },
+              { label: 'Top Source',   value: incomeSummary.bySource?.[0]?.category || '—',     sub: 'largest income category',                icon: Tag,        color: 'text-slate-700',   bg: 'bg-slate-100' },
+            ].map(({ label, value, sub, icon: Icon, color, bg }) => (
+              <div key={label} className="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-3 shadow-sm">
+                <div className={`${bg} ${color} p-2.5 rounded-xl flex-shrink-0`}><Icon size={18} /></div>
+                <div className="min-w-0">
+                  <p className="text-lg font-bold text-slate-900 truncate">{value}</p>
+                  <p className="text-xs text-slate-500">{label}</p>
+                  <p className="text-2xs text-slate-400 truncate">{sub}</p>
+                </div>
+              </div>
+            ))}
           </div>
 
           {/* Search */}
