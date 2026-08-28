@@ -3,10 +3,17 @@ import multer from 'multer';
 import sharp from 'sharp';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { existsSync, unlinkSync, writeFileSync } from 'fs';
+import { existsSync, unlinkSync, writeFileSync, mkdirSync } from 'fs';
+import { isAbsolute, resolve } from 'path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const uploadDir = join(__dirname, '../../uploads');
+
+// Uploads location. Set UPLOAD_DIR in the environment to keep user media OUTSIDE
+// the deploy directory so re-deploys don't wipe uploaded images/files.
+const uploadDir = process.env.UPLOAD_DIR
+  ? (isAbsolute(process.env.UPLOAD_DIR) ? process.env.UPLOAD_DIR : resolve(process.cwd(), process.env.UPLOAD_DIR))
+  : join(__dirname, '../../uploads');
+try { mkdirSync(uploadDir, { recursive: true }); } catch {}
 
 // Store uploads in memory first so sharp can process before writing to disk
 const storage = multer.memoryStorage();

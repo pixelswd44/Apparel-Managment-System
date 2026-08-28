@@ -1,9 +1,11 @@
+import 'dotenv/config'; // load .env before any route/db module reads process.env
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
+import { isAbsolute, resolve } from 'path';
 import { verifyToken } from './middleware/auth.js';
 import authRouter from './routes/auth.js';
 import setupRouter from './routes/setup.js';
@@ -43,8 +45,11 @@ app.use(cors());
 // (Default is ~100kb; backups with images can be 50MB+.)
 app.use(express.json({ limit: '200mb' }));
 
-// Serve uploaded files statically
-app.use('/uploads', express.static(join(__dirname, '../uploads')));
+// Serve uploaded files statically. Must match UPLOAD_DIR used in routes/uploads.js.
+const uploadDir = process.env.UPLOAD_DIR
+  ? (isAbsolute(process.env.UPLOAD_DIR) ? process.env.UPLOAD_DIR : resolve(process.cwd(), process.env.UPLOAD_DIR))
+  : join(__dirname, '../uploads');
+app.use('/uploads', express.static(uploadDir));
 
 // ── Public routes ──────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));

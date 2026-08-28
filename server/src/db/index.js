@@ -1,10 +1,21 @@
+import 'dotenv/config'; // ensure .env is loaded before we read DB_PATH (imports run before index.js body)
 import initSqlJs from 'sql.js';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { join, dirname } from 'path';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { join, dirname, isAbsolute, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DB_PATH = join(__dirname, '../../apparel.db');
+
+// DB file location. Set DB_PATH in the environment to keep the database OUTSIDE
+// the deploy directory so `git pull` / re-deploys on Hostinger don't wipe it.
+// Relative paths are resolved from the current working directory.
+const DB_PATH = process.env.DB_PATH
+  ? (isAbsolute(process.env.DB_PATH) ? process.env.DB_PATH : resolve(process.cwd(), process.env.DB_PATH))
+  : join(__dirname, '../../apparel.db');
+
+// Make sure the containing folder exists (e.g. a fresh /home/user/crm-data dir).
+try { mkdirSync(dirname(DB_PATH), { recursive: true }); } catch {}
+console.log(`[DB] using ${DB_PATH}`);
 
 // ── sql.js initialisation (top-level await works in ESM) ─────────────────────
 const SQL = await initSqlJs();
