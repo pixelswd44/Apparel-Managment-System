@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Plus, X, ChevronDown, ChevronUp, Trash2, Pencil, Search,
   Package, Users, FileText, Receipt, Check, AlertTriangle,
@@ -2525,7 +2525,8 @@ function ProjectDetail({ projectId, onBack, clients, invoices, catalogProducts, 
                   return (
                     <span className="flex items-center gap-1.5 text-xs min-w-0">
                       <Receipt size={11} className="text-slate-400 flex-shrink-0" />
-                      <span className="font-mono font-semibold text-indigo-700">{project.invoice_number}</span>
+                      <button type="button" onClick={() => navigate(`/invoices?view=${project.invoice_id}`)}
+                        className="font-mono font-semibold text-indigo-700 hover:underline">{project.invoice_number}</button>
                       <span className="text-slate-500">{inv(project.invoice_total)}</span>
                       {due > 0
                         ? <span className="font-semibold text-rose-500">Due {inv(due)}</span>
@@ -5643,10 +5644,19 @@ function ShippingTab({ project, onReload }) {
 
 export default function Projects() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [projects, setProjects]       = useState([]);
   const [loading,  setLoading]        = useState(true);
   const [view,     setView]           = useState('list');  // 'list' | 'detail'
   const [selectedId, setSelectedId]   = useState(null);
+
+  // Clicking "Projects" in the sidebar while a project is open should return to
+  // the list. Detail is internal state (no URL), so react to any fresh
+  // navigation that lands on /projects.
+  useEffect(() => {
+    setView('list');
+    setSelectedId(null);
+  }, [location.key]);
   const [search,   setSearch]         = useState('');
   const [statusFilter, setStatus]     = useState('all');
   const [clients,  setClients]        = useState([]);

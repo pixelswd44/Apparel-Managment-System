@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Plus, Search, FileText, Pencil, Trash2, AlertTriangle, User,
   ArrowLeft, X, Check, Printer, Receipt, Banknote,
@@ -1261,12 +1261,22 @@ function PaymentsTab({ onPrintReceipt, settings, onPaymentDeleted }) {
 
 export default function Invoices() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [activeTab,    setActiveTab]    = useState('invoices');  // 'invoices' | 'payments'
   const [invoices,     setInvoices]     = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [search,       setSearch]       = useState('');
   const [filterStatus, setFilterStatus] = useState('');
-  const [viewId,       setViewId]       = useState(null);
+  const [viewId,       setViewId]       = useState(() => {
+    const v = new URLSearchParams(window.location.search).get('view');
+    return v ? Number(v) : null;
+  });
+
+  // Deep-link: /invoices?view=<id> opens that invoice
+  useEffect(() => {
+    const v = new URLSearchParams(location.search).get('view');
+    if (v) setViewId(Number(v));
+  }, [location.key, location.search]);
   const [delConfirm,   setDelConfirm]   = useState(null);
   const [deleting,     setDeleting]     = useState(false);
 
