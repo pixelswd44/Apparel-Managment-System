@@ -586,16 +586,10 @@ function Currencies() {
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200">
-              <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider w-8" />
+              <th className="w-10" />
               <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">Currency</th>
-              <th className="text-center px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">Default</th>
-              <th className="text-right px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                1 UNIT = {currencies.find(c => c.is_default === 1)?.code || 'BASE'}
-              </th>
-              <th className="text-right px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                1 {currencies.find(c => c.is_default === 1)?.code || 'BASE'} =
-              </th>
-              <th className="w-36" />
+              <th className="text-right px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">Exchange Rate</th>
+              <th className="w-52" />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -610,12 +604,12 @@ function Currencies() {
               if (isEditing) {
                 return (
                   <tr key={c.id} className="bg-indigo-50/50">
-                    <td className="px-4 py-3 text-center">
+                    <td className="px-3 py-3 text-center">
                       <span className="text-lg">{c.symbol || '—'}</span>
                     </td>
-                    <td className="px-4 py-3" colSpan={2}>
+                    <td className="px-4 py-3">
                       {editErr && <p className="text-xs text-rose-600 mb-2">{editErr}</p>}
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className="grid grid-cols-3 gap-2 max-w-md">
                         <input value={editing.code} onChange={e => setE('code', e.target.value.toUpperCase())}
                           className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-indigo-400 bg-white font-mono font-bold"
                           placeholder="Code" maxLength={8} />
@@ -627,22 +621,18 @@ function Currencies() {
                           placeholder="Name" />
                       </div>
                     </td>
-                    <td className="px-4 py-3" colSpan={2}>
-                      <div className="relative">
+                    <td className="px-4 py-3">
+                      <div className="relative w-40 ml-auto">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-semibold whitespace-nowrap">1 {editing.code || '?'} =</span>
                         <input type="number" min="0" step="any"
                           value={editing.rate_to_pkr}
                           onChange={e => setE('rate_to_pkr', e.target.value)}
                           disabled={isDefault}
-                          className="w-full border border-indigo-300 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 bg-white font-mono pr-16 disabled:bg-slate-100 disabled:text-slate-400"
-                          placeholder="Exchange rate"
+                          className="w-full border border-indigo-300 rounded-lg pl-16 pr-12 py-1.5 text-sm text-right outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 bg-white font-mono disabled:bg-slate-100 disabled:text-slate-400"
+                          placeholder="0"
                         />
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-semibold">{baseCode}</span>
                       </div>
-                      {editing.rate_to_pkr && parseFloat(editing.rate_to_pkr) > 0 && (
-                        <p className="text-xs text-indigo-600 mt-1">
-                          1 {editing.code} = {baseSym}{parseFloat(editing.rate_to_pkr).toLocaleString('en-US', { maximumFractionDigits: 4 })} {baseCode}
-                        </p>
-                      )}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-1.5">
@@ -663,12 +653,12 @@ function Currencies() {
               return (
                 <tr key={c.id} className={`transition-colors ${c.is_default === 1 ? 'bg-indigo-50/40' : 'hover:bg-slate-50/60'}`}>
                   {/* Symbol */}
-                  <td className="px-4 py-3 text-center">
+                  <td className="px-3 py-3 text-center">
                     <span className="text-base font-semibold text-slate-500">{c.symbol || '—'}</span>
                   </td>
                   {/* Code + name */}
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex items-center gap-2.5 flex-wrap">
                       <span className="font-mono font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded-lg text-xs">{c.code}</span>
                       <span className="text-slate-600">{c.name}</span>
                       {c.is_default === 1 && (
@@ -676,20 +666,20 @@ function Currencies() {
                       )}
                     </div>
                   </td>
-                  {/* Rate: 1 X = ? BASE */}
-                  <td className="px-4 py-3 text-center">
-                    <span className="text-xs text-slate-400">1 {c.code} =</span>
-                  </td>
+                  {/* Exchange rate — single clear column */}
                   <td className="px-4 py-3 text-right">
-                    <span className="font-mono font-bold text-slate-800 text-base">
-                      {baseSym}{pkrVal.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 4 })} {isDefault ? '(base)' : baseCode}
-                    </span>
-                  </td>
-                  {/* Inverse */}
-                  <td className="px-4 py-3 text-right">
-                    <span className="text-xs text-slate-400 font-mono">
-                      {pkrVal > 0 ? (1 / pkrVal).toFixed(5) : '—'} {c.code}
-                    </span>
+                    {isDefault ? (
+                      <span className="text-xs text-slate-400 italic">Base currency</span>
+                    ) : (
+                      <>
+                        <div className="font-mono font-bold text-slate-800 text-sm">
+                          1 {c.code} = {baseSym}{pkrVal.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 4 })} {baseCode}
+                        </div>
+                        <div className="text-2xs text-slate-400 font-mono mt-0.5">
+                          {baseSym}1 = {pkrVal > 0 ? (1 / pkrVal).toFixed(4) : '—'} {c.code}
+                        </div>
+                      </>
+                    )}
                   </td>
                   {/* Actions */}
                   <td className="px-4 py-3">
@@ -735,34 +725,6 @@ function Currencies() {
         )}
       </div>
 
-      {/* Live summary */}
-      {currencies.length > 0 && (
-        <div className="mt-4 bg-slate-50 border border-slate-200 rounded-xl p-4">
-          {(() => {
-            const defCur   = currencies.find(c => c.is_default === 1);
-            const baseCode = defCur?.code || 'BASE';
-            const baseSym  = defCur?.symbol || '';
-            return (
-              <>
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
-                  Quick Reference · 1 {baseCode} =
-                </p>
-                <div className="flex flex-wrap gap-3">
-                  {currencies.filter(c => c.code !== baseCode).map(c => (
-                    <div key={c.code} className="bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-center min-w-[100px]">
-                      <p className="text-xs text-slate-400 mb-0.5">{c.code}</p>
-                      <p className="font-bold text-slate-800 text-sm">
-                        {c.symbol || ''}{(1 / (parseFloat(c.rate_to_pkr) || 1)).toFixed(4)}
-                      </p>
-                      <p className="text-2xs text-slate-400 mt-0.5">per {baseCode}</p>
-                    </div>
-                  ))}
-                </div>
-              </>
-            );
-          })()}
-        </div>
-      )}
     </div>
   );
 }
