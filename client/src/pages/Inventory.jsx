@@ -371,18 +371,36 @@ export default function Inventory() {
     <div className="flex flex-col" style={{ height: 'calc(100vh - 8.5rem)' }}>
 
       {/* ── Page header ── */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4 flex-shrink-0">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-5 flex-shrink-0">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Inventory</h1>
-          <p className="text-sm text-slate-500 mt-0.5">
-            {totalItems} items · {pkr(availableValue)} available
-            {lowStock.length > 0 && <span className="text-rose-500 font-medium"> · {lowStock.length} low stock</span>}
-          </p>
+          <p className="text-sm text-slate-500 mt-0.5">Raw materials &amp; supplies — track stock levels and value</p>
         </div>
         <button onClick={() => { setAdding(true); setEditItem(null); setSelectedItem(null); }}
           className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-sm shadow-indigo-200 transition-colors">
           <Plus size={16} /> Add Item
         </button>
+      </div>
+
+      {/* ── Stats ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5 flex-shrink-0">
+        {[
+          { label: 'Total Items',     value: totalItems,           sub: `${CATEGORIES.length} categories`,  icon: Package,       color: 'text-indigo-600',  bg: 'bg-indigo-50' },
+          { label: 'Total Value',     value: pkr(totalValue),      sub: 'all stock purchased',              icon: TrendingUp,    color: 'text-slate-700',   bg: 'bg-slate-100' },
+          { label: 'Available Value', value: pkr(availableValue),  sub: 'unused stock on hand',             icon: Archive,       color: 'text-emerald-600', bg: 'bg-emerald-50' },
+          { label: 'Low Stock',       value: lowStock.length,      sub: 'below 20% remaining',              icon: AlertTriangle,
+            color: lowStock.length > 0 ? 'text-rose-600' : 'text-slate-400',
+            bg:    lowStock.length > 0 ? 'bg-rose-50'    : 'bg-slate-100' },
+        ].map(({ label, value, sub, icon: Icon, color, bg }) => (
+          <div key={label} className="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-3 shadow-sm">
+            <div className={`${bg} ${color} p-2.5 rounded-xl flex-shrink-0`}><Icon size={18} /></div>
+            <div className="min-w-0">
+              <p className="text-lg font-bold text-slate-900 truncate">{value}</p>
+              <p className="text-xs text-slate-500">{label}</p>
+              <p className="text-2xs text-slate-400">{sub}</p>
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* ── Two-panel split ── */}
