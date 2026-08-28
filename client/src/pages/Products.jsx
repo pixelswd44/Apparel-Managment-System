@@ -24,7 +24,7 @@ const EMPTY_PRODUCT = {
   status: 'active', images: '[]', notes: '', product_type: 'physical',
 };
 
-const EMPTY_CATEGORY = { name: '', description: '', color: '#6366f1' };
+const EMPTY_CATEGORY = { name: '', description: '', color: '#6366f1', image: '' };
 
 const FABRIC_UNITS   = ['KG', 'Yards', 'Meters', 'Grams', 'Rolls'];
 const PROFIT_PRESETS = [15, 20, 25, 30, 40, 50, 60, 80, 100];
@@ -151,10 +151,52 @@ function ImageUploader({ images, onChange }) {
   );
 }
 
+// ─── Single Image Upload (category cover) ─────────────────────────────────────
+
+function SingleImageUpload({ value, onChange }) {
+  const inputRef = useRef();
+  const [uploading, setUploading] = useState(false);
+
+  const pick = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const { data } = await api.post('/uploads', fd);
+      onChange(data.url);
+    } catch { alert('Upload failed.'); }
+    finally { setUploading(false); }
+  };
+
+  return (
+    <div>
+      {value ? (
+        <div className="relative group w-full aspect-[3/1] rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
+          <img src={imgUrl(value)} alt="" className="w-full h-full object-cover" />
+          <button type="button" onClick={() => onChange('')}
+            className="absolute top-1.5 right-1.5 bg-black/50 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <X size={12} />
+          </button>
+        </div>
+      ) : (
+        <button type="button" onClick={() => inputRef.current?.click()}
+          className="w-full border-2 border-dashed border-slate-200 rounded-xl px-4 py-5 flex flex-col items-center justify-center gap-1.5 text-sm text-slate-400 hover:border-indigo-300 hover:text-indigo-500 hover:bg-indigo-50/50 transition-all">
+          <Image size={18} />
+          <span>{uploading ? 'Uploading…' : 'Add cover image'}</span>
+        </button>
+      )}
+      <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={pick} />
+    </div>
+  );
+}
+
 // ─── Category Modal ───────────────────────────────────────────────────────────
 
 function CategoryModal({ category, onClose, onSave }) {
-  const [form, setForm] = useState(category ?? EMPTY_CATEGORY);
+  const [form, setForm] = useState(category ? { ...EMPTY_CATEGORY, ...category } : EMPTY_CATEGORY);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -192,6 +234,9 @@ function CategoryModal({ category, onClose, onSave }) {
         <Field label="Description">
           <textarea rows={2} value={form.description} onChange={e => set('description', e.target.value)}
             className={`${inputCls} resize-none`} placeholder="Optional description…" />
+        </Field>
+        <Field label="Cover Image">
+          <SingleImageUpload value={form.image} onChange={v => set('image', v)} />
         </Field>
         <Field label="Color">
           <div className="flex items-center gap-2 flex-wrap">
@@ -1407,34 +1452,48 @@ export default function Products() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {categories.map(cat => (
                 <div key={cat.id}
-                  className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm card-hover group">
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                        style={{ backgroundColor: `${cat.color}18` }}>
-                        <div className="w-4 h-4 rounded-full" style={{ backgroundColor: cat.color }} />
-                      </div>
-                      <div>
-                        <p className="font-semibold text-slate-900">{cat.name}</p>
-                        <p className="text-xs text-slate-400 mt-0.5">
-                          {cat.product_count} product{cat.product_count !== 1 ? 's' : ''}
-                        </p>
-                      </div>
+                  onClick={() => { setCatFilter(String(cat.id)); setStatus('all'); setSearch(''); setView('products'); }}
+                  className="bg-white border border-slate-200 rounded-2xl shadow-sm card-hover group cursor-pointer overflow-hidden">
+                  {/* Cover image */}
+                  {cat.image ? (
+                    <div className="w-full aspect-[3/1] bg-slate-100 overflow-hidden">
+                      <img src={imgUrl(cat.image)} alt="" className="w-full h-full object-cover" />
                     </div>
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => setCatModal(cat)}
-                        className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors">
-                        <Pencil size={13} />
-                      </button>
-                      <button onClick={() => setDelTarget({ type: 'category', item: cat })}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors">
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  </div>
-                  {cat.description && (
-                    <p className="text-sm text-slate-500 leading-relaxed line-clamp-2">{cat.description}</p>
+                  ) : (
+                    <div className="w-full h-2" style={{ backgroundColor: cat.color }} />
                   )}
+                  <div className="p-5">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                          style={{ backgroundColor: `${cat.color}18` }}>
+                          <div className="w-4 h-4 rounded-full" style={{ backgroundColor: cat.color }} />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-semibold text-slate-900 truncate group-hover:text-indigo-700 transition-colors">{cat.name}</p>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            {cat.product_count} product{cat.product_count !== 1 ? 's' : ''}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                        <button onClick={e => { e.stopPropagation(); setCatModal(cat); }}
+                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors">
+                          <Pencil size={13} />
+                        </button>
+                        <button onClick={e => { e.stopPropagation(); setDelTarget({ type: 'category', item: cat }); }}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors">
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+                    {cat.description && (
+                      <p className="text-sm text-slate-500 leading-relaxed line-clamp-2">{cat.description}</p>
+                    )}
+                    <p className="mt-3 text-xs font-medium text-indigo-600 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                      View products <ChevronRight size={12} />
+                    </p>
+                  </div>
                 </div>
               ))}
             </div>

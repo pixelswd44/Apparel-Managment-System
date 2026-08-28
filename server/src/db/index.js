@@ -789,6 +789,8 @@ const migrations = [
   `ALTER TABLE clients ADD COLUMN deal_status TEXT DEFAULT 'open'`,
   `ALTER TABLE clients ADD COLUMN messages    TEXT DEFAULT '[]'`,
   `ALTER TABLE clients ADD COLUMN tech_packs  TEXT DEFAULT '[]'`,
+  // Product category cover image (uploaded file URL)
+  `ALTER TABLE categories ADD COLUMN image TEXT DEFAULT ''`,
 ];
 
 for (const sql of migrations) {
