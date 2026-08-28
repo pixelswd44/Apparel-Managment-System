@@ -9,8 +9,6 @@ import api, { apiFetch, imgUrl } from '../lib/api';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const UNITS = ['pcs', 'kg', 'g', 'meters', 'yards', 'rolls', 'sets', 'pairs', 'dozen', 'box'];
-
 const PRESET_COLORS = [
   '#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316',
   '#eab308', '#22c55e', '#14b8a6', '#0ea5e9', '#64748b',
@@ -452,11 +450,31 @@ export default function ProductForm() {
     if (!form.name.trim()) { setError('Product name is required.'); return; }
     setSaving(true); setError('');
     try {
-      const payload = { ...form, images: JSON.stringify(images) };
+      const cost = parseFloat(priceForm.unit_cost) || 0;
+      const sell = parseFloat(priceForm.selling_price) || 0;
+      const payload = {
+        ...form,
+        unit: 'pcs',
+        product_type: 'physical',
+        images: JSON.stringify(images),
+        ...(isEdit ? {} : { unit_cost: cost, selling_price: sell }),
+      };
       if (isEdit) {
         await api.put(`/products/${id}`, payload);
       } else {
-        await api.post('/products', payload);
+        const { data: created } = await api.post('/products', payload);
+        // Persist the entered price into product_prices so it shows everywhere,
+        // and auto-convert to the other configured currencies.
+        if (created?.id && sell > 0 && priceForm.currency) {
+          try {
+            await api.post(`/products/${created.id}/prices`, {
+              currency: priceForm.currency,
+              unit_cost: cost,
+              selling_price: sell,
+              auto_convert: currencies.length > 1,
+            });
+          } catch { /* non-blocking — product is already created */ }
+        }
       }
       navigate('/products');
     } catch (err) {
@@ -556,13 +574,6 @@ export default function ProductForm() {
                 <input value={form.article_number} onChange={e => set('article_number', e.target.value)}
                   className={inputCls} placeholder="e.g. ART-2024-001" />
               </Field>
-              <Field label="SKU">
-                <input value={form.sku} onChange={e => set('sku', e.target.value)}
-                  className={inputCls} placeholder="e.g. PLO-001-S-RED" />
-              </Field>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
               <Field label="Category">
                 <CategorySelect
                   value={form.category_id}
@@ -570,11 +581,6 @@ export default function ProductForm() {
                   onChange={v => set('category_id', v)}
                   onCategoriesChange={setCategories}
                 />
-              </Field>
-              <Field label="Unit">
-                <select value={form.unit} onChange={e => set('unit', e.target.value)} className={selectCls}>
-                  {UNITS.map(u => <option key={u}>{u}</option>)}
-                </select>
               </Field>
             </div>
 
@@ -591,28 +597,6 @@ export default function ProductForm() {
                   </button>
                 ))}
               </div>
-            </Field>
-
-            <Field label="Product Type">
-              <div className="flex gap-2">
-                {[['physical', '📦 Physical Product'], ['service', '⚙️ Service']].map(([val, label]) => (
-                  <button key={val} type="button" onClick={() => set('product_type', val)}
-                    className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-all duration-150 ${
-                      form.product_type === val
-                        ? val === 'service'
-                          ? 'bg-violet-600 border-violet-600 text-white'
-                          : 'bg-indigo-600 border-indigo-600 text-white'
-                        : 'border-slate-200 text-slate-600 hover:border-indigo-300 hover:bg-indigo-50'
-                    }`}>
-                    {form.product_type === val && <Check size={11} className="inline mr-1" />}{label}
-                  </button>
-                ))}
-              </div>
-              {form.product_type === 'service' && (
-                <p className="text-xs text-violet-600 mt-1.5 opacity-70">
-                  Stock tracking and price calculator are hidden for services.
-                </p>
-              )}
             </Field>
 
             <Field label="Description">
@@ -641,34 +625,32 @@ export default function ProductForm() {
               <ImageUploader images={images} onChange={setImages} />
             </div>
 
-            {/* — Stock section — hidden for services */}
-            {form.product_type !== 'service' && (
-              <div>
-                <div className="flex items-center gap-2 pb-2 mb-4 border-b border-slate-100">
-                  <div className="w-7 h-7 bg-amber-50 border border-amber-100 rounded-lg flex items-center justify-center">
-                    <AlertCircle size={13} className="text-amber-600" />
-                  </div>
-                  <h2 className="text-sm font-bold text-slate-900">Stock & Inventory</h2>
+            {/* — Stock section — */}
+            <div>
+              <div className="flex items-center gap-2 pb-2 mb-4 border-b border-slate-100">
+                <div className="w-7 h-7 bg-amber-50 border border-amber-100 rounded-lg flex items-center justify-center">
+                  <AlertCircle size={13} className="text-amber-600" />
                 </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <Field label="Stock Quantity">
-                    <input type="number" min="0" value={form.stock_quantity} onChange={e => set('stock_quantity', e.target.value)}
-                      className={inputCls} placeholder="0" />
-                  </Field>
-                  <Field label="Reorder Level">
-                    <input type="number" min="0" value={form.reorder_level} onChange={e => set('reorder_level', e.target.value)}
-                      className={inputCls} placeholder="Alert when below…" />
-                  </Field>
-                </div>
-
-                {parseFloat(form.stock_quantity) <= parseFloat(form.reorder_level) && parseFloat(form.reorder_level) > 0 && (
-                  <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 px-4 py-3 rounded-xl mt-3">
-                    <AlertCircle size={14} /> Stock is at or below the reorder level.
-                  </div>
-                )}
+                <h2 className="text-sm font-bold text-slate-900">Stock & Inventory</h2>
               </div>
-            )}
+
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Stock Quantity">
+                  <input type="number" min="0" value={form.stock_quantity} onChange={e => set('stock_quantity', e.target.value)}
+                    className={inputCls} placeholder="0" />
+                </Field>
+                <Field label="Reorder Level">
+                  <input type="number" min="0" value={form.reorder_level} onChange={e => set('reorder_level', e.target.value)}
+                    className={inputCls} placeholder="Alert when below…" />
+                </Field>
+              </div>
+
+              {parseFloat(form.stock_quantity) <= parseFloat(form.reorder_level) && parseFloat(form.reorder_level) > 0 && (
+                <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 px-4 py-3 rounded-xl mt-3">
+                  <AlertCircle size={14} /> Stock is at or below the reorder level.
+                </div>
+              )}
+            </div>
 
             {/* — Pricing section — */}
             <div>
@@ -677,16 +659,52 @@ export default function ProductForm() {
                   <Calculator size={13} className="text-violet-600" />
                 </div>
                 <h2 className="text-sm font-bold text-slate-900">Pricing</h2>
-                <span className="ml-auto text-xs text-slate-400">Cost & selling price per currency</span>
+                <span className="ml-auto text-xs text-slate-400">
+                  {isEdit ? 'Cost & selling price per currency' : `In ${priceForm.currency || 'default currency'}`}
+                </span>
               </div>
 
               {!isEdit ? (
-                <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-6 text-center">
-                  <Calculator size={20} className="text-slate-300 mx-auto mb-2" />
-                  <p className="text-sm text-slate-500 font-medium">Save product first</p>
-                  <p className="text-xs text-slate-400 mt-1">
-                    Pricing controls become available once the product is saved.
-                  </p>
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-2xs font-semibold text-slate-400 uppercase tracking-widest mb-1">Cost</label>
+                      <input type="number" min="0" step="any" value={priceForm.unit_cost}
+                        onChange={e => handleCostChange(e.target.value)} placeholder="0.00"
+                        className={`${inputCls} text-sm font-mono`} />
+                    </div>
+                    <div>
+                      <label className="block text-2xs font-semibold text-slate-400 uppercase tracking-widest mb-1">Margin %</label>
+                      <input type="number" min="0" max="99.99" step="any" value={priceForm.margin}
+                        onChange={e => handleMarginChange(e.target.value)} placeholder="0"
+                        className={`${inputCls} text-sm font-mono`} />
+                    </div>
+                    <div>
+                      <label className="block text-2xs font-semibold text-slate-400 uppercase tracking-widest mb-1">Selling</label>
+                      <input type="number" min="0" step="any" value={priceForm.selling_price}
+                        onChange={e => handleSellingChange(e.target.value)} placeholder="0.00"
+                        className={`${inputCls} text-sm font-mono font-bold text-indigo-700`} />
+                    </div>
+                  </div>
+                  {parseFloat(priceForm.unit_cost) > 0 && parseFloat(priceForm.selling_price) > 0 && (
+                    <div className="flex items-center justify-between bg-white border border-indigo-100 rounded-lg px-3 py-2 text-xs">
+                      <span className="text-slate-500">
+                        Profit / unit: <span className="font-bold text-indigo-700">
+                          {fmtPrice(parseFloat(priceForm.selling_price) - parseFloat(priceForm.unit_cost))} {priceForm.currency}
+                        </span>
+                      </span>
+                      <span className="text-slate-500">
+                        Margin: <span className="font-bold text-emerald-600">{priceForm.margin || '0'}%</span>
+                      </span>
+                    </div>
+                  )}
+                  {currencies.length > 1 && (
+                    <p className="text-2xs text-slate-400 leading-relaxed">
+                      Saved in <strong>{priceForm.currency}</strong> and auto-converted to{' '}
+                      {currencies.filter(c => c.code !== priceForm.currency).slice(0, 3).map(c => c.code).join(', ')}
+                      {currencies.length > 4 && ` +${currencies.length - 4} more`} using Settings exchange rates.
+                    </p>
+                  )}
                 </div>
               ) : (
                 <>
