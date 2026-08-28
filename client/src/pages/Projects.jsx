@@ -1480,6 +1480,27 @@ function PrintSummary({ project, fin = {} }) {
   );
 }
 
+// Shared: full-size reference images, two per row (used by Cutting / Stitching)
+function PrintRefImages({ images }) {
+  if (!images || images.length === 0) return null;
+  return (
+    <div className="mb-6" style={{ breakInside: 'avoid' }}>
+      <p className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-3">Reference Images / Tech Packs</p>
+      <div className="flex flex-wrap gap-3">
+        {images.map((img, i) => (
+          <div key={i} className="border border-slate-300 rounded overflow-hidden" style={{ width: 'calc(50% - 6px)', breakInside: 'avoid' }}>
+            <img src={imgUrl(img.url)} alt={img.originalName || `Image ${i+1}`}
+              className="w-full object-contain bg-slate-50" style={{ maxHeight: 360 }} />
+            {img.originalName && (
+              <p className="text-xs text-slate-500 px-2 py-1 truncate">{img.originalName}</p>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function PrintCutting({ project }) {
   const images = Array.isArray(project.images) ? project.images : [];
   return (
@@ -1492,22 +1513,19 @@ function PrintCutting({ project }) {
           <span><strong>Date:</strong> {fmtDate(project.created_at)}</span>
         </div>
       </div>
-      {images.length > 0 && (
-        <div className="mb-6">
-          <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Reference Images / Tech Packs</p>
-          <div className="flex flex-wrap gap-4">
-            {images.map((img, i) => (
-              <div key={i} className="border border-slate-200 rounded overflow-hidden">
-                <img src={imgUrl(img.url)} alt={img.originalName || `Image ${i+1}`}
-                  className="h-40 w-auto object-contain" style={{ maxWidth: 280 }} />
-                {img.originalName && (
-                  <p className="text-2xs text-slate-400 px-2 py-1 truncate max-w-[280px]">{img.originalName}</p>
-                )}
-              </div>
-            ))}
-          </div>
+
+      {/* Quantities strip */}
+      {(project.products||[]).length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-6">
+          {(project.products||[]).map(pp => (
+            <span key={pp.id} className="border-2 border-slate-800 rounded px-3 py-1 text-sm font-bold">
+              {pp.product_name} — {(parseFloat(pp.total_quantity)||0).toLocaleString()} {pp.unit}
+            </span>
+          ))}
         </div>
       )}
+
+      <PrintRefImages images={images} />
       {(project.products||[]).map((pp, i) => (
         <div key={pp.id} className={`mb-8 ${i < project.products.length - 1 ? 'pb-8 border-b border-slate-300' : ''}`}>
           <div className="flex items-center gap-3 mb-3">
@@ -1557,22 +1575,18 @@ function PrintStitching({ project }) {
           <span><strong>Date:</strong> {fmtDate(project.created_at)}</span>
         </div>
       </div>
-      {images.length > 0 && (
-        <div className="mb-6">
-          <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Reference Images / Tech Packs</p>
-          <div className="flex flex-wrap gap-4">
-            {images.map((img, i) => (
-              <div key={i} className="border border-slate-200 rounded overflow-hidden">
-                <img src={imgUrl(img.url)} alt={img.originalName || `Image ${i+1}`}
-                  className="h-40 w-auto object-contain" style={{ maxWidth: 280 }} />
-                {img.originalName && (
-                  <p className="text-2xs text-slate-400 px-2 py-1 truncate max-w-[280px]">{img.originalName}</p>
-                )}
-              </div>
-            ))}
-          </div>
+      {/* Quantities strip */}
+      {(project.products||[]).length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-6">
+          {(project.products||[]).map(pp => (
+            <span key={pp.id} className="border-2 border-slate-800 rounded px-3 py-1 text-sm font-bold">
+              {pp.product_name} — {(parseFloat(pp.total_quantity)||0).toLocaleString()} {pp.unit}
+            </span>
+          ))}
         </div>
       )}
+
+      <PrintRefImages images={images} />
       {(project.products||[]).map((pp, i) => (
         <div key={pp.id} className={`mb-8 ${i < project.products.length - 1 ? 'pb-8 border-b border-slate-300' : ''}`}>
           <div className="flex items-center gap-3 mb-3">
@@ -1613,74 +1627,62 @@ function PrintStitching({ project }) {
 }
 
 function PrintPackaging({ project }) {
-  const client = project;
+  const boxes  = project.boxes || [];
+  const boxPcs = box => (box.contents||[]).reduce((s,item) => s + (item.sizes||[]).reduce((ss,sz) => ss + (parseFloat(sz.qty)||0), 0), 0);
+  const grand  = boxes.reduce((s, b) => s + boxPcs(b), 0);
+
   return (
-    <div className="p-8 font-sans text-slate-900">
-      {(project.boxes||[]).length === 0 ? (
-        <p className="text-slate-500 text-center py-8">No boxes defined for this project.</p>
-      ) : (project.boxes||[]).map((box, bi) => (
-        <div key={box.id} className={`${bi > 0 ? 'page-break-before mt-8 pt-8 border-t-2 border-slate-800' : ''}`}>
-          <div className="border-b-2 border-slate-800 pb-4 mb-6">
-            <div className="flex justify-between items-start">
-              <div>
-                <h1 className="text-2xl font-bold uppercase">Box #{box.box_number}</h1>
-                <p className="text-sm text-slate-600 mt-1"><strong>Project:</strong> {project.title}</p>
-              </div>
-              <div className="text-right text-sm text-slate-600">
-                <p><strong>Client:</strong> {client.client_name}</p>
-                {client.client_company && <p>{client.client_company}</p>}
-              </div>
-            </div>
-          </div>
-
-          {/* Shipping */}
-          {(client.client_ship_address || client.client_ship_city) && (
-            <div className="mb-6 bg-slate-50 border border-slate-200 rounded p-4">
-              <p className="font-bold text-sm uppercase tracking-wide mb-2">Ship To:</p>
-              {client.client_ship_name  && <p className="text-sm font-semibold">{client.client_ship_name}</p>}
-              {client.client_ship_phone && <p className="text-sm">{client.client_ship_phone}</p>}
-              {client.client_ship_address && <p className="text-sm">{client.client_ship_address}</p>}
-              <p className="text-sm">{[client.client_ship_city, client.client_ship_country].filter(Boolean).join(', ')}</p>
-            </div>
-          )}
-
-          {/* Contents */}
-          <table className="w-full border-collapse border border-slate-300 text-sm">
-            <thead>
-              <tr className="bg-slate-100">
-                <th className="border border-slate-300 px-4 py-2 text-left font-semibold">Product</th>
-                <th className="border border-slate-300 px-4 py-2 text-left font-semibold">Size</th>
-                <th className="border border-slate-300 px-4 py-2 text-center font-semibold">Qty</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(box.contents||[]).flatMap(item =>
-                (item.sizes||[]).filter(s => parseFloat(s.qty) > 0).map((sz, si) => (
-                  <tr key={`${item.project_product_id}-${si}`}>
-                    {si === 0 && <td className="border border-slate-300 px-4 py-2 font-medium" rowSpan={(item.sizes||[]).filter(s=>parseFloat(s.qty)>0).length}>{item.product_name}</td>}
-                    <td className="border border-slate-300 px-4 py-2">{sz.size}</td>
-                    <td className="border border-slate-300 px-4 py-2 text-center font-bold">{parseFloat(sz.qty)}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-            <tfoot>
-              <tr className="bg-slate-50 font-bold">
-                <td colSpan={2} className="border border-slate-300 px-4 py-2">TOTAL PIECES</td>
-                <td className="border border-slate-300 px-4 py-2 text-center">
-                  {(box.contents||[]).reduce((s,item) => s + (item.sizes||[]).reduce((ss,sz) => ss + (parseFloat(sz.qty)||0), 0), 0)}
-                </td>
-              </tr>
-            </tfoot>
-          </table>
-
-          {box.notes && <p className="text-xs text-slate-500 mt-3 italic">Note: {box.notes}</p>}
-          <div className="border-t border-slate-300 pt-3 mt-6 flex justify-between text-xs text-slate-400">
-            <span>Box #{box.box_number} of {project.boxes.length} — {project.title}</span>
-            <span>Printed: {new Date().toLocaleDateString()}</span>
-          </div>
+    <div className="p-8 font-sans text-slate-900 text-sm">
+      {/* Header */}
+      <div className="flex justify-between items-start border-b-2 border-slate-900 pb-3 mb-4">
+        <div>
+          <h1 className="text-2xl font-black uppercase tracking-wide">Packing List — All Boxes</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            <strong className="text-slate-800">{project.title}</strong>
+            {project.client_name ? ` · ${project.client_name}` : ''}
+          </p>
         </div>
-      ))}
+        <div className="text-right text-sm text-slate-500">
+          <p className="font-bold text-slate-800 text-base">{boxes.length} boxes · {grand.toLocaleString()} pcs</p>
+          <p>Printed: {new Date().toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' })}</p>
+        </div>
+      </div>
+
+      {boxes.length === 0 ? (
+        <p className="text-slate-500 text-center py-8">No boxes defined for this project.</p>
+      ) : (
+        <div className="divide-y divide-slate-300 border-y border-slate-300">
+          {boxes.map(box => {
+            const parts = (box.contents||[]).map(item => {
+              const sizes = (item.sizes||[]).filter(s => parseFloat(s.qty) > 0)
+                .map(s => `${s.size}×${parseFloat(s.qty)}`).join('  ');
+              return `${item.product_name}${sizes ? ` (${sizes})` : ''}`;
+            });
+            return (
+              <div key={box.id} className="py-2.5" style={{ breakInside: 'avoid' }}>
+                {/* Row 1: box + total pieces */}
+                <div className="flex items-baseline justify-between gap-4">
+                  <span className="font-black text-base">
+                    Box #{box.box_number}
+                    {box.shipped && <span className="ml-2 text-xs font-bold text-emerald-700">✓ SHIPPED</span>}
+                  </span>
+                  <span className="font-bold text-base whitespace-nowrap">{boxPcs(box).toLocaleString()} pcs</span>
+                </div>
+                {/* Row 2: contents inline */}
+                <div className="text-slate-700 mt-0.5">
+                  {parts.length ? parts.join('  ·  ') : <span className="italic text-slate-400">empty</span>}
+                </div>
+                {box.notes && <div className="text-xs text-slate-500 italic mt-0.5">Note: {box.notes}</div>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="flex justify-between font-black text-base mt-3 pt-2">
+        <span>TOTAL</span>
+        <span>{boxes.length} boxes · {grand.toLocaleString()} pcs</span>
+      </div>
     </div>
   );
 }
@@ -1692,6 +1694,8 @@ function ProjectImageUploader({ images, onSave }) {
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving]       = useState(false);
   const [open, setOpen]           = useState(false);
+  const [lightbox, setLightbox]   = useState(null); // image object being viewed
+  const [delTarget, setDelTarget] = useState(null); // filename pending delete confirm
 
   const handleFiles = async (e) => {
     const files = [...e.target.files];
@@ -1753,16 +1757,29 @@ function ProjectImageUploader({ images, onSave }) {
             <div className="flex flex-wrap gap-3 mb-4">
               {images.map((img, i) => (
                 <div key={img.filename || i} className="relative group rounded-xl overflow-hidden border border-slate-200 bg-slate-50" style={{ width: 120, height: 120 }}>
-                  <img src={imgUrl(img.url)} alt={img.originalName}
-                    className="w-full h-full object-contain" />
-                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                  <button type="button" onClick={() => setLightbox(img)} className="w-full h-full cursor-zoom-in">
+                    <img src={imgUrl(img.url)} alt={img.originalName} className="w-full h-full object-contain" />
+                  </button>
+                  {/* Delete — hover reveal, two-step confirm */}
+                  {delTarget === (img.filename || i) ? (
+                    <div className="absolute inset-0 bg-white/95 flex flex-col items-center justify-center gap-1.5 p-2 text-center">
+                      <p className="text-2xs font-semibold text-slate-700">Delete this tech pack?</p>
+                      <div className="flex gap-1.5">
+                        <button onClick={() => { removeImage(img); setDelTarget(null); }}
+                          className="px-2 py-1 text-2xs bg-rose-600 text-white rounded-lg font-semibold">Delete</button>
+                        <button onClick={() => setDelTarget(null)}
+                          className="px-2 py-1 text-2xs border border-slate-200 rounded-lg text-slate-500">Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
                     <button
-                      onClick={() => removeImage(img)}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity bg-rose-600 text-white rounded-full p-1">
-                      <X size={12} />
+                      onClick={() => setDelTarget(img.filename || i)}
+                      title="Remove"
+                      className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 border border-slate-200 text-slate-500 hover:text-rose-600 rounded-lg p-1 shadow-sm">
+                      <Trash2 size={11} />
                     </button>
-                  </div>
-                  <p className="absolute bottom-0 left-0 right-0 bg-black/40 text-white text-2xs px-1.5 py-1 truncate opacity-0 group-hover:opacity-100 transition-opacity">{img.originalName}</p>
+                  )}
+                  <p className="absolute bottom-0 left-0 right-0 bg-black/40 text-white text-2xs px-1.5 py-1 truncate opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">{img.originalName}</p>
                 </div>
               ))}
             </div>
@@ -1790,6 +1807,23 @@ function ProjectImageUploader({ images, onSave }) {
                 onChange={handleFiles}
               />
             </>
+          )}
+        </div>
+      )}
+
+      {/* Lightbox */}
+      {lightbox && (
+        <div className="fixed inset-0 z-[300] bg-black/80 flex items-center justify-center p-6"
+          onClick={() => setLightbox(null)}>
+          <button onClick={() => setLightbox(null)}
+            className="absolute top-4 right-4 text-white/80 hover:text-white bg-white/10 rounded-full p-2">
+            <X size={18} />
+          </button>
+          <img src={imgUrl(lightbox.url)} alt={lightbox.originalName || ''}
+            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+            onClick={e => e.stopPropagation()} />
+          {lightbox.originalName && (
+            <p className="absolute bottom-4 left-0 right-0 text-center text-white/70 text-sm">{lightbox.originalName}</p>
           )}
         </div>
       )}
