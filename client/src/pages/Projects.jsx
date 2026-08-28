@@ -1851,7 +1851,7 @@ function InvoiceSyncBanner({ project, catalogProducts, onReload, onItemsLoaded }
   const [invId, setInvId]           = useState(project.invoice_id || '');
   const [invItems, setInvItems]     = useState(null);
   const [syncing, setSyncing]       = useState(false);
-  const [deselected, setDeselected] = useState(() => new Set()); // names the user unticked
+  const [deselected, setDeselected] = useState(() => new Set()); // line indices the user unticked
 
   // Related invoices only: must have line items; scoped to the project's client
   // (derived from the linked invoice when the project has no client set)
@@ -1897,18 +1897,31 @@ function InvoiceSyncBanner({ project, catalogProducts, onReload, onItemsLoaded }
   if (invoices.length === 0 && !project.invoice_id) return null;
 
   const itemName = it => (it.name || it.description || '').trim();
-  const existing = new Set((project.products||[]).map(p => (p.product_name||'').trim().toLowerCase()));
-  const missing  = (invItems || []).filter(it => {
-    const nm = itemName(it);
-    return nm && !existing.has(nm.toLowerCase());
-  });
-  const selected = missing.filter(it => !deselected.has(itemName(it).toLowerCase()));
+  // Count how many project products already carry each name, so we can mark
+  // exactly that many invoice lines as "already added" (not every line that
+  // happens to share a name — an invoice with 2× "MMA Shorts" and a project
+  // with 1× "MMA Shorts" still has one line left to sync).
+  const remaining = {};
+  for (const p of (project.products || [])) {
+    const k = (p.product_name || '').trim().toLowerCase();
+    if (k) remaining[k] = (remaining[k] || 0) + 1;
+  }
+  const lines = (invItems || [])
+    .map((it, idx) => ({ it, idx, name: itemName(it), qty: parseFloat(it.quantity) || 0 }))
+    .filter(l => l.name)
+    .map(l => {
+      const k = l.name.toLowerCase();
+      const alreadyIn = (remaining[k] || 0) > 0;
+      if (alreadyIn) remaining[k] -= 1;
+      return { ...l, alreadyIn };
+    });
+  const syncable = lines.filter(l => !l.alreadyIn);
+  const selected = syncable.filter(l => !deselected.has(l.idx));
 
-  function toggle(nm) {
-    const key = nm.toLowerCase();
+  function toggle(idx) {
     setDeselected(prev => {
       const next = new Set(prev);
-      if (next.has(key)) next.delete(key); else next.add(key);
+      if (next.has(idx)) next.delete(idx); else next.add(idx);
       return next;
     });
   }
@@ -1917,17 +1930,15 @@ function InvoiceSyncBanner({ project, catalogProducts, onReload, onItemsLoaded }
     if (selected.length === 0) return;
     setSyncing(true);
     try {
-      for (const it of selected) {
-        const nm  = itemName(it);
-        const qty = parseFloat(it.quantity) || 0;
-        const cat = catalogProducts.find(p => (p.name||'').trim().toLowerCase() === nm.toLowerCase());
+      for (const l of selected) {
+        const cat = catalogProducts.find(p => (p.name||'').trim().toLowerCase() === l.name.toLowerCase());
         await api.post(`/projects/${project.id}/products`, {
           product_id:     cat?.id || '',
-          product_name:   nm,
+          product_name:   l.name,
           unit:           cat?.unit || 'pcs',
-          notes:          it.name ? (it.description || '') : '',
-          sizes:          qty > 0 ? [{ size: 'QTY', qty }] : [],
-          total_quantity: qty,
+          notes:          l.it.name ? (l.it.description || '') : '',
+          sizes:          l.qty > 0 ? [{ size: 'QTY', qty: l.qty }] : [],
+          total_quantity: l.qty,
           fabrics: [], costs: [], external_costs: [],
         });
       }
@@ -1941,7 +1952,7 @@ function InvoiceSyncBanner({ project, catalogProducts, onReload, onItemsLoaded }
         <div className="flex items-center gap-2 min-w-0 flex-wrap">
           <Receipt size={14} className="text-indigo-500 flex-shrink-0" />
           <span className="text-xs text-indigo-700 font-semibold">Sync products from invoice</span>
-          <select value={invId || ''} onChange={e => setInvId(e.target.value)}
+          <select value={invId || ''} onChange={e => { setInvId(e.target.value); setDeselected(new Set()); }}
             className="border border-indigo-200 bg-white rounded-lg px-2 py-1 text-xs font-mono outline-none focus:border-indigo-400 cursor-pointer max-w-[220px]">
             <option value="">— Select invoice —</option>
             {invoices.map(i => (
@@ -1950,14 +1961,14 @@ function InvoiceSyncBanner({ project, catalogProducts, onReload, onItemsLoaded }
               </option>
             ))}
           </select>
-          {invId && invItems && missing.length === 0 && (
-            <span className="text-2xs font-semibold text-emerald-600">✓ All its products are already in this project</span>
+          {invId && invItems && syncable.length === 0 && lines.length > 0 && (
+            <span className="text-2xs font-semibold text-emerald-600">✓ All {lines.length} invoice lines are already in this project</span>
           )}
-          {invId && invItems && missing.length > 0 && (
-            <span className="text-2xs text-indigo-500">tap to select:</span>
+          {invId && invItems && syncable.length > 0 && (
+            <span className="text-2xs text-indigo-500">{selected.length} of {syncable.length} selected · tap to toggle</span>
           )}
         </div>
-        {missing.length > 0 && (
+        {syncable.length > 0 && (
           <button onClick={sync} disabled={syncing || selected.length === 0}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white rounded-xl text-xs font-semibold hover:bg-indigo-700 disabled:opacity-60 transition-colors flex-shrink-0">
             {syncing
@@ -1966,20 +1977,28 @@ function InvoiceSyncBanner({ project, catalogProducts, onReload, onItemsLoaded }
           </button>
         )}
       </div>
-      {missing.length > 0 && (
+      {invId && invItems && lines.length > 0 && (
         <div className="flex items-center gap-1.5 flex-wrap">
-          {missing.map(it => {
-            const nm = itemName(it);
-            const on = !deselected.has(nm.toLowerCase());
-            const qty = parseFloat(it.quantity) || 0;
+          {lines.map(l => {
+            if (l.alreadyIn) {
+              return (
+                <span key={l.idx}
+                  className="flex items-center gap-1 text-2xs px-2 py-1 rounded-lg border border-slate-200 bg-white text-slate-400 font-medium">
+                  <Check size={10} className="text-emerald-500" />
+                  {l.name}{l.qty > 0 && <span className="text-slate-300"> ×{l.qty}</span>}
+                  <span className="text-slate-300">· in project</span>
+                </span>
+              );
+            }
+            const on = !deselected.has(l.idx);
             return (
-              <button key={nm} type="button" onClick={() => toggle(nm)}
+              <button key={l.idx} type="button" onClick={() => toggle(l.idx)}
                 className={`flex items-center gap-1 text-2xs px-2 py-1 rounded-lg border font-medium transition-colors ${
                   on ? 'bg-indigo-600 border-indigo-600 text-white'
                      : 'bg-white border-slate-200 text-slate-400 line-through'
                 }`}>
                 {on && <Check size={10} />}
-                {nm}{qty > 0 && <span className={on ? 'text-indigo-200' : 'text-slate-300'}> ×{qty}</span>}
+                {l.name}{l.qty > 0 && <span className={on ? 'text-indigo-200' : 'text-slate-300'}> ×{l.qty}</span>}
               </button>
             );
           })}
