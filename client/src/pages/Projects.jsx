@@ -1514,17 +1514,6 @@ function PrintCutting({ project }) {
         </div>
       </div>
 
-      {/* Quantities strip */}
-      {(project.products||[]).length > 0 && (
-        <div className="flex flex-wrap gap-2 mb-6">
-          {(project.products||[]).map(pp => (
-            <span key={pp.id} className="border-2 border-slate-800 rounded px-3 py-1 text-sm font-bold">
-              {pp.product_name} — {(parseFloat(pp.total_quantity)||0).toLocaleString()} {pp.unit}
-            </span>
-          ))}
-        </div>
-      )}
-
       <PrintRefImages images={images} />
       {(project.products||[]).map((pp, i) => (
         <div key={pp.id} className={`mb-8 ${i < project.products.length - 1 ? 'pb-8 border-b border-slate-300' : ''}`}>
@@ -1575,17 +1564,6 @@ function PrintStitching({ project }) {
           <span><strong>Date:</strong> {fmtDate(project.created_at)}</span>
         </div>
       </div>
-      {/* Quantities strip */}
-      {(project.products||[]).length > 0 && (
-        <div className="flex flex-wrap gap-2 mb-6">
-          {(project.products||[]).map(pp => (
-            <span key={pp.id} className="border-2 border-slate-800 rounded px-3 py-1 text-sm font-bold">
-              {pp.product_name} — {(parseFloat(pp.total_quantity)||0).toLocaleString()} {pp.unit}
-            </span>
-          ))}
-        </div>
-      )}
-
       <PrintRefImages images={images} />
       {(project.products||[]).map((pp, i) => (
         <div key={pp.id} className={`mb-8 ${i < project.products.length - 1 ? 'pb-8 border-b border-slate-300' : ''}`}>
@@ -1643,7 +1621,7 @@ function PrintPackaging({ project }) {
           </p>
         </div>
         <div className="text-right text-sm text-slate-500">
-          <p className="font-bold text-slate-800 text-base">{boxes.length} boxes · {grand.toLocaleString()} pcs</p>
+          <p className="font-bold text-slate-800 text-base">{project.status?.toUpperCase()}</p>
           <p>Printed: {new Date().toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' })}</p>
         </div>
       </div>
