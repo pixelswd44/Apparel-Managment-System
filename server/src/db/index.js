@@ -791,6 +791,9 @@ const migrations = [
   `ALTER TABLE clients ADD COLUMN tech_packs  TEXT DEFAULT '[]'`,
   // Product category cover image (uploaded file URL)
   `ALTER TABLE categories ADD COLUMN image TEXT DEFAULT ''`,
+  // Client "final designs" — the approved artwork that actually syncs into a
+  // project (tech_packs stays as the broader reference/spec pile).
+  `ALTER TABLE clients ADD COLUMN final_designs TEXT DEFAULT '[]'`,
 ];
 
 for (const sql of migrations) {

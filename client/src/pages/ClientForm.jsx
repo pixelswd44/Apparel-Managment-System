@@ -191,6 +191,7 @@ export default function ClientForm() {
   const [form, setForm]     = useState(EMPTY_CLIENT);
   const [docs, setDocs]     = useState([]);
   const [techPacks, setTechPacks] = useState([]);
+  const [finalDesigns, setFinalDesigns] = useState([]);
   const [firstMessage, setFirstMessage] = useState(''); // create-only: seeds the conversation log
   const [sideTab, setSideTab] = useState('lead');
   const [pageLoading, setPageLoading] = useState(isEdit);
@@ -209,6 +210,7 @@ export default function ClientForm() {
         setForm({ ...EMPTY_CLIENT, ...data });
         try { setDocs(JSON.parse(data?.documents ?? '[]')); } catch { setDocs([]); }
         try { const tp = JSON.parse(data?.tech_packs ?? '[]'); setTechPacks(Array.isArray(tp) ? tp : []); } catch { setTechPacks([]); }
+        try { const fd = JSON.parse(data?.final_designs ?? '[]'); setFinalDesigns(Array.isArray(fd) ? fd : []); } catch { setFinalDesigns([]); }
       })
       .catch(() => { if (!cancelled) setError('Failed to load customer.'); })
       .finally(() => { if (!cancelled) setPageLoading(false); });
@@ -226,7 +228,7 @@ export default function ClientForm() {
       const { messages: _m, ...rest } = form;
       const body = {
         ...rest,
-        documents: JSON.stringify(docs), tech_packs: JSON.stringify(techPacks),
+        documents: JSON.stringify(docs), tech_packs: JSON.stringify(techPacks), final_designs: JSON.stringify(finalDesigns),
         // Receiver defaults to the customer themself; billing mirrors shipping (single-address model)
         shipping_receiver_name:  (rest.shipping_receiver_name  || '').trim() || rest.name  || '',
         shipping_receiver_phone: (rest.shipping_receiver_phone || '').trim() || rest.phone || '',
@@ -438,12 +440,21 @@ export default function ClientForm() {
                     </p>
                   )}
 
+                  <div className="rounded-2xl p-4 bg-white border border-slate-200 border-t-4 border-t-emerald-500">
+                    <div className="flex items-center gap-2 mb-1">
+                      <FileImage size={14} className="text-emerald-600" />
+                      <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Final Designs</p>
+                    </div>
+                    <p className="text-xs text-slate-500 mb-3">Only the <strong>approved</strong> artwork — this is what syncs into a project and prints on Cutting / Stitching / Press &amp; Pack.</p>
+                    <DocUploader docs={finalDesigns} onChange={setFinalDesigns} max={20} label="final design" />
+                  </div>
+
                   <div className="rounded-2xl p-4 bg-white border border-slate-200 border-t-4 border-t-indigo-500">
                     <div className="flex items-center gap-2 mb-1">
                       <FileImage size={14} className="text-indigo-600" />
                       <p className="text-xs font-bold uppercase tracking-wider text-indigo-700">Tech Packs</p>
                     </div>
-                    <p className="text-xs text-slate-500 mb-3">Design specs, size charts, artwork — auto-copied into every project for this client.</p>
+                    <p className="text-xs text-slate-500 mb-3">Design specs, size charts, reference artwork — kept on the client for reference, <strong>not</strong> auto-synced to projects.</p>
                     <DocUploader docs={techPacks} onChange={setTechPacks} max={10} label="tech pack" />
                   </div>
                 </div>

@@ -1485,7 +1485,7 @@ function PrintRefImages({ images }) {
   if (!images || images.length === 0) return null;
   return (
     <div className="mb-6" style={{ breakInside: 'avoid' }}>
-      <p className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-3">Reference Images / Tech Packs</p>
+      <p className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-3">Final Designs</p>
       <div className="flex flex-wrap gap-3">
         {images.map((img, i) => (
           <div key={i} className="border border-slate-300 rounded overflow-hidden" style={{ width: 'calc(50% - 6px)', breakInside: 'avoid' }}>
@@ -1714,9 +1714,9 @@ function ProjectImageUploader({ images, onSave }) {
             <ImagePlus size={14} className={images.length > 0 ? 'text-indigo-600' : 'text-slate-400'} />
           </div>
           <div className="text-left">
-            <p className="font-semibold text-slate-900 text-sm">Tech Packs &amp; Reference Images</p>
+            <p className="font-semibold text-slate-900 text-sm">Final Designs</p>
             <p className="text-xs text-slate-400">
-              {images.length === 0 ? 'Attach images that print with Cutting & Stitching docs' : `${images.length} image${images.length !== 1 ? 's' : ''} attached · prints with Cutting & Stitching docs`}
+              {images.length === 0 ? 'Approved artwork — prints on Cutting / Stitching / Press & Pack' : `${images.length} design${images.length !== 1 ? 's' : ''} · prints on Cutting / Stitching / Press & Pack`}
             </p>
           </div>
         </div>

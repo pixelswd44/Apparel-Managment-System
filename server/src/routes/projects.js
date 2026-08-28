@@ -222,14 +222,16 @@ router.post('/', (req, res) => {
     const { title, client_id, invoice_id, currency = 'PKR', amount_received = 0, exchange_rate_actual = 0, notes = '' } = req.body;
     if (!title?.trim()) return res.status(400).json({ error: 'Project title is required.' });
 
-    // Tech packs attached to the client flow straight into the project's reference
-    // images, so the cutting/stitching docs have them without re-uploading.
+    // Only the client's FINAL DESIGNS flow into the project's reference images —
+    // the full tech-pack pile stays on the client so the floor only sees the
+    // approved artwork. Falls back to tech_packs for clients with no finals set.
     let images = [];
     if (client_id) {
       try {
-        const c = db.prepare('SELECT tech_packs FROM clients WHERE id = ?').get(client_id);
-        const packs = JSON.parse(c?.tech_packs || '[]');
-        images = packs.filter(p => p && p.filename).map(p => ({ ...p, from_client: true }));
+        const c = db.prepare('SELECT final_designs, tech_packs FROM clients WHERE id = ?').get(client_id);
+        let packs = JSON.parse(c?.final_designs || '[]');
+        if (!Array.isArray(packs) || packs.length === 0) packs = JSON.parse(c?.tech_packs || '[]');
+        images = (Array.isArray(packs) ? packs : []).filter(p => p && p.filename).map(p => ({ ...p, from_client: true }));
       } catch { /* ignore */ }
     }
 
@@ -287,16 +289,19 @@ router.put('/:id', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ── Images (tech-packs / reference photos) ────────────────────────────────────
-// ── POST sync tech packs from the linked client into project images ──────────
+// ── Images (final designs / reference photos) ─────────────────────────────────
+// ── POST sync the client's FINAL DESIGNS into project images ─────────────────
 router.post('/:id/sync-tech-packs', (req, res) => {
   try {
     const p = db.prepare('SELECT id, client_id, images FROM projects WHERE id = ?').get(req.params.id);
     if (!p) return res.status(404).json({ error: 'Not found' });
     if (!p.client_id) return res.status(400).json({ error: 'Project has no client linked.' });
-    const c = db.prepare('SELECT tech_packs FROM clients WHERE id = ?').get(p.client_id);
+    const c = db.prepare('SELECT final_designs, tech_packs FROM clients WHERE id = ?').get(p.client_id);
     let packs = [], images = [];
-    try { packs  = JSON.parse(c?.tech_packs || '[]'); } catch {}
+    try {
+      packs = JSON.parse(c?.final_designs || '[]');
+      if (!Array.isArray(packs) || packs.length === 0) packs = JSON.parse(c?.tech_packs || '[]');
+    } catch {}
     try { images = JSON.parse(p.images || '[]'); } catch {}
     const have = new Set(images.map(i => i.filename));
     const added = packs.filter(tp => tp?.filename && !have.has(tp.filename)).map(tp => ({ ...tp, from_client: true }));

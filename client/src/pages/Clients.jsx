@@ -77,6 +77,8 @@ function ClientFiles({ title, hint, icon: Icon, accent = 'slate', files, onChang
   const isImg = f => /\.(png|jpe?g|gif|webp|svg)$/i.test(f.filename || f.originalName || '');
   const tone = accent === 'indigo'
     ? { head: 'text-indigo-700', box: 'bg-white border-slate-200 border-t-4 border-t-indigo-500', btn: 'border-indigo-200 text-indigo-600 hover:bg-indigo-50' }
+    : accent === 'emerald'
+    ? { head: 'text-emerald-700', box: 'bg-white border-slate-200 border-t-4 border-t-emerald-500', btn: 'border-emerald-200 text-emerald-600 hover:bg-emerald-50' }
     : { head: 'text-slate-600',  box: 'bg-white border-slate-200',        btn: 'border-slate-200 text-slate-600 hover:bg-slate-50' };
 
   async function handleFiles(e) {
@@ -290,6 +292,7 @@ function ClientDetailPanel({ client, stats, statsLoading, onEdit, onDelete, onCl
   const parseList = v => { try { const x = typeof v === 'string' ? JSON.parse(v || '[]') : (v || []); return Array.isArray(x) ? x : []; } catch { return []; } };
   const docs      = parseList(client.documents);
   const techPacks = parseList(client.tech_packs);
+  const finalDesigns = parseList(client.final_designs);
   const billing  = [client.address, client.city, client.zip, client.country].filter(Boolean).join(', ') || null;
   const shipping = [client.shipping_address, client.shipping_city, client.shipping_zip, client.shipping_country].filter(Boolean).join(', ') || null;
   const receiver = [client.shipping_receiver_name, client.shipping_receiver_phone].filter(Boolean).join(' · ') || null;
@@ -470,11 +473,23 @@ function ClientDetailPanel({ client, stats, statsLoading, onEdit, onDelete, onCl
                 <ClientMessages client={client} onPatch={onPatch} />
               </div>
 
+              {/* Final designs — 2 wide */}
+              <div className="col-span-2">
+                <ClientFiles
+                  title="Final Designs"
+                  hint="Approved artwork only — this is what syncs into projects & prints on the floor docs"
+                  icon={FileImage}
+                  accent="emerald"
+                  files={finalDesigns}
+                  onChange={list => onPatch({ final_designs: list })}
+                />
+              </div>
+
               {/* Tech packs — 2 wide */}
               <div className="col-span-2">
                 <ClientFiles
                   title="Tech Packs"
-                  hint="Design specs & references — auto-copied into new projects for this client"
+                  hint="Specs, size charts, reference artwork — kept for reference, not synced to projects"
                   icon={FileImage}
                   accent="indigo"
                   files={techPacks}

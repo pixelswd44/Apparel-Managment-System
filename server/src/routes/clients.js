@@ -19,9 +19,9 @@ const FIELDS = [
   'shipping_receiver_name', 'shipping_receiver_phone',
   'shipping_address', 'shipping_city', 'shipping_zip', 'shipping_country',
   'documents', 'notes', 'status',
-  'lead_source', 'deal_status', 'messages', 'tech_packs',
+  'lead_source', 'deal_status', 'messages', 'tech_packs', 'final_designs',
 ];
-const JSON_FIELDS = new Set(['documents', 'messages', 'tech_packs']);
+const JSON_FIELDS = new Set(['documents', 'messages', 'tech_packs', 'final_designs']);
 
 router.get('/', (req, res) => {
   try {
