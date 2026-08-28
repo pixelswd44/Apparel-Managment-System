@@ -96,4 +96,8 @@ if (existsSync(clientDist)) {
   });
 }
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+const server = app.listen(PORT, () => {
+  const inst = process.env.NODE_APP_INSTANCE ?? process.env.pm_id ?? process.env.INSTANCE_ID ?? 'n/a';
+  console.log(`Server running on port ${PORT} — pid ${process.pid}, instance ${inst}, cwd ${process.cwd()}`);
+});
+server.on('error', (e) => console.error(`[server] listen error: ${e.code || ''} ${e.message}`));
