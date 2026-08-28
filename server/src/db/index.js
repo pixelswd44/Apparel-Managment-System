@@ -1005,6 +1005,9 @@ export function seedRateToPkr() {
 
 seedRateToPkr();
 
+// Safety: PKR is the fixed conversion pivot — its rate must always be exactly 1.
+try { db.prepare("UPDATE currencies SET rate_to_pkr = 1 WHERE code = 'PKR' AND rate_to_pkr != 1").run(); } catch {}
+
 // ── Seed default document templates ────────────────────────────────────────
 export function seedDocumentTemplates() {
   // 5 ready-to-use templates per document type. Idempotent: only inserts a
