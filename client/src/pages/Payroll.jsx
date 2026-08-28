@@ -647,18 +647,51 @@ export default function Payroll() {
     <div className="flex flex-col" style={{ height: 'calc(100vh - 8.5rem)' }}>
 
       {/* ── Page header ── */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4 flex-shrink-0">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-5 flex-shrink-0">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Employees</h1>
-          <p className="text-sm text-slate-500 mt-0.5">
-            {totalActive} active · {pkr(totalSalary)}/mo payroll
-            {totalAdvances > 0 ? ` · ${pkr(totalAdvances)} advances pending` : ''}
-          </p>
+          <p className="text-sm text-slate-500 mt-0.5">Staff records, salary advances, and monthly payroll</p>
         </div>
         <button onClick={() => setModal('new')}
           className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-sm shadow-indigo-200 transition-colors">
           <Plus size={16} /> Add Employee
         </button>
+      </div>
+
+      {/* ── Stats ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4 flex-shrink-0">
+        {[
+          { label: 'Total Employees', value: employees.length,       sub: `${totalActive} active`,                 icon: Users,        color: 'text-indigo-600',  bg: 'bg-indigo-50' },
+          { label: 'Monthly Payroll', value: pkr(totalSalary),       sub: 'active staff salaries',                 icon: Banknote,     color: 'text-slate-700',   bg: 'bg-slate-100' },
+          { label: 'Advances Pending', value: pkr(totalAdvances),     sub: 'to recover from salaries',              icon: TrendingDown,
+            color: totalAdvances > 0 ? 'text-amber-600' : 'text-slate-400',
+            bg:    totalAdvances > 0 ? 'bg-amber-50'    : 'bg-slate-100' },
+          { label: 'Inactive',        value: employees.length - totalActive, sub: 'not on payroll',                icon: Clock,        color: 'text-slate-500',   bg: 'bg-slate-100' },
+        ].map(({ label, value, sub, icon: Icon, color, bg }) => (
+          <div key={label} className="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-3 shadow-sm">
+            <div className={`${bg} ${color} p-2.5 rounded-xl flex-shrink-0`}><Icon size={18} /></div>
+            <div className="min-w-0">
+              <p className="text-lg font-bold text-slate-900 truncate">{value}</p>
+              <p className="text-xs text-slate-500">{label}</p>
+              <p className="text-2xs text-slate-400 truncate">{sub}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Status filter (top) ── */}
+      <div className="flex gap-1.5 mb-4 flex-shrink-0">
+        {['all', 'active', 'inactive'].map(s => {
+          const n = s === 'all' ? employees.length : employees.filter(e => e.status === s).length;
+          return (
+            <button key={s} onClick={() => setStatusFilter(s)}
+              className={`px-3 py-1.5 text-sm rounded-lg font-medium transition-all capitalize ${
+                statusFilter === s ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+              }`}>
+              {s}<span className="opacity-60"> ({n})</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* ── Two-panel split ── */}
@@ -675,18 +708,6 @@ export default function Payroll() {
                 className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100 bg-slate-50"
                 placeholder="Search employees…" />
             </div>
-          </div>
-
-          {/* Status filters */}
-          <div className="px-3 py-2 border-b border-slate-100 flex gap-1">
-            {['all', 'active', 'inactive'].map(s => (
-              <button key={s} onClick={() => setStatusFilter(s)}
-                className={`flex-1 py-1.5 text-xs rounded-lg font-medium transition-all capitalize ${
-                  statusFilter === s ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                }`}>
-                {s}
-              </button>
-            ))}
           </div>
 
           {/* Delete confirmation banner */}
