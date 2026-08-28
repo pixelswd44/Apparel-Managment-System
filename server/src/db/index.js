@@ -17,6 +17,19 @@ const DB_PATH = process.env.DB_PATH
 try { mkdirSync(dirname(DB_PATH), { recursive: true }); } catch {}
 console.log(`[DB] using ${DB_PATH}`);
 
+// Fail fast & loud if the DB directory is not writable — a silent write failure
+// means sql.js keeps data in RAM only and everything is lost on the next restart.
+try {
+  const probe = join(dirname(DB_PATH), '.write-test');
+  writeFileSync(probe, 'ok');
+  const { statSync, unlinkSync: rm } = await import('fs');
+  rm(probe);
+  console.log(`[DB] write check OK for ${dirname(DB_PATH)}`);
+  if (existsSync(DB_PATH)) console.log(`[DB] existing file size: ${statSync(DB_PATH).size} bytes`);
+} catch (e) {
+  console.error(`[DB] WRITE CHECK FAILED for ${dirname(DB_PATH)}: ${e.code || ''} ${e.message}`);
+}
+
 // ── sql.js initialisation (top-level await works in ESM) ─────────────────────
 const SQL = await initSqlJs();
 
@@ -115,7 +128,17 @@ class BetterSqliteCompat {
   }
   _save() {
     if (this._inTx) return;
-    writeFileSync(this._path, Buffer.from(this._db.export()));
+    try {
+      writeFileSync(this._path, Buffer.from(this._db.export()));
+    } catch (e) {
+      // Surface disk-write failures loudly — otherwise sql.js keeps everything
+      // in memory and all data is lost on restart with no visible error.
+      if (!this._saveErrLogged || Date.now() - this._saveErrLogged > 30000) {
+        console.error(`[DB] FAILED to write ${this._path}: ${e.code || ''} ${e.message}`);
+        this._saveErrLogged = Date.now();
+      }
+      throw e;
+    }
   }
   close() { this._save(); this._db.close(); }
 }
@@ -1027,5 +1050,12 @@ export function seedUsers() {
   }
 }
 seedUsers();
+
+// Confirm the on-disk file actually exists and has content after all the
+// startup writes (schema + seeds). If this logs 0 / missing, saves are failing.
+try {
+  const { statSync } = await import('fs');
+  console.log(`[DB] on-disk file after init: ${existsSync(DB_PATH) ? statSync(DB_PATH).size + ' bytes' : 'MISSING'}`);
+} catch {}
 
 export default db;
