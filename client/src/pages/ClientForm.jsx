@@ -189,10 +189,8 @@ export default function ClientForm() {
   const isEdit   = Boolean(id);
 
   const [form, setForm]     = useState(EMPTY_CLIENT);
-  const [docs, setDocs]     = useState([]);
   const [techPacks, setTechPacks] = useState([]);
   const [finalDesigns, setFinalDesigns] = useState([]);
-  const [firstMessage, setFirstMessage] = useState(''); // create-only: seeds the conversation log
   const [sideTab, setSideTab] = useState('lead');
   const [pageLoading, setPageLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
@@ -208,7 +206,6 @@ export default function ClientForm() {
       .then(({ data }) => {
         if (cancelled) return;
         setForm({ ...EMPTY_CLIENT, ...data });
-        try { setDocs(JSON.parse(data?.documents ?? '[]')); } catch { setDocs([]); }
         try { const tp = JSON.parse(data?.tech_packs ?? '[]'); setTechPacks(Array.isArray(tp) ? tp : []); } catch { setTechPacks([]); }
         try { const fd = JSON.parse(data?.final_designs ?? '[]'); setFinalDesigns(Array.isArray(fd) ? fd : []); } catch { setFinalDesigns([]); }
       })
@@ -223,27 +220,17 @@ export default function ClientForm() {
     if (!form.name?.trim()) { setError('Full name is required.'); return; }
     setSaving(true); setError('');
     try {
-      // Never send messages from the form — the detail page owns the conversation log
-      // (server does partial updates, so omitting it leaves it untouched on edit).
-      const { messages: _m, ...rest } = form;
+      const { messages: _m, documents: _d, ...rest } = form;
       const body = {
         ...rest,
-        documents: JSON.stringify(docs), tech_packs: JSON.stringify(techPacks), final_designs: JSON.stringify(finalDesigns),
+        tech_packs: JSON.stringify(techPacks), final_designs: JSON.stringify(finalDesigns),
         // Receiver defaults to the customer themself; billing mirrors shipping (single-address model)
         shipping_receiver_name:  (rest.shipping_receiver_name  || '').trim() || rest.name  || '',
         shipping_receiver_phone: (rest.shipping_receiver_phone || '').trim() || rest.phone || '',
         address: rest.shipping_address, city: rest.shipping_city, zip: rest.shipping_zip, country: rest.shipping_country,
       };
-      if (isEdit) {
-        await api.put(`/clients/${id}`, body);
-        navigate('/clients');
-      } else {
-        if (firstMessage.trim()) {
-          body.messages = JSON.stringify([{ id: Date.now(), text: firstMessage.trim(), at: new Date().toISOString(), source: form.lead_source || '' }]);
-        }
-        await api.post('/clients', body);
-        navigate('/clients');
-      }
+      await (isEdit ? api.put(`/clients/${id}`, body) : api.post('/clients', body));
+      navigate('/clients');
     } catch (err) {
       setError(err?.response?.data?.error ?? 'Failed to save. Check your connection.');
     } finally {
@@ -428,18 +415,6 @@ export default function ClientForm() {
                     </div>
                   </div>
 
-                  {!isEdit ? (
-                    <Field label="Their first message / requirement">
-                      <textarea rows={4} value={firstMessage} onChange={e => setFirstMessage(e.target.value)}
-                        className={`${inputCls} resize-none`}
-                        placeholder="Paste what the client sent you — quantities, styles, deadline… This starts the conversation log." />
-                    </Field>
-                  ) : (
-                    <p className="text-sm text-slate-500 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
-                      Conversation messages are managed on the client's detail page.
-                    </p>
-                  )}
-
                   <div className="rounded-2xl p-4 bg-white border border-slate-200 border-t-4 border-t-emerald-500">
                     <div className="flex items-center gap-2 mb-1">
                       <FileImage size={14} className="text-emerald-600" />
@@ -520,10 +495,6 @@ export default function ClientForm() {
                       <User size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                       <input value={form.customer_owner} onChange={e => set('customer_owner', e.target.value)} className={`${inputCls} pl-9`} placeholder="Defaults to you (the logged-in user)" />
                     </div>
-                  </Field>
-                  <Field label="Documents">
-                    <p className="text-xs text-slate-400 mb-2">Contracts, IDs, PO copies · up to 3 files, 10 MB each</p>
-                    <DocUploader docs={docs} onChange={setDocs} />
                   </Field>
                 </div>
               )}

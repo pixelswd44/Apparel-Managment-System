@@ -290,7 +290,6 @@ function ClientDetailPanel({ client, stats, statsLoading, onEdit, onDelete, onCl
   if (!client) return null;
 
   const parseList = v => { try { const x = typeof v === 'string' ? JSON.parse(v || '[]') : (v || []); return Array.isArray(x) ? x : []; } catch { return []; } };
-  const docs      = parseList(client.documents);
   const techPacks = parseList(client.tech_packs);
   const finalDesigns = parseList(client.final_designs);
   const billing  = [client.address, client.city, client.zip, client.country].filter(Boolean).join(', ') || null;
@@ -468,11 +467,6 @@ function ClientDetailPanel({ client, stats, statsLoading, onEdit, onDelete, onCl
                 ))}
               </div>
 
-              {/* Messages — 2 wide */}
-              <div className="col-span-2">
-                <ClientMessages client={client} onPatch={onPatch} />
-              </div>
-
               {/* Final designs — 2 wide */}
               <div className="col-span-2">
                 <ClientFiles
@@ -494,18 +488,6 @@ function ClientDetailPanel({ client, stats, statsLoading, onEdit, onDelete, onCl
                   accent="indigo"
                   files={techPacks}
                   onChange={list => onPatch({ tech_packs: list })}
-                />
-              </div>
-
-              {/* Documents — 2 wide */}
-              <div className="col-span-2">
-                <ClientFiles
-                  title="Documents"
-                  hint="Contracts, IDs, PO copies and other files"
-                  icon={File}
-                  accent="slate"
-                  files={docs}
-                  onChange={list => onPatch({ documents: list })}
                 />
               </div>
 
