@@ -62,7 +62,16 @@ router.put('/:id/set-default', (req, res) => {
   try {
     db.prepare('UPDATE currencies SET is_default = 0').run();
     db.prepare('UPDATE currencies SET is_default = 1 WHERE id = ?').run(req.params.id);
-    res.json(db.prepare('SELECT * FROM currencies WHERE id = ?').get(req.params.id));
+    const row = db.prepare('SELECT * FROM currencies WHERE id = ?').get(req.params.id);
+    // Keep settings.base_currency in sync — the Dashboard and other screens
+    // read that key for their display currency, not the is_default flag.
+    if (row?.code) {
+      db.prepare(`
+        INSERT INTO settings (key, value) VALUES ('base_currency', ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')
+      `).run(row.code);
+    }
+    res.json(row);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
