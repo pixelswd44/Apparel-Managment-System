@@ -403,6 +403,23 @@ export default function Inventory() {
         ))}
       </div>
 
+      {/* ── Category filter (top) ── */}
+      <div className="flex flex-wrap gap-1.5 mb-4 flex-shrink-0">
+        <button onClick={() => setCat('all')}
+          className={`px-3 py-1.5 text-sm rounded-lg font-medium transition-all ${catFilter === 'all' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
+          All ({totalItems})
+        </button>
+        {CATEGORIES.map(c => {
+          const n = items.filter(i => i.category === c.key).length;
+          return (
+            <button key={c.key} onClick={() => setCat(c.key)}
+              className={`px-3 py-1.5 text-sm rounded-lg font-medium transition-all ${catFilter === c.key ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
+              {c.label}{n > 0 && <span className="opacity-60"> ({n})</span>}
+            </button>
+          );
+        })}
+      </div>
+
       {/* ── Two-panel split ── */}
       <div className="flex-1 min-h-0 flex flex-col lg:flex-row rounded-2xl border border-slate-200 shadow-sm overflow-hidden bg-white">
 
@@ -417,20 +434,6 @@ export default function Inventory() {
                 className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100 bg-slate-50"
                 placeholder="Search items…" />
             </div>
-          </div>
-
-          {/* Category filter */}
-          <div className="px-3 py-2 border-b border-slate-100 flex flex-wrap gap-1">
-            <button onClick={() => setCat('all')}
-              className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-all ${catFilter === 'all' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
-              All ({totalItems})
-            </button>
-            {CATEGORIES.map(c => (
-              <button key={c.key} onClick={() => setCat(c.key)}
-                className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-all ${catFilter === c.key ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
-                {c.label}
-              </button>
-            ))}
           </div>
 
           {/* Delete confirmation banner */}
