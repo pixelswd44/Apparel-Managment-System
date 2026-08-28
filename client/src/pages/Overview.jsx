@@ -643,24 +643,90 @@ function CardBadge({ color, children }) {
   );
 }
 
-// ── Grouped bars: income vs spend per month ──────────────────────────────────
-function DuoBars({ data, fmtC }) {
-  const max = Math.max(...data.map(m => Math.max(m.in, m.out)), 1);
+// ── Cash-flow: dual smooth areas (In / Out) with a Net line ──────────────────
+function CashFlowChart({ data, fmtC }) {
+  const [hover, setHover] = useState(null);
+  const W = 520, H = 190, PT = 14, PB = 26, PX = 6;
+  const rows = data.map(m => ({ ...m, net: m.in - m.out }));
+  const max  = Math.max(...rows.map(r => Math.max(r.in, r.out)), 1);
+  const x = i => PX + (rows.length > 1 ? (i / (rows.length - 1)) * (W - PX * 2) : (W - PX * 2) / 2);
+  const y = v => PT + (1 - v / max) * (H - PT - PB);
+
+  // Monotone-ish cubic path through points
+  const spline = pts => {
+    if (pts.length < 2) return pts.length ? `M${pts[0][0]},${pts[0][1]}` : '';
+    let d = `M${pts[0][0]},${pts[0][1]}`;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [x0, y0] = pts[i], [x1, y1] = pts[i + 1];
+      const cx = (x0 + x1) / 2;
+      d += ` C${cx},${y0} ${cx},${y1} ${x1},${y1}`;
+    }
+    return d;
+  };
+  const inPts  = rows.map((r, i) => [x(i), y(r.in)]);
+  const outPts = rows.map((r, i) => [x(i), y(r.out)]);
+  const netPts = rows.map((r, i) => [x(i), y(Math.max(0, r.net))]);
+  const areaOf = pts => `${spline(pts)} L${pts[pts.length - 1][0]},${H - PB} L${pts[0][0]},${H - PB} Z`;
+
   return (
-    <div className="flex items-end gap-3 h-40">
-      {data.map(m => (
-        <div key={m.label} className="flex-1 flex flex-col items-center gap-1.5 min-w-0 h-full justify-end group">
-          <div className="w-full flex items-end justify-center gap-1 flex-1">
-            <div className="w-1/3 max-w-[18px] bg-indigo-500 rounded-t-md transition-all group-hover:bg-indigo-600"
-              title={`In: ${fmtC(m.in)}`}
-              style={{ height: `${Math.max(2, (m.in / max) * 100)}%` }} />
-            <div className="w-1/3 max-w-[18px] bg-rose-300 rounded-t-md transition-all group-hover:bg-rose-400"
-              title={`Out: ${fmtC(m.out)}`}
-              style={{ height: `${Math.max(2, (m.out / max) * 100)}%` }} />
+    <div className="relative">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 200 }}
+        onMouseLeave={() => setHover(null)}>
+        <defs>
+          <linearGradient id="cfIn" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="rgba(16,185,129,0.28)" />
+            <stop offset="100%" stopColor="rgba(16,185,129,0)" />
+          </linearGradient>
+          <linearGradient id="cfOut" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="rgba(244,63,94,0.20)" />
+            <stop offset="100%" stopColor="rgba(244,63,94,0)" />
+          </linearGradient>
+        </defs>
+
+        {/* baseline */}
+        <line x1={PX} y1={H - PB} x2={W - PX} y2={H - PB} stroke="#e2e8f0" strokeWidth="1" />
+
+        {/* Out area + line */}
+        <path d={areaOf(outPts)} fill="url(#cfOut)" />
+        <path d={spline(outPts)} fill="none" stroke="#fb7185" strokeWidth="2" strokeLinecap="round" />
+        {/* In area + line */}
+        <path d={areaOf(inPts)} fill="url(#cfIn)" />
+        <path d={spline(inPts)} fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" />
+        {/* Net line — dashed */}
+        <path d={spline(netPts)} fill="none" stroke="#6366f1" strokeWidth="1.5" strokeDasharray="4 3" opacity="0.8" />
+
+        {/* hover hit-areas + guides */}
+        {rows.map((r, i) => (
+          <g key={i}>
+            {hover === i && (
+              <>
+                <line x1={x(i)} y1={PT} x2={x(i)} y2={H - PB} stroke="#94a3b8" strokeWidth="1" strokeDasharray="3 3" />
+                <circle cx={x(i)} cy={y(r.in)}  r="3.5" fill="#10b981" stroke="#fff" strokeWidth="1.5" />
+                <circle cx={x(i)} cy={y(r.out)} r="3.5" fill="#fb7185" stroke="#fff" strokeWidth="1.5" />
+              </>
+            )}
+            <rect x={x(i) - (W / rows.length) / 2} y={0} width={W / rows.length} height={H}
+              fill="transparent" onMouseEnter={() => setHover(i)} />
+            <text x={x(i)} y={H - 8} textAnchor="middle" className="fill-slate-400" style={{ fontSize: 10 }}>{r.label}</text>
+          </g>
+        ))}
+      </svg>
+
+      {/* Tooltip */}
+      {hover !== null && (
+        <div className="absolute -top-1 left-0 right-0 flex justify-center pointer-events-none">
+          <div className="bg-slate-900 text-white rounded-xl px-3 py-2 text-xs shadow-lg">
+            <p className="font-semibold text-slate-300 mb-1">{rows[hover].label}</p>
+            <div className="flex items-center gap-3">
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400" />In {fmtC(rows[hover].in)}</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-rose-400" />Out {fmtC(rows[hover].out)}</span>
+            </div>
+            <p className={`mt-1 font-bold ${rows[hover].net >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+              Net {rows[hover].net >= 0 ? '+' : '−'}{fmtC(Math.abs(rows[hover].net))}
+            </p>
           </div>
-          <span className="text-2xs text-slate-400 truncate">{m.label}</span>
         </div>
-      ))}
+      )}
     </div>
   );
 }
@@ -1056,12 +1122,13 @@ export default function Overview() {
               <p className="text-xs text-slate-400 mt-0.5">Money in vs out · {selectedCurrency}</p>
             </div>
             <div className="flex items-center gap-3 text-xs text-slate-500">
-              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 bg-indigo-500 rounded-sm" /> In</span>
-              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 bg-rose-300 rounded-sm" /> Out</span>
+              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 bg-emerald-500 rounded-full" /> In</span>
+              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 bg-rose-400 rounded-full" /> Out</span>
+              <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-indigo-500" style={{ borderTop: '1.5px dashed #6366f1', background: 'none', height: 0 }} /> Net</span>
             </div>
           </div>
           {duoData.some(m => m.in > 0 || m.out > 0)
-            ? <DuoBars data={duoData} fmtC={fmtSelC} />
+            ? <CashFlowChart data={duoData} fmtC={fmtSelC} />
             : <div className="h-32 flex items-center justify-center text-slate-300 text-sm">No activity yet</div>}
         </div>
 

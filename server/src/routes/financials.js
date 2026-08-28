@@ -225,6 +225,39 @@ router.get('/monthly', (req, res) => {
     }
   }
 
+  // ── Per-month project cost items from JSON columns ────────────────────────
+  // Bucketed by each item's OWN date (fallback: the project date), exactly like
+  // the Ledger — so the chart and the Ledger agree. Covers fabric, process and
+  // external cost items on products, project-level bulk fabrics, and extra costs.
+  const monthJsonCost = {}; // { 'YYYY-MM': amountPaidPKR }
+  const bump = (dateStr, fallback, amt) => {
+    if (!amt) return;
+    const d = String(dateStr || fallback || '').replace(' ', 'T').slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(d)) return;
+    monthJsonCost[d] = (monthJsonCost[d] || 0) + amt;
+  };
+  const ppRows = db.prepare(`
+    SELECT pp.fabrics, pp.costs, pp.external_costs, proj.created_at
+    FROM project_products pp LEFT JOIN projects proj ON proj.id = pp.project_id
+  `).all();
+  for (const pp of ppRows) {
+    const fb = String(pp.created_at || '').replace(' ', 'T').slice(0, 10);
+    for (const key of ['fabrics', 'costs', 'external_costs']) {
+      let items; try { items = JSON.parse(pp[key] || '[]'); } catch { continue; }
+      if (Array.isArray(items)) for (const it of items) bump(it.date, fb, parseFloat(it.amount_paid) || 0);
+    }
+  }
+  for (const p of db.prepare(`SELECT fabrics, created_at FROM projects WHERE fabrics IS NOT NULL`).all()) {
+    const fb = String(p.created_at || '').replace(' ', 'T').slice(0, 10);
+    let items; try { items = JSON.parse(p.fabrics || '[]'); } catch { continue; }
+    if (Array.isArray(items)) for (const it of items) bump(it.date, fb, parseFloat(it.amount_paid) || 0);
+  }
+  for (const p of db.prepare(`SELECT extra_costs, updated_at, created_at FROM projects WHERE extra_costs IS NOT NULL`).all()) {
+    const fb = String(p.updated_at || p.created_at || '').replace(' ', 'T').slice(0, 10);
+    let items; try { items = JSON.parse(p.extra_costs || '[]'); } catch { continue; }
+    if (Array.isArray(items)) for (const it of items) bump(it.date, fb, parseFloat(it.amount) || 0);
+  }
+
   const result = months.map(month => {
     // Revenue: convert each payment to PKR
     const monthPayments = db.prepare(`
@@ -263,25 +296,12 @@ router.get('/monthly', (req, res) => {
        FROM project_shipping ps WHERE ps.paid_amount > 0 AND strftime('%Y-%m', ps.shipping_date) = ?`
     ).get(month).total;
 
-    // Fabric costs by month — only amount_paid (cash actually paid for fabric)
-    const fabricRows = db.prepare(
-      `SELECT pp.fabrics FROM project_products pp JOIN projects p ON p.id=pp.project_id WHERE strftime('%Y-%m', p.updated_at) = ?`
-    ).all(month);
-    const fabricPay = fabricRows.reduce((sum, pp) => {
-      try { return sum + JSON.parse(pp.fabrics||'[]').reduce((s,f) => s + (parseFloat(f.amount_paid)||0), 0); }
-      catch { return sum; }
-    }, 0);
+    // Fabric / process / external / extra cost payments — bucketed by each
+    // item's own date (see monthJsonCost above), matching the Ledger.
+    const materialsPay = monthJsonCost[month] || 0;
 
-    const extraRows = db.prepare(
-      `SELECT extra_costs FROM projects WHERE strftime('%Y-%m', updated_at) = ? AND extra_costs IS NOT NULL`
-    ).all(month);
-    const extraPay = extraRows.reduce((sum, p) => {
-      try { return sum + (JSON.parse(p.extra_costs||'[]')).reduce((s,c)=>s+(parseFloat(c.amount)||0),0); }
-      catch { return sum; }
-    }, 0);
-
-    const totalOut = expenses + salaries + vendorPay + workerPay + shippingPay + fabricPay + extraPay;
-    return { month, revenue, invoiceRevenue, otherIncome, expenses, salaries, vendorPay, workerPay, shippingPay, fabricPay, extraPay, totalOut, net: revenue - totalOut };
+    const totalOut = expenses + salaries + vendorPay + workerPay + shippingPay + materialsPay;
+    return { month, revenue, invoiceRevenue, otherIncome, expenses, salaries, vendorPay, workerPay, shippingPay, materialsPay, fabricPay: materialsPay, totalOut, net: revenue - totalOut };
   });
 
   res.json(result);
