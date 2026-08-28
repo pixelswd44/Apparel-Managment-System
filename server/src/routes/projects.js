@@ -4,17 +4,18 @@ import db from '../db/index.js';
 const router = Router();
 
 const DEFAULT_STAGES = [
-  { key: 'cutting',    name: 'Cutting Hall', enabled: 1, sort_order: 1, tasks: '[]' },
   {
-    key: 'decoration', name: 'Decoration',   enabled: 1, sort_order: 2,
+    key: 'cutting_decoration', name: 'Cutting & Decoration', enabled: 1, sort_order: 1,
     tasks: JSON.stringify([
-      { id: 1, label: 'Sublimation',             enabled: false, done: false },
-      { id: 2, label: 'Embroidery',              enabled: false, done: false },
-      { id: 3, label: 'Screen Print / Stickers', enabled: false, done: false },
+      { id: 1, label: 'Cutting',                 enabled: true,  done: false },
+      { id: 2, label: 'Sublimation',             enabled: false, done: false },
+      { id: 3, label: 'Embroidery',              enabled: false, done: false },
+      { id: 4, label: 'Screen Print / Stickers', enabled: false, done: false },
+      { id: 5, label: 'Acid Wash',               enabled: false, done: false },
     ]),
   },
-  { key: 'stitching',  name: 'Stitching',    enabled: 1, sort_order: 3, tasks: '[]' },
-  { key: 'press_pack', name: 'Press & Pack', enabled: 1, sort_order: 4, tasks: '[]' },
+  { key: 'stitching',  name: 'Stitching',    enabled: 1, sort_order: 2, tasks: '[]' },
+  { key: 'press_pack', name: 'Press & Pack', enabled: 1, sort_order: 3, tasks: '[]' },
 ];
 
 const PROJECT_WITH_CLIENT = `
@@ -526,9 +527,9 @@ router.put('/:id/stages/:stageId', (req, res) => {
         if (active) {
           // Map stage keys to friendly project status labels
           const keyMap = {
+            cutting_decoration: 'cutting', stitching: 'stitching', press_pack: 'press_pack',
+            // legacy keys for older projects
             cutting: 'cutting', decoration: 'decoration',
-            stitching: 'stitching', press_pack: 'press_pack',
-            // legacy keys for old projects
             sublimation: 'sublimation', embroidery: 'embroidery', screen_print: 'screen_print',
           };
           projectStatus = keyMap[active.stage_key] ?? active.stage_key;

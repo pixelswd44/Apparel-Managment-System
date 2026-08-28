@@ -1009,6 +1009,44 @@ try {
   }
 } catch (e) { console.error('[DB] orphan cleanup:', e.message); }
 
+// Collapse duplicate project_stages rows (same project + stage_key) left by an
+// id collision, keeping the earliest.
+try {
+  const n = db.prepare(`
+    DELETE FROM project_stages
+    WHERE id NOT IN (SELECT MIN(id) FROM project_stages GROUP BY project_id, stage_key)
+  `).run().changes;
+  if (n > 0) console.log(`[DB] removed ${n} duplicate project_stages row(s)`);
+} catch (e) { console.error('[DB] stage dedup:', e.message); }
+
+// Migrate projects that haven't started production yet to the new 3-stage
+// pipeline (Cutting & Decoration / Stitching / Press & Pack). Only touches
+// projects where every stage is still 'pending' — nothing in progress is lost.
+try {
+  const CUT_DEC_TASKS = JSON.stringify([
+    { id: 1, label: 'Cutting',                 enabled: true,  done: false },
+    { id: 2, label: 'Sublimation',             enabled: false, done: false },
+    { id: 3, label: 'Embroidery',              enabled: false, done: false },
+    { id: 4, label: 'Screen Print / Stickers', enabled: false, done: false },
+    { id: 5, label: 'Acid Wash',               enabled: false, done: false },
+  ]);
+  const untouched = db.prepare(`
+    SELECT p.id FROM projects p
+    WHERE (SELECT COUNT(*) FROM project_stages s WHERE s.project_id = p.id AND s.status != 'pending') = 0
+      AND (SELECT COUNT(*) FROM project_stages s WHERE s.project_id = p.id) > 0
+      AND (SELECT COUNT(*) FROM project_stages s WHERE s.project_id = p.id AND s.stage_key = 'cutting_decoration') = 0
+  `).all();
+  const del = db.prepare('DELETE FROM project_stages WHERE project_id = ?');
+  const ins = db.prepare('INSERT INTO project_stages (project_id, stage_key, stage_name, enabled, status, sort_order, tasks) VALUES (?, ?, ?, 1, ?, ?, ?)');
+  for (const { id } of untouched) {
+    del.run(id);
+    ins.run(id, 'cutting_decoration', 'Cutting & Decoration', 'pending', 1, CUT_DEC_TASKS);
+    ins.run(id, 'stitching',          'Stitching',            'pending', 2, '[]');
+    ins.run(id, 'press_pack',         'Press & Pack',         'pending', 3, '[]');
+  }
+  if (untouched.length > 0) console.log(`[DB] migrated ${untouched.length} project(s) to the 3-stage pipeline`);
+} catch (e) { console.error('[DB] stage migration:', e.message); }
+
 // Any client whose `name` ended up blank (older quick-add flows, imports) breaks
 // the "Bill To" line on invoices — backfill it from the best available field.
 try {
