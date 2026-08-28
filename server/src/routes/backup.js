@@ -9,7 +9,11 @@ import db from '../db/index.js';
 const router = Router();
 
 const __dirname   = path.dirname(fileURLToPath(import.meta.url));
-const UPLOADS_DIR = path.join(__dirname, '..', '..', 'uploads');
+// Must match UPLOAD_DIR used in routes/uploads.js and index.js, so backup export
+// reads and restore writes the same folder the app actually serves images from.
+const UPLOADS_DIR = process.env.UPLOAD_DIR
+  ? (path.isAbsolute(process.env.UPLOAD_DIR) ? process.env.UPLOAD_DIR : path.resolve(process.cwd(), process.env.UPLOAD_DIR))
+  : path.join(__dirname, '..', '..', 'uploads');
 const DATA_DIR    = path.join(__dirname, '..', '..', '..', 'data');
 const BACKUPS_DIR = path.join(DATA_DIR, 'backups');   // timestamped server-side snapshots
 const LATEST_PATH = path.join(DATA_DIR, 'latest-backup.json.gz'); // git-committable pointer
