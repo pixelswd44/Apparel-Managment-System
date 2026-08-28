@@ -2218,6 +2218,9 @@ function BackupRestore() {
 // ── Settings sections nav ─────────────────────────────────────────────────────
 
 // ── Opening Balance ────────────────────────────────────────────────────────────
+// Moved to the Ledger page (per-month opening balance card). Kept here unused
+// in case the global start-date form is needed again.
+// eslint-disable-next-line no-unused-vars
 function OpeningBalance() {
   const [amount,  setAmount]  = useState('');
   const [date,    setDate]    = useState('');
@@ -2324,7 +2327,6 @@ const SECTIONS = [
   { id: 'app-branding',     label: 'App Branding',          icon: Palette,    description: 'Change the application name and logo shown in the sidebar' },
   { id: 'companies',        label: 'Companies',             icon: Building2,  description: 'Manage your companies — each with its own logo and details for quotations & invoices' },
   { id: 'currencies',       label: 'Currencies & Rates',    icon: Globe,      description: 'Manage currencies and exchange rates. Set your default currency — used across all quotations, invoices and conversions.' },
-  { id: 'opening-balance',  label: 'Opening Balance',       icon: Wallet,     description: 'Set a starting account balance and date so the ledger tracks from a clean slate' },
   { id: 'backup-restore',   label: 'Backup & Restore',      icon: Save,       description: 'Download a backup of all your data, or restore from a previous backup file' },
 ];
 
@@ -2375,7 +2377,6 @@ export default function Settings() {
           {activeSection === 'app-branding'   && <AppBranding />}
           {activeSection === 'companies'      && <Companies />}
           {activeSection === 'currencies'     && <Currencies />}
-          {activeSection === 'opening-balance' && <OpeningBalance />}
           {activeSection === 'backup-restore'  && <BackupRestore />}
         </div>
       </div>
