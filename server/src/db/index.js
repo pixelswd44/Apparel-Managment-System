@@ -981,6 +981,48 @@ export function seedMonthlyOpeningBalance() {
 }
 seedMonthlyOpeningBalance();
 
+// ── Restore-damage repair ──────────────────────────────────────────────────
+// A backup restore that didn't re-seed AUTOINCREMENT counters leaves
+// sqlite_sequence behind the real MAX(id). The next new row (a project,
+// invoice, …) then reuses an id that orphaned child rows still reference, so
+// unrelated products / line items appear under it. Fix both on every boot:
+//   1. bump every sequence up to MAX(id) so new ids never collide
+//   2. delete project child rows whose parent project no longer exists
+try {
+  const seqTables = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%AUTOINCREMENT%'"
+  ).all().map(r => r.name);
+  for (const t of seqTables) {
+    const m = db.prepare(`SELECT COALESCE(MAX(id),0) AS v FROM "${t}"`).get().v || 0;
+    const cur = db.prepare("SELECT seq FROM sqlite_sequence WHERE name = ?").get(t)?.seq ?? -1;
+    if (cur < m) {
+      db.prepare("DELETE FROM sqlite_sequence WHERE name = ?").run(t);
+      db.prepare("INSERT INTO sqlite_sequence(name, seq) VALUES(?, ?)").run(t, m);
+    }
+  }
+} catch (e) { console.error('[DB] sequence repair:', e.message); }
+
+try {
+  for (const child of ['project_products','project_stages','project_boxes','project_vendors','project_shipping','project_vendor_payments','project_workers']) {
+    const n = db.prepare(`DELETE FROM "${child}" WHERE project_id NOT IN (SELECT id FROM projects)`).run().changes;
+    if (n > 0) console.log(`[DB] removed ${n} orphaned ${child} row(s)`);
+  }
+} catch (e) { console.error('[DB] orphan cleanup:', e.message); }
+
+// Any client whose `name` ended up blank (older quick-add flows, imports) breaks
+// the "Bill To" line on invoices — backfill it from the best available field.
+try {
+  const n = db.prepare(`
+    UPDATE clients SET name = CASE
+      WHEN TRIM(COALESCE(display_name,'')) != '' THEN TRIM(display_name)
+      WHEN TRIM(COALESCE(name_primary,'')) != '' THEN TRIM(name_primary)
+      WHEN TRIM(COALESCE(company,''))      != '' THEN TRIM(company)
+      ELSE 'Unnamed Client' END
+    WHERE TRIM(COALESCE(name,'')) = ''
+  `).run().changes;
+  if (n > 0) console.log(`[DB] backfilled name on ${n} client(s)`);
+} catch (e) { console.error('[DB] client name backfill:', e.message); }
+
 // ── Seed rate_to_pkr from existing rate_to_usd data ───────────────────────
 export function seedRateToPkr() {
   // Only run if any currency still has rate_to_pkr = 0

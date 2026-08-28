@@ -165,6 +165,35 @@ function restoreBackup(backup, { restoreFiles = true } = {}) {
       stats.tables[name] = inserted;
       if (skipped > 0) stats.errors.push(`${name}: skipped ${skipped} row(s)`);
     }
+    const run1 = (sql) => { try { raw ? raw.run(sql) : db.exec(sql); } catch (e) { stats.errors.push(`restore fixup: ${e.message}`); } };
+    const scalar = (sql) => {
+      try {
+        if (raw) { const r = raw.prepare(sql).get(); return Array.isArray(r) ? (r[0] ?? 0) : ((r && (r.v ?? Object.values(r)[0])) ?? 0); }
+        return db.prepare(sql).get()?.v ?? 0;
+      } catch { return 0; }
+    };
+
+    // Re-seed AUTOINCREMENT counters to MAX(id) of the restored data. Without
+    // this, sqlite_sequence can stay behind the restored ids, so the NEXT new
+    // row (e.g. a new project) reuses an id that restored child rows already
+    // reference — making unrelated products/costs appear under it.
+    try {
+      let seqTables = [];
+      try {
+        if (raw) { const st = raw.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%AUTOINCREMENT%'`); while (st.step()) seqTables.push(st.getAsObject().name); st.free(); }
+        else seqTables = db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%AUTOINCREMENT%'`).all().map(r => r.name);
+      } catch {}
+      for (const t of seqTables) {
+        const m = scalar(`SELECT COALESCE(MAX(id),0) AS v FROM "${t}"`);
+        run1(`DELETE FROM sqlite_sequence WHERE name='${t}'`);
+        run1(`INSERT INTO sqlite_sequence(name,seq) VALUES('${t}',${Number(m) || 0})`);
+      }
+    } catch (e) { stats.errors.push(`sequence reseed: ${e.message}`); }
+
+    // Drop project child rows that point at a project that no longer exists.
+    for (const child of ['project_products','project_stages','project_boxes','project_vendors','project_shipping','project_vendor_payments','project_workers']) {
+      run1(`DELETE FROM "${child}" WHERE project_id NOT IN (SELECT id FROM projects)`);
+    }
   });
   tx();
   db.pragma('foreign_keys = ON');

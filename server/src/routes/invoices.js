@@ -25,7 +25,7 @@ function calcTotals(items, taxRate, discount, shippingCost = 0, customFields = [
 
 const WITH_CLIENT = `
   SELECT i.*,
-    COALESCE(c.display_name, c.company, c.name) as client_name,
+    COALESCE(NULLIF(TRIM(c.display_name),''), NULLIF(TRIM(c.company),''), NULLIF(TRIM(c.name),''), NULLIF(TRIM(c.name_primary),''), 'Unnamed Client') as client_name,
     c.email as client_email, c.phone as client_phone,
     c.address as client_address, c.city as client_city, c.country as client_country
   FROM invoices i

@@ -305,7 +305,7 @@ router.get('/:id/order-history', (req, res) => {
     // Pull all invoices with client info
     const allInvoices = db.prepare(`
       SELECT i.id, i.number, i.status, i.items, i.currency, i.created_at, i.due_date,
-             COALESCE(c.display_name, c.company, c.name) as client_name
+             COALESCE(NULLIF(TRIM(c.display_name),''), NULLIF(TRIM(c.company),''), NULLIF(TRIM(c.name),''), NULLIF(TRIM(c.name_primary),''), 'Unnamed Client') as client_name
       FROM invoices i
       LEFT JOIN clients c ON i.client_id = c.id
       ORDER BY i.created_at DESC
@@ -314,7 +314,7 @@ router.get('/:id/order-history', (req, res) => {
     // Pull all quotations with client info
     const allQuotations = db.prepare(`
       SELECT q.id, q.number, q.status, q.items, q.currency, q.created_at,
-             COALESCE(c.display_name, c.company, c.name) as client_name
+             COALESCE(NULLIF(TRIM(c.display_name),''), NULLIF(TRIM(c.company),''), NULLIF(TRIM(c.name),''), NULLIF(TRIM(c.name_primary),''), 'Unnamed Client') as client_name
       FROM quotations q
       LEFT JOIN clients c ON q.client_id = c.id
       ORDER BY q.created_at DESC

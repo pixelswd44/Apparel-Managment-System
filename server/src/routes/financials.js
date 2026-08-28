@@ -345,7 +345,7 @@ router.get('/transactions', (req, res) => {
 
   const rawPay = db.prepare(`
     SELECT p.id, 'income' as type, 'Invoice Payment' as category,
-           i.number as reference, c.name as party,
+           i.number as reference, COALESCE(NULLIF(TRIM(c.display_name),''), NULLIF(TRIM(c.company),''), NULLIF(TRIM(c.name),''), NULLIF(TRIM(c.name_primary),''), '') as party,
            p.amount, COALESCE(p.currency,'PKR') as currency, p.amount_pkr_actual,
            p.paid_at as date
     FROM payments p
@@ -459,7 +459,7 @@ router.get('/ledger', (req, res) => {
   const payments = db.prepare(`
     SELECT p.id, p.paid_at as date, p.amount, COALESCE(p.currency,'PKR') as currency, p.amount_pkr_actual,
            'Income' as section, 'Invoice Payment' as category,
-           i.number as reference, COALESCE(c.display_name, c.company, c.name,'') as party
+           i.number as reference, COALESCE(NULLIF(TRIM(c.display_name),''), NULLIF(TRIM(c.company),''), NULLIF(TRIM(c.name),''), NULLIF(TRIM(c.name_primary),''), '') as party
     FROM payments p
     LEFT JOIN invoices i ON i.id = p.invoice_id
     LEFT JOIN clients  c ON c.id = p.client_id

@@ -30,7 +30,7 @@ const EXTRA_FIELDS = [
 
 const WITH_CLIENT = `
   SELECT q.*,
-    COALESCE(c.display_name, c.company, c.name) as client_name,
+    COALESCE(NULLIF(TRIM(c.display_name),''), NULLIF(TRIM(c.company),''), NULLIF(TRIM(c.name),''), NULLIF(TRIM(c.name_primary),''), 'Unnamed Client') as client_name,
     c.email as client_email, c.phone as client_phone,
     c.address as client_address, c.city as client_city, c.country as client_country,
     CASE WHEN EXISTS (SELECT 1 FROM invoices WHERE quotation_id = q.id) THEN 1 ELSE 0 END as has_invoice

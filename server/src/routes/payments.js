@@ -13,7 +13,7 @@ router.get('/', (req, res) => {
         i.currency      AS currency,
         i.total         AS invoice_total,
         i.shipping_phone AS shipping_phone,
-        COALESCE(c.display_name, c.company, c.name) AS client_name
+        COALESCE(NULLIF(TRIM(c.display_name),''), NULLIF(TRIM(c.company),''), NULLIF(TRIM(c.name),''), NULLIF(TRIM(c.name_primary),''), 'Unnamed Client') AS client_name
       FROM payments p
       LEFT JOIN invoices i ON p.invoice_id = i.id
       LEFT JOIN clients  c ON p.client_id  = c.id

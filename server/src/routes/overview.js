@@ -133,7 +133,7 @@ router.get('/', (req, res) => {
     // ── Recent invoices ────────────────────────────────────────────────────
     const recentInvoices = db.prepare(`
       SELECT i.id, i.number, i.status, i.total, i.amount_paid, i.currency, i.due_date, i.created_at,
-        COALESCE(c.display_name, c.company, c.name) as client_name
+        COALESCE(NULLIF(TRIM(c.display_name),''), NULLIF(TRIM(c.company),''), NULLIF(TRIM(c.name),''), NULLIF(TRIM(c.name_primary),''), 'Unnamed Client') as client_name
       FROM invoices i LEFT JOIN clients c ON i.client_id = c.id
       ORDER BY i.created_at DESC LIMIT 6
     `).all();
