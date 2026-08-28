@@ -30,11 +30,34 @@ function paymentToPKR(payment, rates) {
   return toPKR(payment.amount, payment.currency, rates);
 }
 
+// Sum `field` across items in a JSON array column, optionally keeping only
+// items whose own `date` (falling back to `fallback`) is within [from, to].
+function sumJsonItems(rows, jsonKey, field, { from, to, fallbackKey } = {}) {
+  let total = 0;
+  for (const row of rows) {
+    let items;
+    try { items = JSON.parse(row[jsonKey] || '[]'); } catch { continue; }
+    if (!Array.isArray(items)) continue;
+    const fb = fallbackKey ? String(row[fallbackKey] || '').replace(' ', 'T').split('T')[0] : null;
+    for (const it of items) {
+      const v = parseFloat(it[field]) || 0;
+      if (!v) continue;
+      if (from && to) {
+        const d = (it.date || fb || '').slice(0, 10);
+        if (!d || d < from || d > to) continue;
+      }
+      total += v;
+    }
+  }
+  return total;
+}
+
 // ── Summary ────────────────────────────────────────────────────────────────
 router.get('/summary', (req, res) => {
   const { from, to } = req.query;
   const rates    = getRates();
   const hasRange = from && to;
+  const range    = hasRange ? { from, to } : {};
 
   // Revenue: payments received — filtered by date range when provided
   const rawPayments = hasRange
@@ -65,47 +88,50 @@ router.get('/summary', (req, res) => {
     ? db.prepare(`SELECT COALESCE(SUM(net_pay),0) as total FROM payroll_records WHERE status='paid' AND date(paid_at) >= ? AND date(paid_at) <= ?`).get(from, to).total
     : db.prepare(`SELECT COALESCE(SUM(net_pay),0) as total FROM payroll_records WHERE status='paid'`).get().total;
 
-  // ── Total Projects Paid ────────────────────────────────────────────────────
-  // Matches the "Paid" shown on each project card:
+  // ── Total Projects Paid (cash actually paid out on projects in the period) ──
   //   product fabrics paid + process costs paid + external costs paid
   //   + vendor payments + worker payments + shipping paid + extra costs
-  const allProducts = db.prepare(`SELECT fabrics, costs, external_costs FROM project_products`).all();
-  const productsPaid = allProducts.reduce((sum, pp) => {
-    try {
-      const fabs = JSON.parse(pp.fabrics         || '[]').reduce((s, f) => s + (parseFloat(f.amount_paid) || 0), 0);
-      const prcs = JSON.parse(pp.costs           || '[]').reduce((s, c) => s + (parseFloat(c.amount_paid) || 0), 0);
-      const exts = JSON.parse(pp.external_costs  || '[]').reduce((s, e) => s + (parseFloat(e.amount_paid) || 0), 0);
-      return sum + fabs + prcs + exts;
-    } catch { return sum; }
-  }, 0);
+  // Every component below respects the selected date range so it stays
+  // consistent with the period-filtered revenue / expenses above.
+  const allProducts = db.prepare(`
+    SELECT pp.fabrics, pp.costs, pp.external_costs, proj.created_at
+    FROM project_products pp LEFT JOIN projects proj ON proj.id = pp.project_id
+  `).all();
+  const productsPaid =
+      sumJsonItems(allProducts, 'fabrics',        'amount_paid', { ...range, fallbackKey: 'created_at' })
+    + sumJsonItems(allProducts, 'costs',          'amount_paid', { ...range, fallbackKey: 'created_at' })
+    + sumJsonItems(allProducts, 'external_costs', 'amount_paid', { ...range, fallbackKey: 'created_at' });
 
-  // Project-level bulk fabrics (projects.fabrics)
-  const allProjFabrics = db.prepare(`SELECT fabrics FROM projects WHERE fabrics IS NOT NULL`).all();
-  let projFabricPaid = 0, projFabricCost = 0;
+  // Project-level bulk fabrics (projects.fabrics) — paid respects the range; the
+  // projected cost (rate×qty) stays all-time for the projection below.
+  const allProjFabrics = db.prepare(`SELECT fabrics, created_at FROM projects WHERE fabrics IS NOT NULL`).all();
+  const projFabricPaid = sumJsonItems(allProjFabrics, 'fabrics', 'amount_paid', { ...range, fallbackKey: 'created_at' });
+  let projFabricCost = 0;
   for (const p of allProjFabrics) {
-    try {
-      const fabs = JSON.parse(p.fabrics || '[]');
-      projFabricPaid += fabs.reduce((s, f) => s + (parseFloat(f.amount_paid) || 0), 0);
-      projFabricCost += fabs.reduce((s, f) => s + (parseFloat(f.qty)||0) * (parseFloat(f.rate)||0), 0);
-    } catch {}
+    try { projFabricCost += JSON.parse(p.fabrics || '[]').reduce((s, f) => s + (parseFloat(f.qty)||0) * (parseFloat(f.rate)||0), 0); }
+    catch {}
   }
 
-  const vendorPayments = db.prepare(`SELECT COALESCE(SUM(amount),0) as total FROM project_vendor_payments`).get().total;
-  const workerPayments = db.prepare(`SELECT COALESCE(SUM(paid_amount),0) as total FROM project_workers WHERE paid_amount > 0`).get().total;
+  const vendorPayments = hasRange
+    ? db.prepare(`SELECT COALESCE(SUM(amount),0) as total FROM project_vendor_payments WHERE date(paid_at) >= ? AND date(paid_at) <= ?`).get(from, to).total
+    : db.prepare(`SELECT COALESCE(SUM(amount),0) as total FROM project_vendor_payments`).get().total;
+  const workerPayments = hasRange
+    ? db.prepare(`SELECT COALESCE(SUM(paid_amount),0) as total FROM project_workers WHERE paid_amount > 0 AND date(created_at) >= ? AND date(created_at) <= ?`).get(from, to).total
+    : db.prepare(`SELECT COALESCE(SUM(paid_amount),0) as total FROM project_workers WHERE paid_amount > 0`).get().total;
   // Only the portion of paid_amount NOT already recorded as a project_vendor_payments row —
   // those are already counted in vendorPayments above and would otherwise be double-counted.
-  const shippingPaid   = db.prepare(`
+  const shipRangeSql = hasRange ? `AND date(ps.shipping_date) >= ? AND date(ps.shipping_date) <= ?` : '';
+  const shippingPaid = db.prepare(`
     SELECT COALESCE(SUM(MAX(0, ps.paid_amount - COALESCE((SELECT SUM(amount) FROM project_vendor_payments WHERE shipping_id = ps.id), 0))), 0) as total
-    FROM project_shipping ps
-  `).get().total;
+    FROM project_shipping ps WHERE 1=1 ${shipRangeSql}
+  `).get(...(hasRange ? [from, to] : [])).total;
 
-  const allProjectsExtra = db.prepare(`SELECT extra_costs FROM projects WHERE extra_costs IS NOT NULL`).all();
-  const extraCosts = allProjectsExtra.reduce((sum, p) => {
-    try { return sum + JSON.parse(p.extra_costs || '[]').reduce((s, c) => s + (parseFloat(c.amount) || 0), 0); }
-    catch { return sum; }
-  }, 0);
+  const allProjectsExtra = db.prepare(`SELECT extra_costs, updated_at as created_at FROM projects WHERE extra_costs IS NOT NULL`).all();
+  const extraCostsPaid = sumJsonItems(allProjectsExtra, 'extra_costs', 'amount', { ...range, fallbackKey: 'created_at' });
+  // All-time extra costs (for the projection)
+  const extraCostsAll = sumJsonItems(allProjectsExtra, 'extra_costs', 'amount', {});
 
-  const totalProjectsPaid = productsPaid + projFabricPaid + vendorPayments + workerPayments + shippingPaid + extraCosts;
+  const totalProjectsPaid = productsPaid + projFabricPaid + vendorPayments + workerPayments + shippingPaid + extraCostsPaid;
 
   // ── Total Projects Expense (Billed/Projected — mirrors fin_total_expense in projects route) ──
   // productCost: fabric rate×qty + process cost_per_piece×qty + external_costs total
@@ -140,15 +166,28 @@ router.get('/summary', (req, res) => {
   const totalShippingBilled = db.prepare(`SELECT COALESCE(SUM(amount),0) as total FROM project_shipping`).get().total;
 
   // totalProjectsExpense = full projected cost (what projects are expected to cost when all paid)
-  const totalProjectsExpense = totalProductCost + projFabricCost + totalVendorBilled + totalWorkerAgreed + totalShippingBilled + extraCosts;
+  const totalProjectsExpense = totalProductCost + projFabricCost + totalVendorBilled + totalWorkerAgreed + totalShippingBilled + extraCostsAll;
 
   const totalExpenses = totalProjectsPaid + businessExpenses + salariesPaid;
 
-  // Out of Pocket = cash already paid out minus cash received (positive = money from your pocket)
+  // Out of Pocket = cash already paid out minus cash received, both within the
+  // selected period (positive = money that came from your pocket this period).
   const outOfPocket = totalExpenses - totalRevenue;
 
-  // Projected P&L = (received + outstanding) minus full projected costs
-  const projectedPL = (totalRevenue + outstanding) - (totalProjectsExpense + businessExpenses + salariesPaid);
+  // Projected P&L is a lifetime figure — the projected cost of a project isn't
+  // "in" any one month — so its inputs are ALWAYS all-time, independent of the
+  // period picker.
+  const allTimeRevenue = hasRange
+    ? db.prepare(`SELECT amount, COALESCE(currency,'PKR') as currency, amount_pkr_actual FROM payments`).all().reduce((s, p) => s + paymentToPKR(p, rates), 0)
+      + db.prepare(`SELECT COALESCE(SUM(amount),0) as t FROM other_income`).get().t
+    : totalRevenue;
+  const allTimeBiz = hasRange
+    ? db.prepare(`SELECT COALESCE(SUM(amount),0) as t FROM expenses`).get().t
+    : businessExpenses;
+  const allTimeSalaries = hasRange
+    ? db.prepare(`SELECT COALESCE(SUM(net_pay),0) as t FROM payroll_records WHERE status='paid'`).get().t
+    : salariesPaid;
+  const projectedPL = (allTimeRevenue + outstanding) - (totalProjectsExpense + allTimeBiz + allTimeSalaries);
 
   // Legacy netProfit kept for compatibility (same as projectedPL)
   const netProfit = projectedPL;
