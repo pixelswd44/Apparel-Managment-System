@@ -646,13 +646,14 @@ function CardBadge({ color, children }) {
 // ── Cash-flow: dual smooth areas (In / Out) with a Net line ──────────────────
 function CashFlowChart({ data, fmtC }) {
   const [hover, setHover] = useState(null);
-  const W = 520, H = 190, PT = 14, PB = 26, PX = 6;
+  // viewBox in 0..1000 x 0..200 units; the SVG stretches to the full container
+  // width (preserveAspectRatio="none"), strokes stay crisp via non-scaling-stroke
+  const W = 1000, H = 200, PT = 12, PB = 6;
   const rows = data.map(m => ({ ...m, net: m.in - m.out }));
   const max  = Math.max(...rows.map(r => Math.max(r.in, r.out)), 1);
-  const x = i => PX + (rows.length > 1 ? (i / (rows.length - 1)) * (W - PX * 2) : (W - PX * 2) / 2);
+  const x = i => rows.length > 1 ? (i / (rows.length - 1)) * W : W / 2;
   const y = v => PT + (1 - v / max) * (H - PT - PB);
 
-  // Monotone-ish cubic path through points
   const spline = pts => {
     if (pts.length < 2) return pts.length ? `M${pts[0][0]},${pts[0][1]}` : '';
     let d = `M${pts[0][0]},${pts[0][1]}`;
@@ -666,55 +667,53 @@ function CashFlowChart({ data, fmtC }) {
   const inPts  = rows.map((r, i) => [x(i), y(r.in)]);
   const outPts = rows.map((r, i) => [x(i), y(r.out)]);
   const netPts = rows.map((r, i) => [x(i), y(Math.max(0, r.net))]);
-  const areaOf = pts => `${spline(pts)} L${pts[pts.length - 1][0]},${H - PB} L${pts[0][0]},${H - PB} Z`;
+  const areaOf = pts => `${spline(pts)} L${pts[pts.length - 1][0]},${H} L${pts[0][0]},${H} Z`;
 
   return (
-    <div className="relative">
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 200 }}
-        onMouseLeave={() => setHover(null)}>
+    <div className="relative" onMouseLeave={() => setHover(null)}>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full block" style={{ height: 190 }}>
         <defs>
           <linearGradient id="cfIn" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="rgba(16,185,129,0.28)" />
+            <stop offset="0%" stopColor="rgba(16,185,129,0.30)" />
             <stop offset="100%" stopColor="rgba(16,185,129,0)" />
           </linearGradient>
           <linearGradient id="cfOut" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="rgba(244,63,94,0.20)" />
+            <stop offset="0%" stopColor="rgba(244,63,94,0.22)" />
             <stop offset="100%" stopColor="rgba(244,63,94,0)" />
           </linearGradient>
         </defs>
 
-        {/* baseline */}
-        <line x1={PX} y1={H - PB} x2={W - PX} y2={H - PB} stroke="#e2e8f0" strokeWidth="1" />
-
-        {/* Out area + line */}
         <path d={areaOf(outPts)} fill="url(#cfOut)" />
-        <path d={spline(outPts)} fill="none" stroke="#fb7185" strokeWidth="2" strokeLinecap="round" />
-        {/* In area + line */}
+        <path d={spline(outPts)} fill="none" stroke="#fb7185" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
         <path d={areaOf(inPts)} fill="url(#cfIn)" />
-        <path d={spline(inPts)} fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" />
-        {/* Net line — dashed */}
-        <path d={spline(netPts)} fill="none" stroke="#6366f1" strokeWidth="1.5" strokeDasharray="4 3" opacity="0.8" />
+        <path d={spline(inPts)} fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+        <path d={spline(netPts)} fill="none" stroke="#6366f1" strokeWidth="1.5" strokeDasharray="5 4" opacity="0.8" vectorEffect="non-scaling-stroke" />
 
-        {/* hover hit-areas + guides */}
+        {hover !== null && (
+          <line x1={x(hover)} y1={PT} x2={x(hover)} y2={H} stroke="#94a3b8" strokeWidth="1" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
+        )}
         {rows.map((r, i) => (
-          <g key={i}>
-            {hover === i && (
-              <>
-                <line x1={x(i)} y1={PT} x2={x(i)} y2={H - PB} stroke="#94a3b8" strokeWidth="1" strokeDasharray="3 3" />
-                <circle cx={x(i)} cy={y(r.in)}  r="3.5" fill="#10b981" stroke="#fff" strokeWidth="1.5" />
-                <circle cx={x(i)} cy={y(r.out)} r="3.5" fill="#fb7185" stroke="#fff" strokeWidth="1.5" />
-              </>
-            )}
-            <rect x={x(i) - (W / rows.length) / 2} y={0} width={W / rows.length} height={H}
-              fill="transparent" onMouseEnter={() => setHover(i)} />
-            <text x={x(i)} y={H - 8} textAnchor="middle" className="fill-slate-400" style={{ fontSize: 10 }}>{r.label}</text>
-          </g>
+          <rect key={i} x={x(i) - W / rows.length / 2} y={0} width={W / rows.length} height={H}
+            fill="transparent" onMouseEnter={() => setHover(i)} />
         ))}
       </svg>
 
+      {/* dots for the hovered month — HTML so they stay circular */}
+      {hover !== null && [['#10b981', rows[hover].in], ['#fb7185', rows[hover].out]].map(([c, v], k) => (
+        <span key={k} className="absolute w-2 h-2 rounded-full border-2 border-white pointer-events-none"
+          style={{ background: c, left: `${(x(hover) / W) * 100}%`, top: `${(y(v) / H) * 190}px`, transform: 'translate(-50%,-50%)' }} />
+      ))}
+
+      {/* month labels */}
+      <div className="flex mt-1.5">
+        {rows.map((r, i) => (
+          <span key={i} className="flex-1 text-center text-2xs text-slate-400">{r.label}</span>
+        ))}
+      </div>
+
       {/* Tooltip */}
       {hover !== null && (
-        <div className="absolute -top-1 left-0 right-0 flex justify-center pointer-events-none">
+        <div className="absolute -top-2 left-0 right-0 flex justify-center pointer-events-none z-10">
           <div className="bg-slate-900 text-white rounded-xl px-3 py-2 text-xs shadow-lg">
             <p className="font-semibold text-slate-300 mb-1">{rows[hover].label}</p>
             <div className="flex items-center gap-3">
