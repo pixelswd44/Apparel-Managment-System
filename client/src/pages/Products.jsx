@@ -1119,45 +1119,62 @@ export default function Products() {
     <div className="flex flex-col animate-page" style={{ height: 'calc(100vh - 8.5rem)' }}>
 
       {/* ── Header row ── */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 mb-4 flex-shrink-0">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-baseline gap-3">
-            <h1 className="text-xl font-bold text-slate-900">Products</h1>
-            <div className="flex items-center gap-2 text-xs text-slate-400">
-              <span className="text-indigo-600 font-semibold">{stats.total}</span> total ·
-              <span className="text-emerald-600 font-semibold">{stats.active}</span> active
-              {stats.lowStock > 0 && (
-                <><span>·</span><span className="text-amber-600 font-semibold flex items-center gap-1"><AlertCircle size={11} />{stats.lowStock} low stock</span></>
-              )}
-            </div>
-          </div>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-5 flex-shrink-0">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Products</h1>
+          <p className="text-slate-500 text-sm mt-0.5">Manage your catalog, categories, and per-currency pricing</p>
         </div>
-        {/* View tabs */}
-        <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
-          {[['products', Package, 'Products'], ['categories', Tag, 'Categories']].map(([v, Icon, label]) => (
-            <button key={v} onClick={() => setView(v)}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 text-sm rounded-lg font-medium transition-all duration-150 ${
-                view === v ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-              }`}>
-              <Icon size={13} />{label}
-              {v === 'categories' && <span className="text-xs opacity-60">({stats.cats})</span>}
+        <div className="flex items-center gap-3 flex-shrink-0">
+          {/* View tabs */}
+          <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
+            {[['products', Package, 'Products'], ['categories', Tag, 'Categories']].map(([v, Icon, label]) => (
+              <button key={v} onClick={() => setView(v)}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 text-sm rounded-lg font-medium transition-all duration-150 ${
+                  view === v ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}>
+                <Icon size={13} />{label}
+                {v === 'categories' && <span className="text-xs opacity-60">({stats.cats})</span>}
+              </button>
+            ))}
+          </div>
+
+          {/* Action button */}
+          {view === 'categories' ? (
+            <button onClick={() => setCatModal('new')}
+              className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-indigo-700 transition-colors shadow-sm">
+              <Plus size={15} /> New Category
             </button>
+          ) : (
+            <button onClick={() => navigate('/products/new')}
+              className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-indigo-700 transition-colors shadow-sm">
+              <Plus size={15} /> New Product
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── Stats ── */}
+      {view === 'products' && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5 flex-shrink-0">
+          {[
+            { label: 'Total Products', value: stats.total,  sub: `${stats.active} active`,              icon: Package,     color: 'text-indigo-600',  bg: 'bg-indigo-50' },
+            { label: 'Active',         value: stats.active,  sub: `${stats.total - stats.active} inactive`, icon: Check,    color: 'text-emerald-600', bg: 'bg-emerald-50' },
+            { label: 'Categories',     value: stats.cats,    sub: 'product groups',                      icon: Tag,         color: 'text-violet-600',  bg: 'bg-violet-50' },
+            { label: 'Low Stock',      value: stats.lowStock, sub: 'at or below reorder',                icon: AlertCircle,
+              color: stats.lowStock > 0 ? 'text-amber-600' : 'text-slate-400',
+              bg:    stats.lowStock > 0 ? 'bg-amber-50'    : 'bg-slate-100' },
+          ].map(({ label, value, sub, icon: Icon, color, bg }) => (
+            <div key={label} className="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-3 shadow-sm">
+              <div className={`${bg} ${color} p-2.5 rounded-xl flex-shrink-0`}><Icon size={18} /></div>
+              <div className="min-w-0">
+                <p className="text-lg font-bold text-slate-900 truncate">{value}</p>
+                <p className="text-xs text-slate-500">{label}</p>
+                <p className="text-2xs text-slate-400">{sub}</p>
+              </div>
+            </div>
           ))}
         </div>
-
-        {/* Action button */}
-        {view === 'categories' ? (
-          <button onClick={() => setCatModal('new')}
-            className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-indigo-700 transition-colors shadow-sm flex-shrink-0">
-            <Plus size={15} /> New Category
-          </button>
-        ) : (
-          <button onClick={() => navigate('/products/new')}
-            className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-indigo-700 transition-colors shadow-sm flex-shrink-0">
-            <Plus size={15} /> New Product
-          </button>
-        )}
-      </div>
+      )}
 
       {/* Inline delete confirmation */}
       {delTarget && (
