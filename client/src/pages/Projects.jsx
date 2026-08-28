@@ -1190,49 +1190,31 @@ function PrintSummary({ project, fin = {} }) {
   const stagesTotal = stages.filter(s => s.enabled !== 0).length;
 
   return (
-    <div className="p-8 font-sans text-slate-900 text-2xs leading-snug">
+    <div className="p-8 font-sans text-slate-900 text-xs leading-normal">
 
       {/* ── Header ── */}
       <div className="flex justify-between items-start border-b-2 border-slate-900 pb-3 mb-5">
         <div>
-          <h1 className="text-xl font-black uppercase tracking-wide text-slate-900">{project.title}</h1>
-          <div className="flex gap-4 mt-1 text-xs text-slate-500">
+          <h1 className="text-2xl font-black uppercase tracking-wide text-slate-900">{project.title}</h1>
+          <div className="flex gap-4 mt-1.5 text-sm text-slate-500">
             {project.client_name && <span>Client: <strong className="text-slate-800">{project.client_name}{project.client_company && project.client_company !== project.client_name ? ` — ${project.client_company}` : ''}</strong></span>}
             {project.invoice_number && <span>Invoice: <strong className="text-slate-800">#{project.invoice_number}</strong></span>}
             <span>Status: <strong className="text-slate-800 uppercase">{project.status}</strong></span>
           </div>
         </div>
-        <div className="text-right text-xs text-slate-500">
+        <div className="text-right text-sm text-slate-500">
           <p>Printed: {new Date().toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' })}</p>
           <p>Date: {fmtDate(project.created_at)}</p>
-          {totalQty > 0 && <p className="font-bold text-slate-800 mt-1">{totalQty.toLocaleString()} pcs total</p>}
+          {totalQty > 0 && <p className="font-bold text-slate-800 text-base mt-1">{totalQty.toLocaleString()} pcs total</p>}
         </div>
       </div>
 
-      {/* ── Reference images ── */}
-      {images.length > 0 && (
-        <div className="mb-5">
-          <p className="text-2xs font-bold uppercase tracking-widest text-slate-400 mb-2">Reference Images / Tech Packs</p>
-          <div className="flex flex-wrap gap-3">
-            {images.map((img, i) => (
-              <div key={i} className="border border-slate-200 rounded overflow-hidden">
-                <img src={imgUrl(img.url)} alt={img.originalName || `Image ${i+1}`}
-                  className="h-28 w-auto object-contain" style={{ maxWidth: 200 }} />
-                {img.originalName && (
-                  <p className="text-2xs text-slate-400 px-1 py-0.5 truncate max-w-[200px]">{img.originalName}</p>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="grid grid-cols-3 gap-5 mb-5">
+      <div className="grid grid-cols-3 gap-5 mb-5" style={{ breakInside: 'avoid' }}>
 
         {/* ── Financial summary ── */}
         <div className="col-span-1">
-          <p className="text-2xs font-bold uppercase tracking-widest text-slate-400 border-b border-slate-200 pb-1 mb-2">Financials</p>
-          <table className="w-full text-2xs">
+          <p className="text-sm font-bold uppercase tracking-widest text-slate-400 border-b border-slate-200 pb-1 mb-2">Financials</p>
+          <table className="w-full text-sm">
             <tbody>
               {[
                 { label: 'Materials + Process', val: productCost,  cls: '' },
@@ -1282,7 +1264,7 @@ function PrintSummary({ project, fin = {} }) {
 
         {/* ── Products & Sizes ── */}
         <div className="col-span-2">
-          <p className="text-2xs font-bold uppercase tracking-widest text-slate-400 border-b border-slate-200 pb-1 mb-2">Products & Sizes</p>
+          <p className="text-sm font-bold uppercase tracking-widest text-slate-400 border-b border-slate-200 pb-1 mb-2">Products &amp; Sizes</p>
           {prods.length === 0 ? (
             <p className="text-slate-400 italic">No products added</p>
           ) : prods.map(pp => {
@@ -1290,18 +1272,18 @@ function PrintSummary({ project, fin = {} }) {
             return (
               <div key={pp.id} className="mb-3">
                 <div className="flex items-baseline gap-2 mb-1">
-                  <span className="font-bold text-slate-900">{pp.product_name}</span>
-                  <span className="text-slate-400 text-2xs">{parseFloat(pp.total_quantity)||0} {pp.unit}</span>
-                  {pp.notes && <span className="text-slate-400 italic text-2xs">{pp.notes}</span>}
+                  <span className="font-bold text-slate-900 text-sm">{pp.product_name}</span>
+                  <span className="text-slate-500 text-xs">{parseFloat(pp.total_quantity)||0} {pp.unit}</span>
+                  {pp.notes && <span className="text-slate-400 italic text-xs">{pp.notes}</span>}
                 </div>
                 {activeSizes.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">
                     {activeSizes.map(sz => (
-                      <span key={sz.size} className="border border-slate-300 rounded px-2 py-0.5 font-semibold text-slate-700">
+                      <span key={sz.size} className="border border-slate-300 rounded px-2 py-0.5 font-semibold text-slate-700 text-xs">
                         {sz.size}: <strong>{parseFloat(sz.qty)}</strong>
                       </span>
                     ))}
-                    <span className="border border-slate-800 bg-slate-800 text-white rounded px-2 py-0.5 font-bold">
+                    <span className="border border-slate-800 bg-slate-800 text-white rounded px-2 py-0.5 font-bold text-xs">
                       Total: {parseFloat(pp.total_quantity)||0}
                     </span>
                   </div>
@@ -1311,6 +1293,46 @@ function PrintSummary({ project, fin = {} }) {
           })}
         </div>
       </div>
+
+      {/* ── Reference images — full size, with product quantities alongside ── */}
+      {(images.length > 0 || prods.length > 0) && (
+        <div className="mb-5" style={{ breakInside: 'avoid' }}>
+          <p className="text-sm font-bold uppercase tracking-widest text-slate-400 border-b border-slate-200 pb-1 mb-3">
+            Reference Images &amp; Quantities
+          </p>
+
+          {/* Quantities strip — one row */}
+          {prods.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-3">
+              {prods.map(pp => (
+                <span key={pp.id} className="border-2 border-slate-800 rounded px-3 py-1 text-sm font-bold text-slate-900">
+                  {pp.product_name} — {(parseFloat(pp.total_quantity)||0).toLocaleString()} {pp.unit}
+                </span>
+              ))}
+              {totalQty > 0 && (
+                <span className="rounded px-3 py-1 text-sm font-bold bg-slate-900 text-white">
+                  TOTAL {totalQty.toLocaleString()} pcs
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Full images — two per row, large */}
+          {images.length > 0 && (
+            <div className="flex flex-wrap gap-3">
+              {images.map((img, i) => (
+                <div key={i} className="border border-slate-300 rounded overflow-hidden" style={{ width: 'calc(50% - 6px)', breakInside: 'avoid' }}>
+                  <img src={imgUrl(img.url)} alt={img.originalName || `Image ${i+1}`}
+                    className="w-full object-contain bg-slate-50" style={{ maxHeight: 340 }} />
+                  {img.originalName && (
+                    <p className="text-xs text-slate-500 px-2 py-1 truncate">{img.originalName}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Vendors ── */}
       {vendors.length > 0 && (
@@ -2248,17 +2270,34 @@ function ProjectDetail({ projectId, onBack, clients, invoices, catalogProducts, 
 
   useEffect(() => {
     if (!printMode) return;
-    const timer = setTimeout(() => {
+    let cancelled = false;
+
+    // Wait until every image inside the print view has finished loading (or
+    // errored) before calling print — otherwise the PDF captures blank boxes.
+    async function waitForImages() {
+      await new Promise(r => setTimeout(r, 80)); // let the DOM paint
+      const imgs = printRef.current ? [...printRef.current.querySelectorAll('img')] : [];
+      await Promise.all(imgs.map(img => {
+        if (img.complete && img.naturalWidth > 0) return null;
+        return new Promise(res => {
+          const done = () => res();
+          img.addEventListener('load', done, { once: true });
+          img.addEventListener('error', done, { once: true });
+          setTimeout(done, 6000); // hard cap so a broken URL can't hang printing
+        });
+      }));
+    }
+
+    waitForImages().then(() => {
+      if (cancelled) return;
       const prevTitle = document.title;
       document.title = getPrintTitle(printMode);
       window.print();
-      const handler = () => {
-        document.title = prevTitle;
-        setPrint(null);
-      };
+      const handler = () => { document.title = prevTitle; setPrint(null); };
       window.addEventListener('afterprint', handler, { once: true });
-    }, 150);
-    return () => clearTimeout(timer);
+    });
+
+    return () => { cancelled = true; };
   }, [printMode]);
 
   async function handleSaveProduct(pp, form) {
