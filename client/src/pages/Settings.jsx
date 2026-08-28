@@ -1606,87 +1606,23 @@ const BACKUP_INCLUDES = [
   'Settings & Branding', 'Uploaded Images', 'Users',
 ];
 
-// Module groups for selective export
-const EXPORT_MODULES = [
-  { key: 'clients',   label: 'Clients',             tables: ['clients'] },
-  { key: 'vendors',   label: 'Vendors',             tables: ['vendors'] },
-  { key: 'employees', label: 'Employees',           tables: ['employees'] },
-  { key: 'products',  label: 'Products & Inventory',tables: ['products','product_prices','product_sales','inventory_items','inventory','inventory_transactions'] },
-  { key: 'quotes',    label: 'Quotations',          tables: ['quotation_templates','quotations'] },
-  { key: 'invoices',  label: 'Invoices & Payments', tables: ['invoices','payments','purchases'] },
-  { key: 'projects',  label: 'Projects',            tables: ['projects','project_products','project_stages','project_boxes','project_vendors','project_shipping','project_vendor_payments','project_workers'] },
-  { key: 'expenses',  label: 'Expenses & Payroll',  tables: ['expenses','payroll_records','employee_advances','capital_investments','capital_loans'] },
-  { key: 'settings',  label: 'Settings & Config',   tables: ['settings','currencies','users','companies','categories','expense_categories','cost_breakdown_items','document_templates','calculator_templates'] },
-  { key: 'reminders', label: 'Reminders',           tables: ['reminders'] },
-];
-const ALL_MODULE_KEYS = EXPORT_MODULES.map(m => m.key);
-
 function BackupRestore() {
   const [exporting,    setExporting]    = useState(false);
   const [exportDone,   setExportDone]   = useState(false);
-  const [exportModules, setExportModules] = useState(new Set(ALL_MODULE_KEYS)); // all selected by default
-  const [includeFiles,  setIncludeFiles]  = useState(true);
   // import steps: 'idle' | 'chosen' | 'confirm' | 'restoring' | 'done' | 'error'
   const [step,         setStep]         = useState('idle');
-  const [restoreSource, setRestoreSource] = useState(null); // 'upload' | 'snapshot'
   const [importFile,   setImportFile]   = useState(null);
   const [importMeta,   setImportMeta]   = useState(null);   // parsed backup header
   const [importResult, setImportResult] = useState(null);
-  const [restoreFiles, setRestoreFiles] = useState(true);
   const [error,        setError]        = useState('');
-  const [snapshotSaving,  setSnapshotSaving]  = useState(false);
-  const [snapshotResult,  setSnapshotResult]  = useState(null);
-  const [snapshotMeta,    setSnapshotMeta]    = useState(null); // metadata from server snapshot
-  const [snapshotMetaLoading, setSnapshotMetaLoading] = useState(false);
   const fileRef = useRef(null);
 
-  // Load snapshot metadata once so we can show it in the restore picker
-  useEffect(() => {
-    setSnapshotMetaLoading(true);
-    apiFetch('/api/backup/snapshot-meta')
-      .then(r => r.json())
-      .then(d => setSnapshotMeta(d.exists ? d : null))
-      .catch(() => setSnapshotMeta(null))
-      .finally(() => setSnapshotMetaLoading(false));
-  }, [snapshotResult]); // re-check after saving a new snapshot
-
-  async function handleSaveSnapshot() {
-    setSnapshotSaving(true); setSnapshotResult(null);
-    try {
-      const r    = await apiFetch('/api/backup/save-snapshot', { method: 'POST' });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.error || 'Failed');
-      setSnapshotResult(data);
-    } catch (e) {
-      setSnapshotResult({ error: e.message });
-    } finally {
-      setSnapshotSaving(false);
-    }
-  }
-
-  function toggleModule(key) {
-    setExportModules(prev => {
-      const next = new Set(prev);
-      next.has(key) ? next.delete(key) : next.add(key);
-      return next;
-    });
-  }
-
-  const isPartialExport = exportModules.size < ALL_MODULE_KEYS.length || !includeFiles;
-
-  // ── Export ───────────────────────────────────────────────────────────────
+  // ── Export (always full, images included) ────────────────────────────────
   async function handleExport() {
     setExporting(true); setError(''); setExportDone(false);
     try {
       const token = localStorage.getItem('crm_token');
-      const selectedTables = EXPORT_MODULES
-        .filter(m => exportModules.has(m.key))
-        .flatMap(m => m.tables);
-      const params = new URLSearchParams();
-      if (exportModules.size < ALL_MODULE_KEYS.length) params.set('tables', selectedTables.join(','));
-      if (!includeFiles) params.set('files', '0');
-      const qs = params.toString();
-      const r = await fetch(`/api/backup/export${qs ? '?' + qs : ''}`, {
+      const r = await fetch('/api/backup/export', {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!r.ok) throw new Error(`Server returned ${r.status}`);
@@ -1694,8 +1630,7 @@ function BackupRestore() {
       const url   = URL.createObjectURL(blob);
       const a     = document.createElement('a');
       const stamp = new Date().toISOString().slice(0, 10);
-      const suffix = isPartialExport ? '-partial' : '';
-      a.href = url; a.download = `apparel-crm-backup-${stamp}${suffix}.json.gz`;
+      a.href = url; a.download = `apparel-crm-backup-${stamp}.json.gz`;
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
       setExportDone(true);
@@ -1747,7 +1682,7 @@ function BackupRestore() {
     try {
       const fd = new FormData();
       fd.append('file', importFile, importFile.name);
-      fd.append('restore_files', restoreFiles ? '1' : '0');
+      fd.append('restore_files', '1'); // always restore uploaded images
       const controller = new AbortController();
       const timeoutId  = setTimeout(() => controller.abort(), 300_000); // 5-min timeout
       let r;
@@ -1764,7 +1699,7 @@ function BackupRestore() {
       const ct = r.headers.get('content-type') || '';
       if (!ct.includes('application/json')) {
         const hint = r.status === 413
-          ? `The backup file (${(importFile.size / 1048576).toFixed(1)} MB) is larger than the server's upload limit. Raise client_max_body_size in nginx, or restore from a server-side snapshot instead.`
+          ? `The backup file (${(importFile.size / 1048576).toFixed(1)} MB) is larger than the server's upload limit.`
           : `Server returned an unexpected response (HTTP ${r.status}).`;
         throw new Error(hint);
       }
@@ -1779,73 +1714,9 @@ function BackupRestore() {
     }
   }
 
-  // ── Server-side snapshot list ────────────────────────────────────────────
-  const [snapshots, setSnapshots] = useState([]);
-  const [snapBusy,  setSnapBusy]  = useState(null); // name being restored/deleted
-  const loadSnapshots = () => apiFetch('/api/backup/snapshots').then(r => r.json()).then(d => setSnapshots(d.snapshots || [])).catch(() => {});
-  useEffect(() => { loadSnapshots(); }, [snapshotResult]);
-
-  async function restoreNamedSnapshot(name) {
-    if (!window.confirm(`Restore "${name}"?\n\nThis wipes ALL current data and replaces it with that snapshot.`)) return;
-    setSnapBusy(name); setStep('restoring'); setError('');
-    try {
-      const r = await apiFetch(`/api/backup/snapshots/${encodeURIComponent(name)}/restore`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ restore_files: restoreFiles }),
-      });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.error || `Server returned ${r.status}`);
-      setImportResult(data); setStep('done');
-    } catch (e) { setError(e.message || 'Restore failed.'); setStep('error'); }
-    finally { setSnapBusy(null); }
-  }
-  async function deleteSnapshot(name) {
-    if (!window.confirm(`Delete snapshot "${name}"?`)) return;
-    setSnapBusy(name);
-    try { await apiFetch(`/api/backup/snapshots/${encodeURIComponent(name)}`, { method: 'DELETE' }); await loadSnapshots(); }
-    finally { setSnapBusy(null); }
-  }
-  async function downloadSnapshot(name) {
-    const token = localStorage.getItem('crm_token');
-    const r = await fetch(`/api/backup/snapshots/${encodeURIComponent(name)}/download`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-    if (!r.ok) { setError(`Download failed (HTTP ${r.status})`); return; }
-    const url = URL.createObjectURL(await r.blob());
-    const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
-    URL.revokeObjectURL(url);
-  }
-
   function reset() {
-    setStep('idle'); setRestoreSource(null); setImportFile(null);
+    setStep('idle'); setImportFile(null);
     setImportMeta(null); setImportResult(null); setError('');
-  }
-
-  async function handleRestoreSnapshot() {
-    if (!snapshotMeta) return;
-    setStep('restoring'); setError('');
-    try {
-      const controller = new AbortController();
-      const timeoutId  = setTimeout(() => controller.abort(), 120_000);
-      let r;
-      try {
-        r = await apiFetch('/api/backup/restore-snapshot', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ restore_files: restoreFiles }),
-          signal:  controller.signal,
-        });
-      } catch (fetchErr) {
-        if (fetchErr.name === 'AbortError') throw new Error('Restore timed out after 2 minutes.');
-        throw fetchErr;
-      } finally {
-        clearTimeout(timeoutId);
-      }
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.error || `Server returned ${r.status}`);
-      setImportResult(data);
-      setStep('done');
-    } catch (e) {
-      setError(e.message || 'Restore failed.');
-      setStep('error');
-    }
   }
 
   const totalBackupRows = importMeta
@@ -1864,119 +1735,21 @@ function BackupRestore() {
           <div className="flex-1 min-w-0">
             <h3 className="font-semibold text-slate-900 text-sm">Download Backup</h3>
             <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-              Choose which modules to include, then download a compressed backup file.
-              Save it to a cloud drive — you can restore it any time on any machine.
+              Downloads a single compressed file with <strong>all your data and uploaded images</strong>.
+              Save it to a cloud drive — you can restore it any time, on any machine.
             </p>
 
-            {/* Module selection */}
-            <div className="mt-3 border border-emerald-200 rounded-xl overflow-hidden">
-              <div className="flex items-center justify-between px-3 py-2 bg-emerald-100/60 border-b border-emerald-200">
-                <span className="text-xs font-semibold text-emerald-800">Select modules</span>
-                <div className="flex gap-3">
-                  <button onClick={() => setExportModules(new Set(ALL_MODULE_KEYS))}
-                    className="text-2xs text-emerald-700 hover:text-emerald-900 font-medium">All</button>
-                  <button onClick={() => setExportModules(new Set())}
-                    className="text-2xs text-emerald-700 hover:text-emerald-900 font-medium">None</button>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 p-3">
-                {EXPORT_MODULES.map(m => (
-                  <label key={m.key} className="flex items-center gap-2 cursor-pointer group">
-                    <input type="checkbox" checked={exportModules.has(m.key)}
-                      onChange={() => toggleModule(m.key)}
-                      className="rounded accent-emerald-600" />
-                    <span className="text-xs text-slate-700 group-hover:text-slate-900">{m.label}</span>
-                  </label>
-                ))}
-              </div>
-              <div className="px-3 pb-3 pt-0">
-                <label className="flex items-center gap-2 cursor-pointer group">
-                  <input type="checkbox" checked={includeFiles} onChange={e => setIncludeFiles(e.target.checked)}
-                    className="rounded accent-emerald-600" />
-                  <span className="text-xs text-slate-700 group-hover:text-slate-900">
-                    Include uploaded files
-                    <span className="text-slate-400 ml-1">(images, PDFs &amp; logos — larger file)</span>
-                  </span>
-                </label>
-              </div>
-            </div>
-
-            <button onClick={handleExport} disabled={exporting || exportModules.size === 0}
+            <button onClick={handleExport} disabled={exporting}
               className={`mt-3 flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors text-white
                 ${exportDone ? 'bg-emerald-500' : 'bg-emerald-600 hover:bg-emerald-700'} disabled:opacity-60`}>
               {exporting
                 ? <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
                 : exportDone ? <Check size={13} /> : <Save size={13} />}
-              {exporting ? 'Preparing…' : exportDone ? 'Downloaded!' : isPartialExport ? 'Download Partial Backup' : 'Download Full Backup'}
+              {exporting ? 'Preparing…' : exportDone ? 'Downloaded!' : 'Download Full Backup'}
             </button>
             <p className="text-2xs text-slate-400 mt-2">
-              Tip: download a full backup before restoring, and after every major data-entry session.
+              Tip: download a backup before restoring, and after every major data-entry session.
             </p>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Save Snapshot card ────────────────────────────────────────────── */}
-      <div className="bg-indigo-50/40 border border-indigo-100 rounded-xl p-5">
-        <div className="flex items-start gap-4">
-          <div className="w-10 h-10 bg-indigo-100 border border-indigo-200 rounded-xl flex items-center justify-center flex-shrink-0">
-            <ShieldCheck size={18} className="text-indigo-700" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-slate-900 text-sm">Server Snapshots</h3>
-            <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-              Saves a timestamped snapshot (data + all uploaded images) to <code className="bg-indigo-100 text-indigo-700 px-1 rounded">data/backups/</code> on this server
-              and refreshes <code className="bg-indigo-100 text-indigo-700 px-1 rounded">data/latest-backup.json.gz</code> (commit &amp; push that to keep a copy on GitHub).
-              The newest 20 are kept. Set <code className="bg-indigo-100 text-indigo-700 px-1 rounded">BACKUP_AUTO_DAILY=1</code> in the server .env for automatic daily snapshots.
-            </p>
-            <button
-              onClick={handleSaveSnapshot}
-              disabled={snapshotSaving}
-              className="mt-3 flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60"
-            >
-              {snapshotSaving
-                ? <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                : <ShieldCheck size={13} />}
-              {snapshotSaving ? 'Saving…' : 'Save Snapshot'}
-            </button>
-            {snapshotResult && !snapshotResult.error && (
-              <p className="mt-2 text-xs text-indigo-700 font-medium">
-                ✓ Saved {snapshotResult.row_count?.toLocaleString()} rows · {snapshotResult.file_count ?? 0} files · {snapshotResult.size_kb} KB · {snapshotResult.saved_at?.slice(0, 19).replace('T', ' ')}
-              </p>
-            )}
-            {snapshotResult?.error && (
-              <p className="mt-2 text-xs text-red-600">{snapshotResult.error}</p>
-            )}
-
-            {/* Snapshot list */}
-            {snapshots.length > 0 && (
-              <div className="mt-4 bg-white border border-indigo-100 rounded-xl overflow-hidden">
-                <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 px-3 py-2 bg-indigo-50/60 text-2xs font-bold uppercase tracking-wider text-indigo-700">
-                  <span>Snapshot</span><span className="text-right">Size</span><span className="text-right">Actions</span>
-                </div>
-                <div className="divide-y divide-slate-100 max-h-64 overflow-y-auto">
-                  {snapshots.map(s => (
-                    <div key={s.name} className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center px-3 py-2 text-xs">
-                      <div className="min-w-0">
-                        <p className="font-mono text-slate-700 truncate">{s.name}</p>
-                        <p className="text-slate-400">{s.saved_at.slice(0, 19).replace('T', ' ')}</p>
-                      </div>
-                      <span className="text-slate-500 text-right whitespace-nowrap">{s.size_kb >= 1024 ? `${(s.size_kb / 1024).toFixed(1)} MB` : `${s.size_kb} KB`}</span>
-                      <div className="flex items-center gap-1 justify-end">
-                        <button onClick={() => downloadSnapshot(s.name)} title="Download"
-                          className="px-2 py-1 rounded-lg text-indigo-600 hover:bg-indigo-50 font-semibold">↓</button>
-                        <button onClick={() => restoreNamedSnapshot(s.name)} disabled={!!snapBusy}
-                          className="px-2 py-1 rounded-lg text-amber-700 hover:bg-amber-50 font-semibold disabled:opacity-40">
-                          {snapBusy === s.name ? '…' : 'Restore'}
-                        </button>
-                        <button onClick={() => deleteSnapshot(s.name)} disabled={!!snapBusy} title="Delete"
-                          className="px-2 py-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-40">×</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -1996,54 +1769,20 @@ function BackupRestore() {
             <input ref={fileRef} type="file" accept=".json,.json.gz,application/json,application/gzip"
               onChange={pickFile} className="hidden" />
 
-            {/* ── Step: idle — pick source ── */}
+            {/* ── Step: idle — upload file ── */}
             {step === 'idle' && (
-              <div className="space-y-2">
-                {/* Option 1: server snapshot */}
-                <button
-                  onClick={() => {
-                    if (!snapshotMeta) return;
-                    setRestoreSource('snapshot');
-                    setImportMeta(snapshotMeta);
-                    setImportFile(null);
-                    setStep('chosen');
-                  }}
-                  disabled={!snapshotMeta || snapshotMetaLoading}
-                  className="w-full flex items-start gap-3 border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/50 disabled:opacity-50 disabled:cursor-not-allowed text-left px-4 py-3 rounded-xl transition-colors group"
-                >
-                  <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <ShieldCheck size={15} className="text-indigo-600" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-slate-800 group-hover:text-indigo-700">
-                      Use saved snapshot
-                    </p>
-                    {snapshotMetaLoading ? (
-                      <p className="text-xs text-slate-400">Checking…</p>
-                    ) : snapshotMeta ? (
-                      <p className="text-xs text-slate-500">
-                        {snapshotMeta.exported_at?.slice(0, 19).replace('T', ' ')} · {snapshotMeta.row_count?.toLocaleString()} rows · {snapshotMeta.size_kb} KB
-                      </p>
-                    ) : (
-                      <p className="text-xs text-slate-400">No snapshot saved yet — use Save Snapshot above first.</p>
-                    )}
-                  </div>
-                </button>
-
-                {/* Option 2: upload file */}
-                <button
-                  onClick={() => { setRestoreSource('upload'); fileRef.current?.click(); }}
-                  className="w-full flex items-start gap-3 border border-slate-200 hover:border-rose-300 hover:bg-rose-50/50 text-left px-4 py-3 rounded-xl transition-colors group"
-                >
-                  <div className="w-8 h-8 bg-rose-100 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <Upload size={15} className="text-rose-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-slate-800 group-hover:text-rose-700">Upload backup file</p>
-                    <p className="text-xs text-slate-500">Choose a .json or .json.gz file from your device</p>
-                  </div>
-                </button>
-              </div>
+              <button
+                onClick={() => fileRef.current?.click()}
+                className="w-full flex items-start gap-3 border border-slate-200 hover:border-rose-300 hover:bg-rose-50/50 text-left px-4 py-3 rounded-xl transition-colors group"
+              >
+                <div className="w-8 h-8 bg-rose-100 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <Upload size={15} className="text-rose-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-800 group-hover:text-rose-700">Upload backup file</p>
+                  <p className="text-xs text-slate-500">Choose a .json or .json.gz file from your device</p>
+                </div>
+              </button>
             )}
 
             {/* ── Step: chosen — show file summary ── */}
@@ -2054,15 +1793,11 @@ function BackupRestore() {
                     <Save size={14} className="text-indigo-600" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-800 truncate">
-                    {restoreSource === 'snapshot' ? 'Server snapshot' : importFile?.name}
-                  </p>
+                    <p className="text-sm font-medium text-slate-800 truncate">{importFile?.name}</p>
                     <p className="text-xs text-slate-400">
-                      {restoreSource === 'snapshot'
-                        ? `${importMeta.size_kb} KB`
-                        : `${(importFile?.size / 1024 / 1024).toFixed(2)} MB`}
+                      {`${(importFile?.size / 1024 / 1024).toFixed(2)} MB`}
                       · {totalBackupRows.toLocaleString()} rows
-                      · {importMeta.file_count ?? 0} uploaded files
+                      · {importMeta.file_count ?? 0} images
                     </p>
                   </div>
                   <button onClick={reset} className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1 rounded transition-colors">
@@ -2078,20 +1813,10 @@ function BackupRestore() {
                   <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800 flex items-start gap-2 mt-2">
                     <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
                     <span>
-                      <strong>This will wipe ALL current data</strong> and replace it with the backup.
-                      There is no undo. Download the current data first if needed.
+                      <strong>This will wipe ALL current data</strong> (and uploaded images) and replace
+                      it with the backup. There is no undo — download a backup first if needed.
                     </span>
                   </div>
-                  <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer select-none mt-1">
-                    <input
-                      type="checkbox"
-                      checked={restoreFiles}
-                      onChange={e => setRestoreFiles(e.target.checked)}
-                      className="rounded"
-                    />
-                    Also restore uploaded images &amp; logos
-                    <span className="text-slate-400">(makes upload larger / slower)</span>
-                  </label>
                   <div className="flex gap-2 pt-2">
                     <button onClick={reset}
                       className="px-4 py-2 text-sm border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-colors">
@@ -2126,7 +1851,7 @@ function BackupRestore() {
                     className="flex-1 px-4 py-2 text-sm border border-slate-300 rounded-xl text-slate-700 hover:bg-white transition-colors font-medium">
                     Go Back
                   </button>
-                  <button onClick={restoreSource === 'snapshot' ? handleRestoreSnapshot : handleImport}
+                  <button onClick={handleImport}
                     className="flex-1 flex items-center justify-center gap-2 bg-rose-700 hover:bg-rose-800 text-white py-2 rounded-xl text-sm font-bold transition-colors">
                     <Check size={13} /> Yes, Restore Now
                   </button>
