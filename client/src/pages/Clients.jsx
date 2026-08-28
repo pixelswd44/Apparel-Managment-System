@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Plus, Search, Pencil, Trash2, X, Mail, Phone,
   MapPin, Building2, FileText, ChevronRight, ArrowLeft,
@@ -734,11 +734,15 @@ const FILTERS = [
 
 export default function Clients() {
   const navigate                        = useNavigate();
+  const location                        = useLocation();
   const [clients,      setClients]      = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [search,       setSearch]       = useState('');
   const [filter,       setFilter]       = useState('All');
   const [selected,     setSelected]     = useState(null);
+
+  // Re-clicking "Clients" in the sidebar returns to the list from a detail view
+  useEffect(() => { setSelected(null); }, [location.key]);
   const [stats,        setStats]        = useState(null);
   const [statsLoading, setStatsLoading] = useState(false);
   const [delTarget,    setDelTarget]    = useState(null);

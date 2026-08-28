@@ -1272,10 +1272,11 @@ export default function Invoices() {
     return v ? Number(v) : null;
   });
 
-  // Deep-link: /invoices?view=<id> opens that invoice
+  // Deep-link: /invoices?view=<id> opens that invoice; a plain nav to /invoices
+  // (e.g. the sidebar) closes any open detail and returns to the list.
   useEffect(() => {
     const v = new URLSearchParams(location.search).get('view');
-    if (v) setViewId(Number(v));
+    setViewId(v ? Number(v) : null);
   }, [location.key, location.search]);
   const [delConfirm,   setDelConfirm]   = useState(null);
   const [deleting,     setDeleting]     = useState(false);
