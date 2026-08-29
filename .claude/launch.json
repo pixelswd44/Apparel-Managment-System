@@ -2,18 +2,9 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "client",
-      "runtimeExecutable": "cmd",
-      "runtimeArgs": ["/c", "set PATH=C:\\Program Files\\nodejs;%PATH% && node_modules\\.bin\\vite.cmd"],
-      "cwd": "client",
-      "autoPort": true,
-      "port": 5173
-    },
-    {
-      "name": "server",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "cwd": "server",
+      "name": "apparel-crm",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["app.js"],
       "port": 3001
     }
   ]
