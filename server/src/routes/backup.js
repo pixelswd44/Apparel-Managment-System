@@ -4,7 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import zlib from 'zlib';
 import multer from 'multer';
-import db, { repairVendorSurplus, migrateProjectCostsToExpenses } from '../db/index.js';
+import db, { repairVendorSurplus, migrateProjectCostsToExpenses, moveShippingExpensesToShipments, seedShippingAgents } from '../db/index.js';
 
 const router = Router();
 
@@ -40,6 +40,7 @@ const TABLES_ORDERED = [
   'employees',
   'clients',
   'vendors',
+  'shipping_agents',
   // ── Products ─────────────────────────────────────────────────────────────
   'products',
   'product_prices',
@@ -57,6 +58,7 @@ const TABLES_ORDERED = [
   'project_boxes',
   'project_vendors',
   'project_shipping',            // ← must be before project_vendor_payments
+  'shipping_costs',
   'project_vendor_payments',
   'project_workers',
   // ── Finance / HR ────────────────────────────────────────────────────────
@@ -201,6 +203,8 @@ function restoreBackup(backup, { restoreFiles = true } = {}) {
   try { repairVendorSurplus(); } catch (e) { stats.errors.push(`vendor surplus repair: ${e.message}`); }
   // An older backup still has costs inside its projects — move them into Expenses
   try { migrateProjectCostsToExpenses(); } catch (e) { stats.errors.push(`project costs → expenses: ${e.message}`); }
+  try { moveShippingExpensesToShipments(); } catch (e) { stats.errors.push(`shipping costs: ${e.message}`); }
+  try { seedShippingAgents(); } catch (e) { stats.errors.push(`shipping agents: ${e.message}`); }
   // Persist to disk immediately (sql.js keeps the DB in memory until saved)
   try { if (typeof db._save === 'function') db._save(); } catch {}
 

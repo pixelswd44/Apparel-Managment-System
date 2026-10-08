@@ -60,15 +60,23 @@ function toPKR(amount, currencyCode, currencies) {
 // (actual PKR when entered, else amount × rate); profit = received − cost.
 function calcProject(project, currencies = []) {
   const expenses = Array.isArray(project.expenses) ? project.expenses : [];
-  const totalExpense = expenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
+  const expenseTotal  = expenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
+  // Shipping costs are entered on the project's shipments (Shipping tab)
+  const shippingTotal = (project.shipping || []).reduce((s, sh) => s + (parseFloat(sh.cost_total) || 0), 0);
+  const totalExpense  = expenseTotal + shippingTotal;
 
-  // Spending grouped by expense category, largest first
+  // Spending grouped by expense category (+ shipping), largest first
   const byCat = new Map();
   for (const e of expenses) {
     const key = e.category_name || 'Uncategorized';
     const row = byCat.get(key) || { label: key, color: e.category_color || '#94a3b8', total: 0 };
     row.total += parseFloat(e.amount) || 0;
     byCat.set(key, row);
+  }
+  if (shippingTotal > 0) {
+    const row = byCat.get('Shipping') || { label: 'Shipping', color: '#0ea5e9', total: 0 };
+    row.total += shippingTotal;
+    byCat.set('Shipping', row);
   }
   const byCategory = [...byCat.values()].sort((a, b) => b.total - a.total);
 
@@ -101,7 +109,7 @@ function calcProject(project, currencies = []) {
   }
 
   return {
-    totalExpense, byCategory, expenseCount: expenses.length,
+    totalExpense, expenseTotal, shippingTotal, byCategory, expenseCount: expenses.length,
     received, profit: received - totalExpense,
     receivedRaw, receivedCurrency, exchangeRate,
   };
@@ -1581,7 +1589,7 @@ function ProjectExpensesTab({ project, fmt = pkr, onAdd, onOpen }) {
         <div className="bg-white border border-dashed border-slate-200 rounded-2xl py-12 text-center px-6">
           <Receipt size={28} className="mx-auto text-slate-300 mb-2" />
           <p className="text-sm text-slate-500 font-medium">No expenses charged to this project yet</p>
-          <p className="text-xs text-slate-400 mt-1">Fabric, stitching, shipping… record each payment once on the Expenses screen and pick this project.</p>
+          <p className="text-xs text-slate-400 mt-1">Fabric, stitching, printing… record each payment once on the Expenses screen and pick this project. Shipping costs go in the Shipping tab.</p>
         </div>
       ) : (
         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden divide-y divide-slate-100">
@@ -1610,28 +1618,74 @@ function ProjectExpensesTab({ project, fmt = pkr, onAdd, onOpen }) {
   );
 }
 
-// ─── Shipping Tab — shipping agent + tracking number ──────────────────────────
-// Shipping cost is an expense (category Shipping) charged to the project.
+// ─── Shipping Tab — agent, tracking number and shipping cost ──────────────────
+// Shipping costs are entered here, on each shipment (one or more payments to the
+// agent), and count towards the project's cost — not on the Expenses screen.
 
-const BLANK_SHIP = { carrier: '', tracking_number: '', shipping_date: '', notes: '' };
+// agent: a saved shipping agent's id, or NEW_AGENT to type a new agency name
+const NEW_AGENT    = '__new__';
+const SHIP_METHODS = ['cash', 'bank transfer', 'cheque', 'online', 'card'];
+const today        = () => new Date().toISOString().slice(0, 10);
+const BLANK_SHIP   = { agent: '', newAgentName: '', carrier: '', tracking_number: '', shipping_date: '', notes: '',
+                       cost: '', cost_method: 'cash' };
+const BLANK_COST   = { amount: '', cost_date: '', payment_method: 'cash', notes: '' };
 
 function ShippingTab({ project, onReload }) {
+  const navigate = useNavigate();
   const rows = Array.isArray(project.shipping) ? project.shipping : [];
-  const [editing, setEditing] = useState(null); // null | 'new' | row id
+  const shippingTotal = rows.reduce((t, r) => t + (parseFloat(r.cost_total) || 0), 0);
+  const [agents, setAgents]   = useState([]);
+  const [editing, setEditing] = useState(null); // null | 'new' | shipment id
   const [form, setForm]       = useState(BLANK_SHIP);
+  const [costEdit, setCostEdit] = useState(null); // { shipId, costId|null }
+  const [costForm, setCostForm] = useState(BLANK_COST);
   const [saving, setSaving]   = useState(false);
   const [error, setError]     = useState('');
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const set  = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const setC = (k, v) => setCostForm(f => ({ ...f, [k]: v }));
 
-  function startNew() { setForm({ ...BLANK_SHIP, shipping_date: new Date().toISOString().slice(0, 10) }); setEditing('new'); setError(''); }
-  function startEdit(r) { setForm({ carrier: r.carrier || '', tracking_number: r.tracking_number || '', shipping_date: r.shipping_date || '', notes: r.notes || '' }); setEditing(r.id); setError(''); }
+  const loadAgents = useCallback(() => {
+    api.get('/shipping-agents').then(r => setAgents(Array.isArray(r.data) ? r.data : [])).catch(() => {});
+  }, []);
+  useEffect(() => { loadAgents(); }, [loadAgents]);
+
+  function startNew() {
+    // Default to the agent used last on this project, if any
+    const last = rows.find(r => r.agent_id);
+    setForm({ ...BLANK_SHIP, agent: last ? String(last.agent_id) : '', shipping_date: today() });
+    setEditing('new'); setCostEdit(null); setError('');
+  }
+  function startEdit(r) {
+    setForm({ ...BLANK_SHIP, agent: r.agent_id ? String(r.agent_id) : '', carrier: r.carrier || '',
+              tracking_number: r.tracking_number || '', shipping_date: r.shipping_date || '', notes: r.notes || '' });
+    setEditing(r.id); setCostEdit(null); setError('');
+  }
+  function startCost(r, c = null) {
+    setCostForm(c ? { amount: String(c.amount), cost_date: c.cost_date || '', payment_method: c.payment_method || 'cash', notes: c.notes || '' }
+                  : { ...BLANK_COST, cost_date: today() });
+    setCostEdit({ shipId: r.id, costId: c ? c.id : null }); setEditing(null); setError('');
+  }
 
   async function save() {
-    if (!form.carrier.trim()) { setError('Enter the shipping agent.'); return; }
     setSaving(true); setError('');
     try {
-      if (editing === 'new') await api.post(`/projects/${project.id}/shipping`, form);
-      else await api.put(`/projects/${project.id}/shipping/${editing}`, form);
+      let agentId = form.agent && form.agent !== NEW_AGENT ? parseInt(form.agent) : null;
+      if (form.agent === NEW_AGENT) {
+        if (!form.newAgentName.trim()) { setError('Enter the new agency name.'); return; }
+        const { data } = await api.post('/shipping-agents', { name: form.newAgentName.trim() });
+        agentId = data.id;
+        loadAgents();
+      }
+      // An old shipment may only have a typed name (agent since deleted) — keep it
+      if (!agentId && !form.carrier.trim()) { setError('Choose a shipping agent.'); return; }
+      const payload = { agent_id: agentId, carrier: form.carrier, tracking_number: form.tracking_number,
+                        shipping_date: form.shipping_date, notes: form.notes };
+      if (editing === 'new') {
+        payload.cost = { amount: form.cost, cost_date: form.shipping_date || today(), payment_method: form.cost_method };
+        await api.post(`/projects/${project.id}/shipping`, payload);
+      } else {
+        await api.put(`/projects/${project.id}/shipping/${editing}`, payload);
+      }
       setEditing(null);
       await onReload();
     } catch (e) {
@@ -1639,9 +1693,30 @@ function ShippingTab({ project, onReload }) {
     } finally { setSaving(false); }
   }
 
-  async function remove(id) {
-    if (!confirm('Remove this shipment?')) return;
-    await api.delete(`/projects/${project.id}/shipping/${id}`);
+  async function saveCost() {
+    if (!(parseFloat(costForm.amount) > 0)) { setError('Enter the shipping cost.'); return; }
+    setSaving(true); setError('');
+    try {
+      const base = `/projects/${project.id}/shipping/${costEdit.shipId}/costs`;
+      if (costEdit.costId) await api.put(`${base}/${costEdit.costId}`, costForm);
+      else await api.post(base, costForm);
+      setCostEdit(null);
+      await onReload();
+    } catch (e) {
+      setError(e?.response?.data?.error || 'Could not save.');
+    } finally { setSaving(false); }
+  }
+
+  async function removeCost(r, c) {
+    if (!confirm(`Remove this shipping cost of ${pkr(c.amount)}?`)) return;
+    await api.delete(`/projects/${project.id}/shipping/${r.id}/costs/${c.id}`);
+    await onReload();
+  }
+
+  async function remove(r) {
+    const msg = r.cost_total > 0 ? `Remove this shipment and its ${pkr(r.cost_total)} shipping cost?` : 'Remove this shipment?';
+    if (!confirm(msg)) return;
+    await api.delete(`/projects/${project.id}/shipping/${r.id}`);
     await onReload();
   }
 
@@ -1650,8 +1725,19 @@ function ShippingTab({ project, onReload }) {
     <div className="bg-sky-50 border border-sky-200 rounded-2xl p-4 space-y-3">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>
-          <label className="block text-xs font-semibold text-slate-500 mb-1">Shipping Agent *</label>
-          <input value={form.carrier} onChange={e => set('carrier', e.target.value)} placeholder="e.g. Abdullah Shipping" className={inputCls2} autoFocus />
+          <label className="flex items-center justify-between text-xs font-semibold text-slate-500 mb-1">
+            Shipping Agent *
+            <button type="button" onClick={() => navigate('/shipping-agents')} className="font-medium text-indigo-600 hover:underline">Manage</button>
+          </label>
+          <select value={form.agent} onChange={e => set('agent', e.target.value)} className={inputCls2} autoFocus>
+            <option value="">{form.carrier && !form.agent ? `${form.carrier} (not in agents list)` : '— Choose agent —'}</option>
+            {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            <option value={NEW_AGENT}>+ New agent…</option>
+          </select>
+          {form.agent === NEW_AGENT && (
+            <input value={form.newAgentName} onChange={e => set('newAgentName', e.target.value)}
+              placeholder="New agency name" className={`${inputCls2} mt-2`} autoFocus />
+          )}
         </div>
         <div>
           <label className="block text-xs font-semibold text-slate-500 mb-1">Tracking Number</label>
@@ -1662,6 +1748,20 @@ function ShippingTab({ project, onReload }) {
           <input type="date" value={form.shipping_date} onChange={e => set('shipping_date', e.target.value)} className={inputCls2} />
         </div>
       </div>
+      {editing === 'new' && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 mb-1">Shipping Cost (₨)</label>
+            <input type="number" min="0" value={form.cost} onChange={e => set('cost', e.target.value)} placeholder="0 — add later if not paid yet" className={inputCls2} />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 mb-1">Payment Method</label>
+            <select value={form.cost_method} onChange={e => set('cost_method', e.target.value)} className={`${inputCls2} capitalize`}>
+              {SHIP_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+        </div>
+      )}
       <input value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Notes (optional)" className={inputCls2} />
       {error && <p className="text-xs text-rose-600">{error}</p>}
       <div className="flex gap-2">
@@ -1674,6 +1774,35 @@ function ShippingTab({ project, onReload }) {
     </div>
   );
 
+  const costRow = (
+    <div className="flex flex-wrap items-end gap-2 bg-sky-50 border border-sky-200 rounded-xl p-2.5">
+      <div className="w-32">
+        <label className="block text-2xs font-semibold text-slate-500 mb-0.5">Amount (₨)</label>
+        <input type="number" min="0" value={costForm.amount} onChange={e => setC('amount', e.target.value)} className={inputCls2} autoFocus />
+      </div>
+      <div className="w-36">
+        <label className="block text-2xs font-semibold text-slate-500 mb-0.5">Paid on</label>
+        <input type="date" value={costForm.cost_date} onChange={e => setC('cost_date', e.target.value)} className={inputCls2} />
+      </div>
+      <div className="w-36">
+        <label className="block text-2xs font-semibold text-slate-500 mb-0.5">Method</label>
+        <select value={costForm.payment_method} onChange={e => setC('payment_method', e.target.value)} className={`${inputCls2} capitalize`}>
+          {SHIP_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+        </select>
+      </div>
+      <div className="flex-1 min-w-[120px]">
+        <label className="block text-2xs font-semibold text-slate-500 mb-0.5">Note</label>
+        <input value={costForm.notes} onChange={e => setC('notes', e.target.value)} placeholder="optional" className={inputCls2} />
+      </div>
+      <button onClick={saveCost} disabled={saving}
+        className="px-3 py-2 bg-indigo-600 text-white rounded-xl text-xs font-semibold hover:bg-indigo-700 disabled:opacity-50">
+        {saving ? 'Saving…' : 'Save'}
+      </button>
+      <button onClick={() => setCostEdit(null)} className="px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-600 hover:bg-white">Cancel</button>
+      {error && <p className="w-full text-xs text-rose-600">{error}</p>}
+    </div>
+  );
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-3">
@@ -1681,6 +1810,7 @@ function ShippingTab({ project, onReload }) {
           <Truck size={16} className="text-sky-500" />
           <h3 className="font-semibold text-slate-900">Shipping</h3>
           {rows.length > 0 && <span className="text-xs bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full font-semibold">{rows.length}</span>}
+          {shippingTotal > 0 && <span className="text-sm font-bold text-rose-600 ml-1">{pkr(shippingTotal)}</span>}
         </div>
         {editing === null && (
           <button onClick={startNew}
@@ -1689,7 +1819,7 @@ function ShippingTab({ project, onReload }) {
           </button>
         )}
       </div>
-      <p className="text-xs text-slate-400">Record the shipping agent and tracking number here. Shipping cost goes on the Expenses screen against this project.</p>
+      <p className="text-xs text-slate-400">Shipping agent, tracking number and shipping cost. Shipping costs are added to this project's cost.</p>
 
       {editing === 'new' && formRow}
 
@@ -1701,18 +1831,45 @@ function ShippingTab({ project, onReload }) {
       ) : (
         <div className="space-y-2">
           {rows.map(r => editing === r.id ? <div key={r.id}>{formRow}</div> : (
-            <div key={r.id} className="bg-white border border-slate-200 rounded-2xl px-4 py-3 flex items-center gap-3">
-              <div className="w-8 h-8 bg-sky-50 rounded-xl flex items-center justify-center flex-shrink-0"><Truck size={14} className="text-sky-600" /></div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-slate-800 truncate">{r.carrier || 'Shipping agent'}</p>
-                <p className="text-xs text-slate-500 truncate">
-                  {r.tracking_number ? <span className="font-mono">#{r.tracking_number}</span> : <span className="italic text-slate-400">No tracking number</span>}
-                  {r.shipping_date ? ` · ${fmtDate(r.shipping_date)}` : ''}
-                  {r.notes ? ` · ${r.notes}` : ''}
-                </p>
+            <div key={r.id} className="bg-white border border-slate-200 rounded-2xl px-4 py-3 space-y-2">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-sky-50 rounded-xl flex items-center justify-center flex-shrink-0"><Truck size={14} className="text-sky-600" /></div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-slate-800 truncate">{r.carrier || 'Shipping agent'}</p>
+                  <p className="text-xs text-slate-500 truncate">
+                    {r.tracking_number ? <span className="font-mono">#{r.tracking_number}</span> : <span className="italic text-slate-400">No tracking number</span>}
+                    {r.shipping_date ? ` · ${fmtDate(r.shipping_date)}` : ''}
+                    {r.agent_phone ? ` · ${r.agent_phone}` : ''}
+                    {r.notes ? ` · ${r.notes}` : ''}
+                  </p>
+                </div>
+                <span className={`text-sm font-bold flex-shrink-0 ${r.cost_total > 0 ? 'text-slate-800' : 'text-slate-300'}`}>
+                  {r.cost_total > 0 ? pkr(r.cost_total) : 'No cost'}
+                </span>
+                <button onClick={() => startEdit(r)} title="Edit shipment" className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg"><Pencil size={13} /></button>
+                <button onClick={() => remove(r)} title="Remove shipment" className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg"><Trash2 size={13} /></button>
               </div>
-              <button onClick={() => startEdit(r)} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg"><Pencil size={13} /></button>
-              <button onClick={() => remove(r.id)} className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg"><Trash2 size={13} /></button>
+
+              {/* Shipping costs (payments to the agent for this shipment) */}
+              <div className="ml-11 space-y-1">
+                {(r.costs || []).map(c => costEdit?.costId === c.id ? <div key={c.id}>{costRow}</div> : (
+                  <div key={c.id} className="flex items-center gap-2 text-xs text-slate-600 group">
+                    <span className="w-24 text-slate-400">{fmtDate(c.cost_date)}</span>
+                    <span className="font-semibold text-slate-800 w-24 text-right">{pkr(c.amount)}</span>
+                    <span className="capitalize text-slate-400">{c.payment_method}</span>
+                    {c.notes && <span className="text-slate-400 truncate">· {c.notes}</span>}
+                    <span className="ml-auto flex gap-0.5 opacity-60 group-hover:opacity-100">
+                      <button onClick={() => startCost(r, c)} title="Edit cost" className="p-1 text-slate-400 hover:text-indigo-600 rounded"><Pencil size={11} /></button>
+                      <button onClick={() => removeCost(r, c)} title="Remove cost" className="p-1 text-slate-400 hover:text-rose-600 rounded"><Trash2 size={11} /></button>
+                    </span>
+                  </div>
+                ))}
+                {costEdit && costEdit.shipId === r.id && !costEdit.costId ? costRow : (
+                  <button onClick={() => startCost(r)} className="flex items-center gap-1 text-xs font-semibold text-sky-600 hover:text-sky-700">
+                    <Plus size={11} /> Add shipping cost
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div>

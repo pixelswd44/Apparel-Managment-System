@@ -739,6 +739,33 @@ const migrations = [
   // Client "final designs" — the approved artwork that actually syncs into a
   // project (tech_packs stays as the broader reference/spec pile).
   `ALTER TABLE clients ADD COLUMN final_designs TEXT DEFAULT '[]'`,
+  // Shipping agencies (profiles); a project shipment links to one
+  `CREATE TABLE IF NOT EXISTS shipping_agents (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    name         TEXT NOT NULL,
+    contact_name TEXT DEFAULT '',
+    phone        TEXT DEFAULT '',
+    email        TEXT DEFAULT '',
+    address      TEXT DEFAULT '',
+    city         TEXT DEFAULT '',
+    country      TEXT DEFAULT '',
+    notes        TEXT DEFAULT '',
+    created_at   TEXT DEFAULT (datetime('now')),
+    updated_at   TEXT DEFAULT (datetime('now'))
+  )`,
+  `ALTER TABLE project_shipping ADD COLUMN agent_id INTEGER REFERENCES shipping_agents(id) ON DELETE SET NULL`,
+  // Shipping costs are entered on a project's shipments (one or more payments each)
+  `CREATE TABLE IF NOT EXISTS shipping_costs (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    shipment_id    INTEGER NOT NULL REFERENCES project_shipping(id) ON DELETE CASCADE,
+    project_id     INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+    amount         REAL    NOT NULL DEFAULT 0,
+    cost_date      TEXT,
+    payment_method TEXT    DEFAULT 'cash',
+    notes          TEXT    DEFAULT '',
+    source         TEXT,
+    created_at     TEXT    DEFAULT (datetime('now'))
+  )`,
 ];
 
 for (const sql of migrations) {
@@ -1056,7 +1083,6 @@ export function migrateProjectCostsToExpenses() {
   db.transaction(() => {
     const FABRIC = category('Fabric Expanses', '#6366f1');
     const PROD   = category('Production',      '#8b5cf6');
-    const SHIP   = category('Shipping',        '#0ea5e9');
     const EXTRA  = category('Project Extras',  '#f97316');
     const projectIds = new Set(db.prepare('SELECT id FROM projects').all().map(r => r.id));
     const seen = db.prepare('SELECT 1 FROM expenses WHERE source = ?');
@@ -1068,6 +1094,15 @@ export function migrateProjectCostsToExpenses() {
       if (!(amount > 0) || seen.get(source)) return;
       ins.run(String(title || 'Project cost').slice(0, 200), cat, amount, date, notes, payMethod,
               projectIds.has(project) ? project : null, paidTo || '', source);
+      moved++; total += amount;
+    };
+    // Shipping payments land on their shipment (project Shipping tab), not in Expenses
+    const seenShip = db.prepare('SELECT 1 FROM shipping_costs WHERE source = ?');
+    const insShip  = db.prepare(`INSERT INTO shipping_costs (shipment_id, project_id, amount, cost_date, payment_method, notes, source)
+                                 VALUES (?, ?, ?, ?, ?, ?, ?)`);
+    const addShip = ({ shipment, project, amount, date, notes = '', payMethod = 'cash', source }) => {
+      if (!(amount > 0) || !shipment || seenShip.get(source)) return;
+      insShip.run(shipment, projectIds.has(project) ? project : null, amount, date, payMethod, notes, source);
       moved++; total += amount;
     };
 
@@ -1105,9 +1140,8 @@ export function migrateProjectCostsToExpenses() {
       const project = x.project_id || x.line_project || x.ship_project;
       const notes = [x.reference, x.notes].filter(s => s && String(s).trim()).join(' · ');
       if (x.shipping_id) {
-        const agent = x.ship_vendor || x.carrier || 'Shipping agent';
-        add({ project, cat: SHIP, title: `Shipping — ${agent}`, paidTo: agent, amount: num(x.amount), date: day(x.paid_at),
-          payMethod: method(x.method), source: `pvp${x.id}`, notes: [x.tracking_number && `Tracking ${x.tracking_number}`, notes].filter(Boolean).join(' · ') });
+        addShip({ shipment: x.shipping_id, project: x.ship_project || project, amount: num(x.amount), date: day(x.paid_at),
+          payMethod: method(x.method), source: `pvp${x.id}`, notes });
       } else if (x.vendor_name) {
         add({ project, cat: PROD, title: x.service_description ? `${x.vendor_name} — ${x.service_description}` : x.vendor_name,
           paidTo: x.vendor_name, amount: num(x.amount), date: day(x.paid_at), payMethod: method(x.method), source: `pvp${x.id}`, notes });
@@ -1128,18 +1162,97 @@ export function migrateProjectCostsToExpenses() {
       SELECT ps.*, v.name AS vendor_name,
              ps.paid_amount - COALESCE((SELECT SUM(amount) FROM project_vendor_payments WHERE shipping_id = ps.id), 0) AS unrecorded
       FROM project_shipping ps LEFT JOIN vendors v ON v.id = ps.vendor_id`).all()) {
-      const agent = s.vendor_name || s.carrier || 'Shipping agent';
-      add({ project: s.project_id, cat: SHIP, title: `Shipping — ${agent}`, paidTo: agent, amount: num(s.unrecorded),
-        date: day(s.shipping_date) || day(s.created_at), source: `ps${s.id}`, notes: s.tracking_number ? `Tracking ${s.tracking_number}` : '' });
+      addShip({ shipment: s.id, project: s.project_id, amount: num(s.unrecorded),
+        date: day(s.shipping_date) || day(s.created_at), source: `ps${s.id}` });
     }
 
     db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('project_costs_in_expenses', ?)")
       .run(JSON.stringify({ at: new Date().toISOString(), expenses: moved, total }));
   })();
-  console.log(`[DB] moved ${moved} project cost record(s) (₨${Math.round(total).toLocaleString()}) into Expenses`);
+  console.log(`[DB] moved ${moved} project cost record(s) (₨${Math.round(total).toLocaleString()}) into Expenses / shipping costs`);
   return moved;
 }
 try { migrateProjectCostsToExpenses(); } catch (e) { console.error('[DB] project costs → expenses:', e.message); }
+
+// The first version of the conversion put old shipping payments into Expenses.
+// Shipping costs now live on the shipments themselves: move each of those
+// expenses onto the shipment it paid for (same amount, date and method).
+// Runs once (settings flag); totals are unchanged.
+export function moveShippingExpensesToShipments() {
+  if (db.prepare("SELECT value FROM settings WHERE key = 'shipping_costs_from_expenses'").get()) return 0;
+  let moved = 0, total = 0;
+  db.transaction(() => {
+    const shipOfPayment = db.prepare('SELECT shipping_id FROM project_vendor_payments WHERE id = ?');
+    const shipment      = db.prepare('SELECT id, project_id FROM project_shipping WHERE id = ?');
+    const ins = db.prepare(`INSERT INTO shipping_costs (shipment_id, project_id, amount, cost_date, payment_method, notes, source)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)`);
+    const del = db.prepare('DELETE FROM expenses WHERE id = ?');
+    for (const e of db.prepare("SELECT * FROM expenses WHERE source LIKE 'pvp%' OR source LIKE 'ps%'").all()) {
+      const m = /^(pvp|ps)(\d+)$/.exec(e.source || '');
+      if (!m) continue;
+      const shipId = m[1] === 'ps' ? +m[2] : shipOfPayment.get(+m[2])?.shipping_id;
+      const ship = shipId ? shipment.get(shipId) : null;
+      if (!ship) continue; // a vendor (non-shipping) payment — stays an expense
+      const notes = String(e.notes || '').replace(/^Tracking [^·]*(· )?/, '').trim();
+      ins.run(ship.id, ship.project_id, e.amount, e.expense_date, e.payment_method || 'cash', notes, e.source);
+      del.run(e.id);
+      moved++; total += parseFloat(e.amount) || 0;
+    }
+    // The first conversion created a "Shipping" expense category for these;
+    // shipping isn't entered as an expense any more, so drop it if now empty.
+    const cat = db.prepare("SELECT id FROM expense_categories WHERE LOWER(TRIM(name)) = 'shipping'").get();
+    if (cat && !db.prepare('SELECT 1 FROM expenses WHERE expense_category_id = ?').get(cat.id)) {
+      db.prepare('DELETE FROM expense_categories WHERE id = ?').run(cat.id);
+    }
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('shipping_costs_from_expenses', ?)")
+      .run(JSON.stringify({ at: new Date().toISOString(), moved, total }));
+  })();
+  if (moved) console.log(`[DB] moved ${moved} shipping payment(s) (₨${Math.round(total).toLocaleString()}) from Expenses onto their shipments`);
+  return moved;
+}
+try { moveShippingExpensesToShipments(); } catch (e) { console.error('[DB] shipping expenses → shipments:', e.message); }
+
+// ── Shipping agents: build the list once from the agents already used ──────
+// Creates a profile for every agent name on existing shipments (copying contact
+// details from the old freight-vendor record when there is one) and links those
+// shipments to it. Runs once (settings flag); also after restoring an older backup.
+export function seedShippingAgents() {
+  if (db.prepare("SELECT value FROM settings WHERE key = 'shipping_agents_seeded'").get()) return 0;
+  let created = 0;
+  db.transaction(() => {
+    const findAgent = db.prepare('SELECT id FROM shipping_agents WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))');
+    const insAgent  = db.prepare(`INSERT INTO shipping_agents (name, contact_name, phone, email, address, city, country)
+                                  VALUES (?, ?, ?, ?, ?, ?, ?)`);
+    let vendorById = new Map();
+    try {
+      vendorById = new Map(db.prepare("SELECT * FROM vendors").all().map(v => [v.id, v]));
+    } catch { /* vendors table not present */ }
+
+    const used = db.prepare(`
+      SELECT DISTINCT TRIM(carrier) AS name, vendor_id FROM project_shipping
+      WHERE TRIM(COALESCE(carrier, '')) != ''
+    `).all();
+    const freight = [...vendorById.values()].filter(v => v.type === 'freight' || v.type === 'shipping')
+      .map(v => ({ name: (v.name || '').trim(), vendor_id: v.id }));
+
+    for (const { name, vendor_id } of [...used, ...freight]) {
+      if (!name || findAgent.get(name)) continue;
+      const v = vendorById.get(vendor_id) || [...vendorById.values()].find(x => (x.name || '').trim().toLowerCase() === name.toLowerCase()) || {};
+      insAgent.run(name, v.contact_name || '', v.phone || '', v.email || '', v.address || '', v.city || '', v.country || '');
+      created++;
+    }
+    // Link existing shipments to their agent by name
+    db.prepare(`
+      UPDATE project_shipping SET agent_id = (
+        SELECT sa.id FROM shipping_agents sa WHERE LOWER(TRIM(sa.name)) = LOWER(TRIM(project_shipping.carrier))
+      ) WHERE agent_id IS NULL AND TRIM(COALESCE(carrier, '')) != ''
+    `).run();
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('shipping_agents_seeded', ?)").run(new Date().toISOString());
+  })();
+  if (created) console.log(`[DB] created ${created} shipping agent profile(s) from existing shipments`);
+  return created;
+}
+try { seedShippingAgents(); } catch (e) { console.error('[DB] shipping agents seed:', e.message); }
 
 // The Inventory and Loans modules were removed. Drop their tables — but only
 // after writing a JSON copy of every row next to the database file, so the data

@@ -30,6 +30,7 @@ import incomeRouter from './routes/income.js';
 import financialsRouter from './routes/financials.js';
 import documentTemplatesRouter from './routes/document-templates.js';
 import backupRouter from './routes/backup.js';
+import shippingAgentsRouter from './routes/shipping-agents.js';
 
 dotenv.config();
 
@@ -77,6 +78,7 @@ app.use('/api/income',             incomeRouter);
 app.use('/api/financials',         financialsRouter);
 app.use('/api/document-templates', documentTemplatesRouter);
 app.use('/api/backup',             backupRouter);
+app.use('/api/shipping-agents',    shippingAgentsRouter);
 
 // Unknown API routes (e.g. the removed /api/inventory and /api/loans) get a JSON
 // 404 instead of falling through to the React app's index.html below.

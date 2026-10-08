@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, FileText, Receipt,
-  TrendingUp, Users, Layers, Settings, Box, AlertTriangle, Flame,
+  TrendingUp, Users, Layers, Settings, Box, AlertTriangle, Flame, Truck,
   UserCheck, Wallet, LayoutTemplate, LogOut, ChevronDown, KeyRound, Eye, EyeOff, Check, X, Menu, BookMarked,
 } from 'lucide-react';
 import { useDirty } from '../../lib/dirtyContext';
@@ -110,6 +110,7 @@ const ALL_NAV = [
   { to: '/products',   icon: Box,             label: 'Products'   },
   { to: '/projects',   icon: Flame,           label: 'Projects'   },
   { to: '/expenses',   icon: Wallet,          label: 'Expenses'   },
+  { to: '/shipping-agents', icon: Truck,      label: 'Shipping Agents' },
   { to: '/payroll',    icon: UserCheck,       label: 'Employees'  },
   { to: '/templates',  icon: LayoutTemplate,  label: 'Templates'  },
   { to: '/settings',   icon: Settings,        label: 'Settings'   },

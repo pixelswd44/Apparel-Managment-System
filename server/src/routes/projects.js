@@ -5,7 +5,8 @@ const router = Router();
 
 // A project is an order: its invoice (what the client pays), the products and
 // sizes to make, where it shipped, and the expenses charged to it on the
-// Expenses screen. Cost = those expenses; profit = received − cost.
+// Expenses screen, plus the shipping costs entered on its shipments.
+// Cost = expenses + shipping costs; profit = received − cost.
 
 const PROJECT_WITH_CLIENT = `
   SELECT p.*,
@@ -40,9 +41,16 @@ function enrichProject(project) {
   ).all(project.id).map(parseProduct);
 
   const shipping = db.prepare(`
-    SELECT id, project_id, carrier, tracking_number, shipping_date, notes, created_at
-    FROM project_shipping WHERE project_id = ? ORDER BY shipping_date DESC, id DESC
+    SELECT ps.id, ps.project_id, ps.agent_id, COALESCE(sa.name, ps.carrier) as carrier,
+           ps.tracking_number, ps.shipping_date, ps.notes, ps.created_at, sa.phone as agent_phone
+    FROM project_shipping ps LEFT JOIN shipping_agents sa ON sa.id = ps.agent_id
+    WHERE ps.project_id = ? ORDER BY ps.shipping_date DESC, ps.id DESC
   `).all(project.id);
+  const costsOf = db.prepare('SELECT * FROM shipping_costs WHERE shipment_id = ? ORDER BY cost_date ASC, id ASC');
+  for (const s of shipping) {
+    s.costs = costsOf.all(s.id);
+    s.cost_total = s.costs.reduce((t, c) => t + (parseFloat(c.amount) || 0), 0);
+  }
 
   const expenses = db.prepare(`
     SELECT e.*, ec.name as category_name, ec.color as category_color
@@ -93,7 +101,8 @@ router.get('/', (req, res) => {
         i.total as invoice_total, i.currency as invoice_currency,
         (SELECT COUNT(*) FROM project_products WHERE project_id = p.id) as product_count,
         (SELECT COUNT(*) FROM expenses WHERE project_id = p.id) as expense_count,
-        COALESCE((SELECT SUM(amount) FROM expenses WHERE project_id = p.id), 0) as fin_total_expense
+        COALESCE((SELECT SUM(amount) FROM expenses WHERE project_id = p.id), 0)
+          + COALESCE((SELECT SUM(amount) FROM shipping_costs WHERE project_id = p.id), 0) as fin_total_expense
       FROM projects p
       LEFT JOIN clients  c ON p.client_id  = c.id
       LEFT JOIN invoices i ON p.invoice_id = i.id
@@ -246,14 +255,23 @@ router.put('/:id/images', (req, res) => {
 });
 
 // ── DELETE ────────────────────────────────────────────────────────────────────
-// The project's expenses are real money already spent, so they are kept and
-// become ordinary business expenses rather than being deleted with it.
+// The project's expenses and shipping costs are real money already spent, so
+// they are kept as ordinary business expenses rather than deleted with it.
 router.delete('/:id', (req, res) => {
   try {
     const row = db.prepare('SELECT id FROM projects WHERE id = ?').get(req.params.id);
     if (!row) return res.status(404).json({ error: 'Not found' });
     db.transaction(() => {
       db.prepare('UPDATE expenses SET project_id = NULL WHERE project_id = ?').run(row.id);
+      const title = db.prepare('SELECT title FROM projects WHERE id = ?').get(row.id)?.title || 'project';
+      for (const c of db.prepare(`SELECT sc.*, COALESCE(sa.name, ps.carrier, '') as agent FROM shipping_costs sc
+          LEFT JOIN project_shipping ps ON ps.id = sc.shipment_id LEFT JOIN shipping_agents sa ON sa.id = ps.agent_id
+          WHERE sc.project_id = ?`).all(row.id)) {
+        db.prepare(`INSERT INTO expenses (title, category, amount, paid_by, paid_to, expense_date, notes, payment_method)
+                    VALUES (?, '', ?, '', ?, ?, ?, ?)`)
+          .run(`Shipping — ${title} (project deleted)`, c.amount, c.agent, c.cost_date, c.notes || '', c.payment_method || 'cash');
+      }
+      db.prepare('DELETE FROM shipping_costs WHERE project_id = ?').run(row.id);
       db.prepare('DELETE FROM project_products WHERE project_id = ?').run(row.id);
       db.prepare('DELETE FROM project_shipping WHERE project_id = ?').run(row.id);
       db.prepare('DELETE FROM projects WHERE id = ?').run(row.id);
@@ -315,9 +333,14 @@ router.delete('/:id/products/:ppId', (req, res) => {
 
 // ── Project Shipping (shipping agent + tracking number; cost goes in Expenses) ─
 
+// agent_id picks a saved shipping agent; its name is also stored on the shipment
+// (carrier) so history still reads correctly if the agent is deleted later.
 function shipBody(body) {
+  const agentId = parseInt(body.agent_id) || null;
+  const agent = agentId ? db.prepare('SELECT id, name FROM shipping_agents WHERE id = ?').get(agentId) : null;
   return {
-    carrier:         (body.carrier || '').trim(),
+    agent_id:        agent ? agent.id : null,
+    carrier:         agent ? agent.name : (body.carrier || '').trim(),
     tracking_number: (body.tracking_number || '').trim(),
     shipping_date:   body.shipping_date || '',
     notes:           body.notes || '',
@@ -330,11 +353,16 @@ router.post('/:id/shipping', (req, res) => {
     if (!project) return res.status(404).json({ error: 'Project not found' });
     const b = shipBody(req.body);
     if (!b.carrier) return res.status(400).json({ error: 'Shipping agent is required.' });
+    const cost = costBody(req.body.cost || {}, b.shipping_date);
     const result = db.prepare(`
-      INSERT INTO project_shipping (project_id, carrier, tracking_number, shipping_date, notes, amount, paid, paid_amount)
-      VALUES (?, ?, ?, ?, ?, 0, 0, 0)
-    `).run(project.id, b.carrier, b.tracking_number, b.shipping_date, b.notes);
-    res.status(201).json(db.prepare('SELECT id, project_id, carrier, tracking_number, shipping_date, notes FROM project_shipping WHERE id=?').get(result.lastInsertRowid));
+      INSERT INTO project_shipping (project_id, agent_id, carrier, tracking_number, shipping_date, notes, amount, paid, paid_amount)
+      VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0)
+    `).run(project.id, b.agent_id, b.carrier, b.tracking_number, b.shipping_date, b.notes);
+    if (cost.amount > 0) {
+      db.prepare(`INSERT INTO shipping_costs (shipment_id, project_id, amount, cost_date, payment_method, notes) VALUES (?, ?, ?, ?, ?, ?)`)
+        .run(result.lastInsertRowid, project.id, cost.amount, cost.cost_date, cost.payment_method, cost.notes);
+    }
+    res.status(201).json(db.prepare('SELECT id, project_id, agent_id, carrier, tracking_number, shipping_date, notes FROM project_shipping WHERE id=?').get(result.lastInsertRowid));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -342,16 +370,59 @@ router.put('/:id/shipping/:shipId', (req, res) => {
   try {
     const b = shipBody(req.body);
     if (!b.carrier) return res.status(400).json({ error: 'Shipping agent is required.' });
-    const r = db.prepare('UPDATE project_shipping SET carrier=?, tracking_number=?, shipping_date=?, notes=? WHERE id=? AND project_id=?')
-      .run(b.carrier, b.tracking_number, b.shipping_date, b.notes, req.params.shipId, req.params.id);
+    const r = db.prepare('UPDATE project_shipping SET agent_id=?, carrier=?, tracking_number=?, shipping_date=?, notes=? WHERE id=? AND project_id=?')
+      .run(b.agent_id, b.carrier, b.tracking_number, b.shipping_date, b.notes, req.params.shipId, req.params.id);
     if (!r.changes) return res.status(404).json({ error: 'Not found' });
-    res.json(db.prepare('SELECT id, project_id, carrier, tracking_number, shipping_date, notes FROM project_shipping WHERE id=?').get(req.params.shipId));
+    res.json(db.prepare('SELECT id, project_id, agent_id, carrier, tracking_number, shipping_date, notes FROM project_shipping WHERE id=?').get(req.params.shipId));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 router.delete('/:id/shipping/:shipId', (req, res) => {
   try {
+    db.prepare('DELETE FROM shipping_costs WHERE shipment_id=? AND project_id=?').run(req.params.shipId, req.params.id);
     db.prepare('DELETE FROM project_shipping WHERE id=? AND project_id=?').run(req.params.shipId, req.params.id);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── Shipping costs (payments to the shipping agent for one shipment) ─────────
+
+function costBody(body, fallbackDate) {
+  const methods = ['cash', 'bank transfer', 'cheque', 'online', 'card'];
+  return {
+    amount:         parseFloat(body.amount) || 0,
+    cost_date:      body.cost_date || fallbackDate || new Date().toISOString().slice(0, 10),
+    payment_method: methods.includes(body.payment_method) ? body.payment_method : 'cash',
+    notes:          String(body.notes || '').trim(),
+  };
+}
+
+router.post('/:id/shipping/:shipId/costs', (req, res) => {
+  try {
+    const ship = db.prepare('SELECT id, project_id, shipping_date FROM project_shipping WHERE id=? AND project_id=?').get(req.params.shipId, req.params.id);
+    if (!ship) return res.status(404).json({ error: 'Shipment not found' });
+    const c = costBody(req.body, ship.shipping_date);
+    if (!(c.amount > 0)) return res.status(400).json({ error: 'Enter the shipping cost.' });
+    const r = db.prepare('INSERT INTO shipping_costs (shipment_id, project_id, amount, cost_date, payment_method, notes) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(ship.id, ship.project_id, c.amount, c.cost_date, c.payment_method, c.notes);
+    res.status(201).json(db.prepare('SELECT * FROM shipping_costs WHERE id = ?').get(r.lastInsertRowid));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.put('/:id/shipping/:shipId/costs/:costId', (req, res) => {
+  try {
+    const c = costBody(req.body);
+    if (!(c.amount > 0)) return res.status(400).json({ error: 'Enter the shipping cost.' });
+    const r = db.prepare('UPDATE shipping_costs SET amount=?, cost_date=?, payment_method=?, notes=? WHERE id=? AND shipment_id=? AND project_id=?')
+      .run(c.amount, c.cost_date, c.payment_method, c.notes, req.params.costId, req.params.shipId, req.params.id);
+    if (!r.changes) return res.status(404).json({ error: 'Not found' });
+    res.json(db.prepare('SELECT * FROM shipping_costs WHERE id = ?').get(req.params.costId));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/:id/shipping/:shipId/costs/:costId', (req, res) => {
+  try {
+    db.prepare('DELETE FROM shipping_costs WHERE id=? AND shipment_id=? AND project_id=?').run(req.params.costId, req.params.shipId, req.params.id);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

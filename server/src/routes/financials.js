@@ -61,7 +61,11 @@ router.get('/summary', (req, res) => {
     ? db.prepare(`SELECT COALESCE(SUM(amount),0) as total FROM expenses WHERE ${projectSql} AND expense_date >= ? AND expense_date <= ?`).get(from, to)
     : db.prepare(`SELECT COALESCE(SUM(amount),0) as total FROM expenses WHERE ${projectSql}`).get()).total;
   const businessExpenses  = expenseSum('project_id IS NULL');
-  const totalProjectsPaid = expenseSum('project_id IS NOT NULL');
+  // Shipping costs are entered on project shipments, not as expenses
+  const shippingCosts = (hasRange
+    ? db.prepare(`SELECT COALESCE(SUM(amount),0) as total FROM shipping_costs WHERE cost_date >= ? AND cost_date <= ?`).get(from, to)
+    : db.prepare(`SELECT COALESCE(SUM(amount),0) as total FROM shipping_costs`).get()).total;
+  const totalProjectsPaid = expenseSum('project_id IS NOT NULL') + shippingCosts;
 
   // Salaries paid — stored in PKR
   const salariesPaid = hasRange
@@ -70,7 +74,8 @@ router.get('/summary', (req, res) => {
 
   // Project cost is what has been spent on projects (all time — a project's cost
   // isn't "in" one month), used by the lifetime Projected P&L below.
-  const totalProjectsExpense = db.prepare(`SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE project_id IS NOT NULL`).get().t;
+  const totalProjectsExpense = db.prepare(`SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE project_id IS NOT NULL`).get().t
+    + db.prepare(`SELECT COALESCE(SUM(amount),0) as t FROM shipping_costs`).get().t;
 
   const totalExpenses = totalProjectsPaid + businessExpenses + salariesPaid;
 
@@ -149,6 +154,8 @@ router.get('/monthly', (req, res) => {
     ).get(month).total;
     const projectCosts = db.prepare(
       `SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE project_id IS NOT NULL AND strftime('%Y-%m', expense_date) = ?`
+    ).get(month).total + db.prepare(
+      `SELECT COALESCE(SUM(amount), 0) as total FROM shipping_costs WHERE strftime('%Y-%m', cost_date) = ?`
     ).get(month).total;
 
     const salaries = db.prepare(
@@ -233,7 +240,20 @@ router.get('/transactions', (req, res) => {
     ORDER BY pr.paid_at DESC LIMIT ?
   `).all(...salArgs).map(s => ({ ...s, amount_pkr: s.amount, amount_orig: s.amount }));
 
-  const all = [...payments, ...expenses, ...salaries]
+  const shipWhere = hasRange ? `AND sc.cost_date >= ? AND sc.cost_date <= ?` : '';
+  const shipping = db.prepare(`
+    SELECT sc.id, 'shipping' as type, 'Shipping' as category,
+           COALESCE(sa.name, ps.carrier, 'Shipping') as reference, COALESCE(sa.name, ps.carrier, '') as party,
+           sc.amount, 'PKR' as currency, sc.cost_date as date, p.title as project_title
+    FROM shipping_costs sc
+    LEFT JOIN project_shipping ps ON ps.id = sc.shipment_id
+    LEFT JOIN shipping_agents  sa ON sa.id = ps.agent_id
+    LEFT JOIN projects         p  ON p.id  = sc.project_id
+    WHERE 1=1 ${shipWhere}
+    ORDER BY sc.cost_date DESC LIMIT ?
+  `).all(...(hasRange ? [from, to, limit] : [limit])).map(s => ({ ...s, amount_pkr: s.amount, amount_orig: s.amount }));
+
+  const all = [...payments, ...expenses, ...shipping, ...salaries]
     .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
     .slice(0, limit);
 
@@ -311,6 +331,24 @@ router.get('/ledger', (req, res) => {
     entries.push({ date: e.date, section: isProject ? 'Project Costs' : 'Business Expenses', category: e.category,
       description: `${e.description || e.category}${isProject && e.project_title ? ` (${e.project_title})` : ''}`,
       party: e.party || '', credit: 0, debit: parseFloat(e.amount) || 0, currency: 'PKR', amount_orig: parseFloat(e.amount) || 0 });
+  }
+
+  // Shipping costs — entered on project shipments
+  const shippingRows = db.prepare(`
+    SELECT sc.cost_date as date, sc.amount, sc.notes, p.title as project_title,
+           COALESCE(sa.name, ps.carrier, '') as party, ps.tracking_number
+    FROM shipping_costs sc
+    LEFT JOIN project_shipping ps ON ps.id = sc.shipment_id
+    LEFT JOIN shipping_agents  sa ON sa.id = ps.agent_id
+    LEFT JOIN projects         p  ON p.id  = sc.project_id
+    WHERE 1=1 ${dateFilter('sc.cost_date')}
+    ORDER BY sc.cost_date ASC
+  `).all();
+  for (const s of shippingRows) {
+    entries.push({ date: s.date, section: 'Project Costs', category: 'Shipping',
+      description: `Shipping${s.party ? ` — ${s.party}` : ''}${s.project_title ? ` (${s.project_title})` : ''}`,
+      party: s.party, credit: 0, debit: parseFloat(s.amount) || 0, currency: 'PKR', amount_orig: parseFloat(s.amount) || 0,
+      reference: s.tracking_number || '' });
   }
 
   // Salaries

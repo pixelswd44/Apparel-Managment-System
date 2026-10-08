@@ -22,10 +22,10 @@ const RECURRING_PERIODS = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly'];
 // Quick-pick presets — label shown on chip, category is matched to existing categories
 const EXPENSE_PRESETS = [
   // Project work — pick the project above so the cost lands on it
+  // (shipping costs are entered on the project's Shipping tab instead)
   { label: 'Fabric',           icon: '🧵', category: 'Fabric Expanses' },
   { label: 'Stitching',        icon: '🪡', category: 'Production' },
   { label: 'Sublimation / Printing', icon: '🎨', category: 'Production' },
-  { label: 'Shipping',         icon: '🚚', category: 'Shipping' },
   { label: 'Petty Cash',       icon: '💵', category: 'Petty Cash' },
   { label: 'Electricity Bill', icon: '⚡', category: 'Electricity' },
   { label: 'Rent',             icon: '🏢', category: 'Rent' },
