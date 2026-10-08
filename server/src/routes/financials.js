@@ -30,34 +30,11 @@ function paymentToPKR(payment, rates) {
   return toPKR(payment.amount, payment.currency, rates);
 }
 
-// Sum `field` across items in a JSON array column, optionally keeping only
-// items whose own `date` (falling back to `fallback`) is within [from, to].
-function sumJsonItems(rows, jsonKey, field, { from, to, fallbackKey } = {}) {
-  let total = 0;
-  for (const row of rows) {
-    let items;
-    try { items = JSON.parse(row[jsonKey] || '[]'); } catch { continue; }
-    if (!Array.isArray(items)) continue;
-    const fb = fallbackKey ? String(row[fallbackKey] || '').replace(' ', 'T').split('T')[0] : null;
-    for (const it of items) {
-      const v = parseFloat(it[field]) || 0;
-      if (!v) continue;
-      if (from && to) {
-        const d = (it.date || fb || '').slice(0, 10);
-        if (!d || d < from || d > to) continue;
-      }
-      total += v;
-    }
-  }
-  return total;
-}
-
 // ── Summary ────────────────────────────────────────────────────────────────
 router.get('/summary', (req, res) => {
   const { from, to } = req.query;
   const rates    = getRates();
   const hasRange = from && to;
-  const range    = hasRange ? { from, to } : {};
 
   // Revenue: payments received — filtered by date range when provided
   const rawPayments = hasRange
@@ -78,95 +55,22 @@ router.get('/summary', (req, res) => {
   `).all();
   const outstanding = rawOutstanding.reduce((s, i) => s + toPKR(i.balance, i.currency, rates), 0);
 
-  // Business expenses — stored in PKR
-  const businessExpenses = hasRange
-    ? db.prepare(`SELECT COALESCE(SUM(amount),0) as total FROM expenses WHERE expense_date >= ? AND expense_date <= ?`).get(from, to).total
-    : db.prepare(`SELECT COALESCE(SUM(amount),0) as total FROM expenses`).get().total;
+  // Spending is entered once, on the Expenses screen. An expense charged to a
+  // project is a project cost; everything else is a business expense. All PKR.
+  const expenseSum = (projectSql) => (hasRange
+    ? db.prepare(`SELECT COALESCE(SUM(amount),0) as total FROM expenses WHERE ${projectSql} AND expense_date >= ? AND expense_date <= ?`).get(from, to)
+    : db.prepare(`SELECT COALESCE(SUM(amount),0) as total FROM expenses WHERE ${projectSql}`).get()).total;
+  const businessExpenses  = expenseSum('project_id IS NULL');
+  const totalProjectsPaid = expenseSum('project_id IS NOT NULL');
 
   // Salaries paid — stored in PKR
   const salariesPaid = hasRange
     ? db.prepare(`SELECT COALESCE(SUM(net_pay),0) as total FROM payroll_records WHERE status='paid' AND date(paid_at) >= ? AND date(paid_at) <= ?`).get(from, to).total
     : db.prepare(`SELECT COALESCE(SUM(net_pay),0) as total FROM payroll_records WHERE status='paid'`).get().total;
 
-  // ── Total Projects Paid (cash actually paid out on projects in the period) ──
-  //   product fabrics paid + process costs paid + external costs paid
-  //   + vendor payments + worker payments + shipping paid + extra costs
-  // Every component below respects the selected date range so it stays
-  // consistent with the period-filtered revenue / expenses above.
-  const allProducts = db.prepare(`
-    SELECT pp.fabrics, pp.costs, pp.external_costs, proj.created_at
-    FROM project_products pp LEFT JOIN projects proj ON proj.id = pp.project_id
-  `).all();
-  const productsPaid =
-      sumJsonItems(allProducts, 'fabrics',        'amount_paid', { ...range, fallbackKey: 'created_at' })
-    + sumJsonItems(allProducts, 'costs',          'amount_paid', { ...range, fallbackKey: 'created_at' })
-    + sumJsonItems(allProducts, 'external_costs', 'amount_paid', { ...range, fallbackKey: 'created_at' });
-
-  // Project-level bulk fabrics (projects.fabrics) — paid respects the range; the
-  // projected cost (rate×qty) stays all-time for the projection below.
-  const allProjFabrics = db.prepare(`SELECT fabrics, created_at FROM projects WHERE fabrics IS NOT NULL`).all();
-  const projFabricPaid = sumJsonItems(allProjFabrics, 'fabrics', 'amount_paid', { ...range, fallbackKey: 'created_at' });
-  let projFabricCost = 0;
-  for (const p of allProjFabrics) {
-    try { projFabricCost += JSON.parse(p.fabrics || '[]').reduce((s, f) => s + (parseFloat(f.qty)||0) * (parseFloat(f.rate)||0), 0); }
-    catch {}
-  }
-
-  const vendorPayments = hasRange
-    ? db.prepare(`SELECT COALESCE(SUM(amount),0) as total FROM project_vendor_payments WHERE date(paid_at) >= ? AND date(paid_at) <= ?`).get(from, to).total
-    : db.prepare(`SELECT COALESCE(SUM(amount),0) as total FROM project_vendor_payments`).get().total;
-  const workerPayments = hasRange
-    ? db.prepare(`SELECT COALESCE(SUM(paid_amount),0) as total FROM project_workers WHERE paid_amount > 0 AND date(created_at) >= ? AND date(created_at) <= ?`).get(from, to).total
-    : db.prepare(`SELECT COALESCE(SUM(paid_amount),0) as total FROM project_workers WHERE paid_amount > 0`).get().total;
-  // Only the portion of paid_amount NOT already recorded as a project_vendor_payments row —
-  // those are already counted in vendorPayments above and would otherwise be double-counted.
-  const shipRangeSql = hasRange ? `AND date(ps.shipping_date) >= ? AND date(ps.shipping_date) <= ?` : '';
-  const shippingPaid = db.prepare(`
-    SELECT COALESCE(SUM(MAX(0, ps.paid_amount - COALESCE((SELECT SUM(amount) FROM project_vendor_payments WHERE shipping_id = ps.id), 0))), 0) as total
-    FROM project_shipping ps WHERE 1=1 ${shipRangeSql}
-  `).get(...(hasRange ? [from, to] : [])).total;
-
-  const allProjectsExtra = db.prepare(`SELECT extra_costs, updated_at as created_at FROM projects WHERE extra_costs IS NOT NULL`).all();
-  const extraCostsPaid = sumJsonItems(allProjectsExtra, 'extra_costs', 'amount', { ...range, fallbackKey: 'created_at' });
-  // All-time extra costs (for the projection)
-  const extraCostsAll = sumJsonItems(allProjectsExtra, 'extra_costs', 'amount', {});
-
-  const totalProjectsPaid = productsPaid + projFabricPaid + vendorPayments + workerPayments + shippingPaid + extraCostsPaid;
-
-  // ── Total Projects Expense (Billed/Projected — mirrors fin_total_expense in projects route) ──
-  // productCost: fabric rate×qty + process cost_per_piece×qty + external_costs total
-  const allProductsFull = db.prepare(`SELECT fabrics, costs, external_costs, total_quantity, fabric_per_piece, fabric_price_per_unit FROM project_products`).all();
-  const totalProductCost = allProductsFull.reduce((sum, pp) => {
-    try {
-      const fabrics  = JSON.parse(pp.fabrics        || '[]');
-      const costs    = JSON.parse(pp.costs          || '[]');
-      const extCosts = JSON.parse(pp.external_costs || '[]');
-      const qty      = parseFloat(pp.total_quantity) || 0;
-      const fabricCost = fabrics.length > 0
-        ? fabrics.reduce((s, f) => s + (parseFloat(f.qty)||0) * (parseFloat(f.rate)||0), 0)
-        : (parseFloat(pp.fabric_per_piece)||0) * (parseFloat(pp.fabric_price_per_unit)||0) * qty;
-      const procCost = costs.reduce((s, c) => s + (parseFloat(c.cost_per_piece)||0), 0) * qty;
-      const extCost  = extCosts.reduce((s, c) => s + (parseFloat(c.total)||0), 0);
-      return sum + fabricCost + procCost + extCost;
-    } catch { return sum; }
-  }, 0);
-
-  // vendorBilled: tasks total or invoice_amount fallback
-  const allVendorRows = db.prepare(`SELECT tasks, invoice_amount FROM project_vendors`).all();
-  const totalVendorBilled = allVendorRows.reduce((sum, pv) => {
-    try {
-      const tasks = JSON.parse(pv.tasks || '[]');
-      const tasksTotal = tasks.reduce((s, t) =>
-        s + (t.type === 'per_piece' ? (parseFloat(t.agreed)||0)*(parseFloat(t.qty)||0) : (parseFloat(t.agreed)||0)), 0);
-      return sum + (tasksTotal > 0 ? tasksTotal : Number(pv.invoice_amount || 0));
-    } catch { return sum; }
-  }, 0);
-
-  const totalWorkerAgreed  = db.prepare(`SELECT COALESCE(SUM(agreed_amount),0) as total FROM project_workers`).get().total;
-  const totalShippingBilled = db.prepare(`SELECT COALESCE(SUM(amount),0) as total FROM project_shipping`).get().total;
-
-  // totalProjectsExpense = full projected cost (what projects are expected to cost when all paid)
-  const totalProjectsExpense = totalProductCost + projFabricCost + totalVendorBilled + totalWorkerAgreed + totalShippingBilled + extraCostsAll;
+  // Project cost is what has been spent on projects (all time — a project's cost
+  // isn't "in" one month), used by the lifetime Projected P&L below.
+  const totalProjectsExpense = db.prepare(`SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE project_id IS NOT NULL`).get().t;
 
   const totalExpenses = totalProjectsPaid + businessExpenses + salariesPaid;
 
@@ -182,7 +86,7 @@ router.get('/summary', (req, res) => {
       + db.prepare(`SELECT COALESCE(SUM(amount),0) as t FROM other_income`).get().t
     : totalRevenue;
   const allTimeBiz = hasRange
-    ? db.prepare(`SELECT COALESCE(SUM(amount),0) as t FROM expenses`).get().t
+    ? db.prepare(`SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE project_id IS NULL`).get().t
     : businessExpenses;
   const allTimeSalaries = hasRange
     ? db.prepare(`SELECT COALESCE(SUM(net_pay),0) as t FROM payroll_records WHERE status='paid'`).get().t
@@ -225,39 +129,6 @@ router.get('/monthly', (req, res) => {
     }
   }
 
-  // ── Per-month project cost items from JSON columns ────────────────────────
-  // Bucketed by each item's OWN date (fallback: the project date), exactly like
-  // the Ledger — so the chart and the Ledger agree. Covers fabric, process and
-  // external cost items on products, project-level bulk fabrics, and extra costs.
-  const monthJsonCost = {}; // { 'YYYY-MM': amountPaidPKR }
-  const bump = (dateStr, fallback, amt) => {
-    if (!amt) return;
-    const d = String(dateStr || fallback || '').replace(' ', 'T').slice(0, 7);
-    if (!/^\d{4}-\d{2}$/.test(d)) return;
-    monthJsonCost[d] = (monthJsonCost[d] || 0) + amt;
-  };
-  const ppRows = db.prepare(`
-    SELECT pp.fabrics, pp.costs, pp.external_costs, proj.created_at
-    FROM project_products pp LEFT JOIN projects proj ON proj.id = pp.project_id
-  `).all();
-  for (const pp of ppRows) {
-    const fb = String(pp.created_at || '').replace(' ', 'T').slice(0, 10);
-    for (const key of ['fabrics', 'costs', 'external_costs']) {
-      let items; try { items = JSON.parse(pp[key] || '[]'); } catch { continue; }
-      if (Array.isArray(items)) for (const it of items) bump(it.date, fb, parseFloat(it.amount_paid) || 0);
-    }
-  }
-  for (const p of db.prepare(`SELECT fabrics, created_at FROM projects WHERE fabrics IS NOT NULL`).all()) {
-    const fb = String(p.created_at || '').replace(' ', 'T').slice(0, 10);
-    let items; try { items = JSON.parse(p.fabrics || '[]'); } catch { continue; }
-    if (Array.isArray(items)) for (const it of items) bump(it.date, fb, parseFloat(it.amount_paid) || 0);
-  }
-  for (const p of db.prepare(`SELECT extra_costs, updated_at, created_at FROM projects WHERE extra_costs IS NOT NULL`).all()) {
-    const fb = String(p.updated_at || p.created_at || '').replace(' ', 'T').slice(0, 10);
-    let items; try { items = JSON.parse(p.extra_costs || '[]'); } catch { continue; }
-    if (Array.isArray(items)) for (const it of items) bump(it.date, fb, parseFloat(it.amount) || 0);
-  }
-
   const result = months.map(month => {
     // Revenue: convert each payment to PKR
     const monthPayments = db.prepare(`
@@ -272,36 +143,20 @@ router.get('/monthly', (req, res) => {
     ).get(month).total;
     const revenue = invoiceRevenue + otherIncome;
 
-    // Expenses in PKR
+    // Spending in PKR — business expenses and project costs both live in expenses
     const expenses = db.prepare(
-      `SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE strftime('%Y-%m', expense_date) = ?`
+      `SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE project_id IS NULL AND strftime('%Y-%m', expense_date) = ?`
+    ).get(month).total;
+    const projectCosts = db.prepare(
+      `SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE project_id IS NOT NULL AND strftime('%Y-%m', expense_date) = ?`
     ).get(month).total;
 
     const salaries = db.prepare(
       `SELECT COALESCE(SUM(net_pay), 0) as total FROM payroll_records WHERE status='paid' AND strftime('%Y-%m', paid_at) = ?`
     ).get(month).total;
 
-    const vendorPay = db.prepare(
-      `SELECT COALESCE(SUM(amount), 0) as total FROM project_vendor_payments WHERE strftime('%Y-%m', paid_at) = ?`
-    ).get(month).total;
-
-    const workerPay = db.prepare(
-      `SELECT COALESCE(SUM(paid_amount), 0) as total FROM project_workers WHERE paid_amount > 0 AND strftime('%Y-%m', created_at) = ?`
-    ).get(month).total;
-
-    // Only the portion of paid_amount NOT already recorded as a project_vendor_payments row —
-    // those are already counted in vendorPay above and would otherwise be double-counted.
-    const shippingPay = db.prepare(
-      `SELECT COALESCE(SUM(MAX(0, ps.paid_amount - COALESCE((SELECT SUM(amount) FROM project_vendor_payments WHERE shipping_id = ps.id), 0))), 0) as total
-       FROM project_shipping ps WHERE ps.paid_amount > 0 AND strftime('%Y-%m', ps.shipping_date) = ?`
-    ).get(month).total;
-
-    // Fabric / process / external / extra cost payments — bucketed by each
-    // item's own date (see monthJsonCost above), matching the Ledger.
-    const materialsPay = monthJsonCost[month] || 0;
-
-    const totalOut = expenses + salaries + vendorPay + workerPay + shippingPay + materialsPay;
-    return { month, revenue, invoiceRevenue, otherIncome, expenses, salaries, vendorPay, workerPay, shippingPay, materialsPay, fabricPay: materialsPay, totalOut, net: revenue - totalOut };
+    const totalOut = expenses + projectCosts + salaries;
+    return { month, revenue, invoiceRevenue, otherIncome, expenses, projectCosts, salaries, totalOut, net: revenue - totalOut };
   });
 
   res.json(result);
@@ -336,11 +191,9 @@ router.get('/transactions', (req, res) => {
   // Build queries with proper parameterized date bounds
   const payArgs   = hasRange ? [from, to, limit] : [limit];
   const expArgs   = hasRange ? [from, to, limit] : [limit];
-  const vendArgs  = hasRange ? [from, to, limit] : [limit];
   const salArgs   = hasRange ? [from, to, limit] : [limit];
   const payWhere  = hasRange ? `AND date(p.paid_at) >= ? AND date(p.paid_at) <= ?`   : '';
   const expWhere  = hasRange ? `AND e.expense_date >= ? AND e.expense_date <= ?`      : '';
-  const vendWhere = hasRange ? `AND date(pvp.paid_at) >= ? AND date(pvp.paid_at) <= ?` : '';
   const salWhere  = hasRange ? `AND date(pr.paid_at) >= ? AND date(pr.paid_at) <= ?`  : '';
 
   const rawPay = db.prepare(`
@@ -359,31 +212,15 @@ router.get('/transactions', (req, res) => {
   const expenses = db.prepare(`
     SELECT e.id, 'expense' as type,
            COALESCE(ec.name, e.category, 'Expense') as category,
-           e.title as reference, e.paid_by as party,
+           e.title as reference, COALESCE(NULLIF(TRIM(e.paid_to),''), e.paid_by) as party,
            e.amount, 'PKR' as currency,
-           e.expense_date as date
+           e.expense_date as date, p.title as project_title
     FROM expenses e
     LEFT JOIN expense_categories ec ON ec.id = e.expense_category_id
+    LEFT JOIN projects p ON p.id = e.project_id
     WHERE 1=1 ${expWhere}
     ORDER BY e.expense_date DESC LIMIT ?
   `).all(...expArgs).map(e => ({ ...e, amount_pkr: e.amount, amount_orig: e.amount }));
-
-  const vendorPay = db.prepare(`
-    SELECT pvp.id, 'vendor' as type, 'Vendor Payment' as category,
-           COALESCE(v.name, vs.name, 'Vendor') as reference,
-           COALESCE(v.name, vs.name, 'Vendor') as party,
-           pvp.amount, 'PKR' as currency,
-           pvp.paid_at as date,
-           COALESCE(pvp.reference,'') as tx_ref,
-           COALESCE(pvp.method,'') as method
-    FROM project_vendor_payments pvp
-    LEFT JOIN project_vendors pv ON pv.id = pvp.project_vendor_id
-    LEFT JOIN vendors v ON v.id = pv.vendor_id
-    LEFT JOIN project_shipping ps ON ps.id = pvp.shipping_id
-    LEFT JOIN vendors vs ON vs.id = ps.vendor_id
-    WHERE 1=1 ${vendWhere}
-    ORDER BY pvp.paid_at DESC LIMIT ?
-  `).all(...vendArgs).map(p => ({ ...p, amount_pkr: p.amount, amount_orig: p.amount }));
 
   const salaries = db.prepare(`
     SELECT pr.id, 'salary' as type, 'Salary' as category,
@@ -396,39 +233,7 @@ router.get('/transactions', (req, res) => {
     ORDER BY pr.paid_at DESC LIMIT ?
   `).all(...salArgs).map(s => ({ ...s, amount_pkr: s.amount, amount_orig: s.amount }));
 
-  const workerWhere = hasRange ? `AND date(pw.created_at) >= ? AND date(pw.created_at) <= ?` : '';
-  const workerArgs  = hasRange ? [from, to, limit] : [limit];
-  const workerPay = db.prepare(`
-    SELECT pw.id, 'vendor' as type, 'Worker Payment' as category,
-           pw.worker_name as reference, pw.worker_name as party,
-           pw.paid_amount as amount, 'PKR' as currency,
-           pw.created_at as date
-    FROM project_workers pw
-    WHERE pw.paid_amount > 0 ${workerWhere}
-    ORDER BY pw.created_at DESC LIMIT ?
-  `).all(...workerArgs).map(p => ({ ...p, amount_pkr: p.amount, amount_orig: p.amount }));
-
-  const shippingWhere = hasRange ? `AND date(ps.shipping_date) >= ? AND date(ps.shipping_date) <= ?` : '';
-  const shippingArgs  = hasRange ? [from, to, limit] : [limit];
-  // Only the portion of paid_amount NOT already recorded as a project_vendor_payments
-  // row — those are emitted above via vendorPay and would otherwise be double-counted.
-  const shippingTx = db.prepare(`
-    SELECT ps.id, 'shipping' as type, 'Shipping' as category,
-           COALESCE(v.name, ps.carrier, 'Shipping') as reference,
-           COALESCE(v.name, ps.carrier, 'Shipping') as party,
-           (ps.paid_amount - COALESCE((SELECT SUM(amount) FROM project_vendor_payments WHERE shipping_id = ps.id), 0)) as amount,
-           'PKR' as currency,
-           ps.shipping_date as date,
-           ps.carrier, ps.tracking_number,
-           p.title as project_title
-    FROM project_shipping ps
-    LEFT JOIN projects p ON p.id = ps.project_id
-    LEFT JOIN vendors v ON v.id = ps.vendor_id
-    WHERE (ps.paid_amount - COALESCE((SELECT SUM(amount) FROM project_vendor_payments WHERE shipping_id = ps.id), 0)) > 0 ${shippingWhere}
-    ORDER BY ps.shipping_date DESC LIMIT ?
-  `).all(...shippingArgs).map(s => ({ ...s, amount_pkr: s.amount, amount_orig: s.amount }));
-
-  const all = [...payments, ...expenses, ...vendorPay, ...salaries, ...workerPay, ...shippingTx]
+  const all = [...payments, ...expenses, ...salaries]
     .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
     .slice(0, limit);
 
@@ -488,145 +293,24 @@ router.get('/ledger', (req, res) => {
   }
 
   // ── DEBITS (Expenses) ──────────────────────────────────────────────────────
-  // Vendor payments
-  const vendorPay = db.prepare(`
-    SELECT pvp.id, pvp.paid_at as date, pvp.amount,
-           COALESCE(v.name, vs.name, 'Vendor') as party,
-           COALESCE(pvp.reference,'') as ref,
-           proj.title as project_title
-    FROM project_vendor_payments pvp
-    LEFT JOIN project_vendors pv ON pv.id = pvp.project_vendor_id
-    LEFT JOIN vendors v  ON v.id  = pv.vendor_id
-    LEFT JOIN project_shipping ps ON ps.id = pvp.shipping_id
-    LEFT JOIN vendors vs ON vs.id = ps.vendor_id
-    LEFT JOIN projects proj ON proj.id = pvp.project_id
-    WHERE 1=1 ${dateFilter('pvp.paid_at')}
-    ORDER BY pvp.paid_at ASC
-  `).all();
-  for (const p of vendorPay) {
-    entries.push({ date: p.date, section: 'Project Costs', category: 'Vendor Payment',
-      description: p.project_title ? `Vendor – ${p.project_title}` : 'Vendor Payment',
-      party: p.party, credit: 0, debit: parseFloat(p.amount) || 0,
-      currency: 'PKR', amount_orig: parseFloat(p.amount) || 0, reference: p.ref });
-  }
-
-  // Worker payments
-  const workerPay = db.prepare(`
-    SELECT pw.id, pw.created_at as date, pw.paid_amount as amount,
-           pw.worker_name as party, proj.title as project_title
-    FROM project_workers pw
-    LEFT JOIN projects proj ON proj.id = pw.project_id
-    WHERE pw.paid_amount > 0 ${dateFilter('pw.created_at')}
-    ORDER BY pw.created_at ASC
-  `).all();
-  for (const p of workerPay) {
-    entries.push({ date: p.date, section: 'Project Costs', category: 'Worker Payment',
-      description: p.project_title ? `Worker – ${p.project_title}` : 'Worker Payment',
-      party: p.party || '', credit: 0, debit: parseFloat(p.amount) || 0,
-      currency: 'PKR', amount_orig: parseFloat(p.amount) || 0 });
-  }
-
-  // Shipping paid — only the portion of paid_amount NOT already recorded as a
-  // project_vendor_payments row (those are emitted above via vendorPay and
-  // would otherwise be double-counted here).
-  const shippingPay = db.prepare(`
-    SELECT ps.id, ps.shipping_date as date,
-           (ps.paid_amount - COALESCE((SELECT SUM(amount) FROM project_vendor_payments WHERE shipping_id = ps.id), 0)) as amount,
-           COALESCE(v.name, ps.carrier,'Shipping') as party,
-           proj.title as project_title, ps.tracking_number
-    FROM project_shipping ps
-    LEFT JOIN vendors v ON v.id = ps.vendor_id
-    LEFT JOIN projects proj ON proj.id = ps.project_id
-    WHERE (ps.paid_amount - COALESCE((SELECT SUM(amount) FROM project_vendor_payments WHERE shipping_id = ps.id), 0)) > 0 ${dateFilter('ps.shipping_date')}
-    ORDER BY ps.shipping_date ASC
-  `).all();
-  for (const p of shippingPay) {
-    entries.push({ date: p.date, section: 'Project Costs', category: 'Shipping',
-      description: p.project_title ? `Shipping – ${p.project_title}` : 'Shipping',
-      party: p.party, credit: 0, debit: parseFloat(p.amount) || 0,
-      currency: 'PKR', amount_orig: parseFloat(p.amount) || 0,
-      reference: p.tracking_number || '' });
-  }
-
-  // Fabric/process/external costs — emit one row per item using item.date if set
-  const allPP = db.prepare(`
-    SELECT pp.fabrics, pp.costs, pp.external_costs, proj.title as project_title,
-           proj.created_at
-    FROM project_products pp
-    LEFT JOIN projects proj ON proj.id = pp.project_id
-  `).all();
-
-  const normDate = d => {
-    if (!d) return null;
-    // Convert SQLite "YYYY-MM-DD HH:MM:SS" → "YYYY-MM-DD"
-    return d.replace(' ', 'T').split('T')[0];
-  };
-
-  for (const pp of allPP) {
-    try {
-      const fallbackDate = normDate(pp.created_at);
-      const fabs = JSON.parse(pp.fabrics || '[]');
-      const cs   = JSON.parse(pp.costs   || '[]');
-      const exts = JSON.parse(pp.external_costs || '[]');
-
-      // One ledger row per fabric item
-      for (const f of fabs) {
-        const amt = parseFloat(f.amount_paid) || 0;
-        if (amt <= 0) continue;
-        entries.push({ date: f.date || fallbackDate, section: 'Project Costs', category: 'Materials & Process',
-          description: `Fabric${f.name ? ` – ${f.name}` : ''}${pp.project_title ? ` (${pp.project_title})` : ''}`,
-          party: '', credit: 0, debit: amt, currency: 'PKR', amount_orig: amt });
-      }
-      // One ledger row per process/cost item
-      for (const c of cs) {
-        const amt = parseFloat(c.amount_paid) || 0;
-        if (amt <= 0) continue;
-        entries.push({ date: c.date || fallbackDate, section: 'Project Costs', category: 'Materials & Process',
-          description: `Process${c.label ? ` – ${c.label}` : ''}${pp.project_title ? ` (${pp.project_title})` : ''}`,
-          party: '', credit: 0, debit: amt, currency: 'PKR', amount_orig: amt });
-      }
-      // One ledger row per external cost item
-      for (const e of exts) {
-        const amt = parseFloat(e.amount_paid) || 0;
-        if (amt <= 0) continue;
-        entries.push({ date: e.date || fallbackDate, section: 'Project Costs', category: 'Materials & Process',
-          description: `External${e.label ? ` – ${e.label}` : ''}${pp.project_title ? ` (${pp.project_title})` : ''}`,
-          party: '', credit: 0, debit: amt, currency: 'PKR', amount_orig: amt });
-      }
-    } catch {}
-  }
-
-  // Extra costs — one row per cost item using item.date
-  const extraRows = db.prepare(`
-    SELECT extra_costs, title, updated_at, created_at FROM projects WHERE extra_costs IS NOT NULL
-  `).all();
-  for (const p of extraRows) {
-    try {
-      const fallbackDate = normDate(p.updated_at) || normDate(p.created_at);
-      const costs = JSON.parse(p.extra_costs || '[]');
-      for (const c of costs) {
-        const amt = parseFloat(c.amount) || 0;
-        if (amt <= 0) continue;
-        entries.push({ date: c.date || fallbackDate, section: 'Project Costs', category: 'Extra Costs',
-          description: `${c.label || 'Extra Cost'} – ${p.title}`,
-          party: '', credit: 0, debit: amt, currency: 'PKR', amount_orig: amt });
-      }
-    } catch {}
-  }
-
-  // Business expenses
-  const bizExp = db.prepare(`
-    SELECT e.id, e.expense_date as date, e.amount, e.title as description,
-           COALESCE(ec.name,'Expense') as category, e.paid_by as party
+  // All spending is entered on the Expenses screen. Expenses charged to a project
+  // show under "Project Costs" (with the project name); the rest are business expenses.
+  const expenseRows = db.prepare(`
+    SELECT e.id, e.expense_date as date, e.amount, e.title as description, e.project_id,
+           COALESCE(ec.name,'Expense') as category,
+           COALESCE(NULLIF(TRIM(e.paid_to),''), e.paid_by) as party,
+           p.title as project_title
     FROM expenses e
     LEFT JOIN expense_categories ec ON ec.id = e.expense_category_id
+    LEFT JOIN projects p ON p.id = e.project_id
     WHERE 1=1 ${dateFilter('e.expense_date')}
     ORDER BY e.expense_date ASC
   `).all();
-  for (const e of bizExp) {
-    entries.push({ date: e.date, section: 'Business Expenses', category: e.category,
-      description: e.description || e.category, party: e.party || '',
-      credit: 0, debit: parseFloat(e.amount) || 0, currency: 'PKR', amount_orig: parseFloat(e.amount) || 0 });
+  for (const e of expenseRows) {
+    const isProject = !!e.project_id;
+    entries.push({ date: e.date, section: isProject ? 'Project Costs' : 'Business Expenses', category: e.category,
+      description: `${e.description || e.category}${isProject && e.project_title ? ` (${e.project_title})` : ''}`,
+      party: e.party || '', credit: 0, debit: parseFloat(e.amount) || 0, currency: 'PKR', amount_orig: parseFloat(e.amount) || 0 });
   }
 
   // Salaries
@@ -656,46 +340,6 @@ router.get('/ledger', (req, res) => {
     entries.push({ date: a.date, section: 'Salaries', category: 'Advance',
       description: `Advance${a.reason ? ` – ${a.reason}` : ''}`, party: a.party || '',
       credit: 0, debit: parseFloat(a.amount) || 0, currency: 'PKR', amount_orig: parseFloat(a.amount) || 0 });
-  }
-
-  // Loans — borrowed (credit) and repayments of borrowed (debit)
-  const borrowedLoans = db.prepare(`
-    SELECT cl.id, cl.date, cl.amount, cl.lender_name as party, cl.notes
-    FROM capital_loans cl WHERE cl.direction = 'borrowed' ${dateFilter('cl.date')}
-  `).all();
-  for (const l of borrowedLoans) {
-    entries.push({ date: l.date, section: 'Loans', category: 'Borrowed',
-      description: `Borrowed from ${l.party}${l.notes ? ` – ${l.notes}` : ''}`, party: l.party || '',
-      credit: parseFloat(l.amount) || 0, debit: 0, currency: 'PKR', amount_orig: parseFloat(l.amount) || 0 });
-  }
-
-  const lentLoans = db.prepare(`
-    SELECT cl.id, cl.date, cl.amount, cl.lender_name as party, cl.notes
-    FROM capital_loans cl WHERE cl.direction = 'lent' ${dateFilter('cl.date')}
-  `).all();
-  for (const l of lentLoans) {
-    entries.push({ date: l.date, section: 'Loans', category: 'Lent',
-      description: `Lent to ${l.party}${l.notes ? ` – ${l.notes}` : ''}`, party: l.party || '',
-      credit: 0, debit: parseFloat(l.amount) || 0, currency: 'PKR', amount_orig: parseFloat(l.amount) || 0 });
-  }
-
-  const loanRepayments = db.prepare(`
-    SELECT lr.id, lr.date, lr.amount, lr.notes,
-           cl.lender_name as party, cl.direction
-    FROM loan_repayments lr
-    JOIN capital_loans cl ON cl.id = lr.loan_id
-    WHERE 1=1 ${dateFilter('lr.date')}
-    ORDER BY lr.date ASC
-  `).all();
-  for (const r of loanRepayments) {
-    const isBorrowed = r.direction === 'borrowed';
-    entries.push({ date: r.date, section: 'Loans',
-      category: isBorrowed ? 'Repaid (Borrowed)' : 'Received Back (Lent)',
-      description: isBorrowed ? `Repaid to ${r.party}` : `Received back from ${r.party}`,
-      party: r.party || '',
-      credit: isBorrowed ? 0 : parseFloat(r.amount) || 0,
-      debit:  isBorrowed ? parseFloat(r.amount) || 0 : 0,
-      currency: 'PKR', amount_orig: parseFloat(r.amount) || 0 });
   }
 
   // Final date filter — some sources (fabric/process/extra costs) build entries
@@ -846,34 +490,6 @@ router.put('/investments/:id', (req, res) => {
 
 router.delete('/investments/:id', (req, res) => {
   db.prepare('DELETE FROM capital_investments WHERE id = ?').run(req.params.id);
-  res.json({ ok: true });
-});
-
-// ── Capital: Loans ─────────────────────────────────────────────────────────
-router.get('/loans', (req, res) => {
-  const rows = db.prepare('SELECT * FROM capital_loans ORDER BY date DESC').all();
-  res.json(rows);
-});
-
-router.post('/loans', (req, res) => {
-  const { lender_name, amount, date, interest_rate = 0, due_date = '', paid_amount = 0, notes = '', status = 'active' } = req.body;
-  if (!lender_name || !amount || !date) return res.status(400).json({ error: 'lender_name, amount, date required' });
-  const r = db.prepare(
-    'INSERT INTO capital_loans (lender_name, amount, date, interest_rate, due_date, paid_amount, notes, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(lender_name, amount, date, interest_rate, due_date, paid_amount, notes, status);
-  res.json(db.prepare('SELECT * FROM capital_loans WHERE id = ?').get(r.lastInsertRowid));
-});
-
-router.put('/loans/:id', (req, res) => {
-  const { lender_name, amount, date, interest_rate, due_date, paid_amount, notes, status } = req.body;
-  db.prepare(
-    'UPDATE capital_loans SET lender_name=?, amount=?, date=?, interest_rate=?, due_date=?, paid_amount=?, notes=?, status=?, updated_at=datetime("now") WHERE id=?'
-  ).run(lender_name, amount, date, interest_rate ?? 0, due_date ?? '', paid_amount ?? 0, notes ?? '', status ?? 'active', req.params.id);
-  res.json(db.prepare('SELECT * FROM capital_loans WHERE id = ?').get(req.params.id));
-});
-
-router.delete('/loans/:id', (req, res) => {
-  db.prepare('DELETE FROM capital_loans WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
 

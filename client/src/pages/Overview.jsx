@@ -1028,12 +1028,12 @@ export default function Overview() {
       el: (
         <div className="h-full rounded-3xl p-5 bg-white border border-slate-200 border-t-4 border-t-violet-500 shadow-sm flex flex-col justify-between min-h-[150px]">
           <div className="flex items-center justify-between">
-            <CardBadge color="violet">Projects Paid</CardBadge>
+            <CardBadge color="violet">Project Costs</CardBadge>
             <CheckCircle size={14} className="text-violet-300" />
           </div>
           <div>
             <p className="text-2xl font-black tracking-tight text-slate-900" title={fmt$(f.totalProjectsPaid)}>{fmt$C(f.totalProjectsPaid)}</p>
-            <p className="text-xs text-slate-500 mt-0.5">of {fmt$C(f.totalProjectsExpense)} projected</p>
+            <p className="text-xs text-slate-500 mt-0.5">Expenses charged to projects · {fmt$C(f.totalProjectsExpense)} all time</p>
           </div>
         </div>
       ),

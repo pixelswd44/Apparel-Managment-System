@@ -61,7 +61,7 @@ function StepWelcome({ onNext, onDemo, demoLoading }) {
     { icon: Package,   title: 'Product Catalogue',     desc: 'Multi-currency pricing & calculator' },
     { icon: BarChart2, title: 'Financial Overview',    desc: 'P&L, revenue trends, cash flow' },
     { icon: Globe,     title: 'Multi-currency',        desc: 'AED, USD, PKR and more' },
-    { icon: Shield,    title: 'Role-based Access',     desc: 'Sales, Inventory, Admin roles' },
+    { icon: Shield,    title: 'Role-based Access',     desc: 'Sales and Admin roles' },
     { icon: Zap,       title: 'Project Tracking',      desc: 'Production stages end-to-end' },
   ];
   return (
@@ -258,8 +258,7 @@ function StepAdmin({ data, onChange }) {
       </Field>
       <div className="bg-white/[0.04] border border-white/[0.08] rounded-xl p-4">
         <p className="text-white/50 text-xs leading-relaxed">
-          You can also add <span className="text-white/70 font-medium">Sales</span> and{' '}
-          <span className="text-white/70 font-medium">Inventory</span> users from Settings after setup is complete.
+          You can also add <span className="text-white/70 font-medium">Sales</span> users from Settings after setup is complete.
         </p>
       </div>
     </div>

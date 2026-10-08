@@ -3,7 +3,7 @@ import {
   Settings as SettingsIcon, GripVertical, Plus, RefreshCw,
   Save, Pencil, Trash2, Check, X, AlertTriangle, Calculator, DollarSign, Globe,
   Building2, Upload, Star, Palette, Layers, Users, KeyRound, Eye, EyeOff,
-  ShieldCheck, ShoppingBag, Package, Wallet,
+  ShieldCheck, ShoppingBag, Wallet,
 } from 'lucide-react';
 import api, { apiFetch, imgUrl } from '../lib/api';
 import { useAuth } from '../lib/authContext';
@@ -1242,7 +1242,6 @@ function AppBranding() {
 const ROLE_META = {
   super_admin: { label: 'Super Admin', color: 'bg-violet-100 text-violet-700', icon: ShieldCheck },
   sales:       { label: 'Sales',       color: 'bg-sky-100 text-sky-700',       icon: ShoppingBag },
-  inventory:   { label: 'Inventory',   color: 'bg-emerald-100 text-emerald-700', icon: Package },
 };
 
 function PasswordInput({ value, onChange, placeholder = 'New password' }) {
@@ -1373,7 +1372,6 @@ function UserFormModal({ user, onClose, onSave }) {
               <select value={form.role} onChange={e => set('role', e.target.value)} className={inputCls}>
                 <option value="super_admin">Super Admin</option>
                 <option value="sales">Sales</option>
-                <option value="inventory">Inventory</option>
               </select>
             </div>
             <div>
@@ -1583,7 +1581,7 @@ function UsersManagement() {
 const BACKUP_INCLUDES = [
   'Clients', 'Products & Prices', 'Categories',
   'Quotations', 'Invoices & Payments', 'Projects & Shipping',
-  'Vendors', 'Inventory', 'Expenses',
+  'Expenses',
   'Employees & Payroll', 'Companies & Logos', 'Currencies & Rates',
   'Settings & Branding', 'Uploaded Images', 'Users',
 ];

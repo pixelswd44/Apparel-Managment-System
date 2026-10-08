@@ -89,21 +89,6 @@ CREATE TABLE IF NOT EXISTS purchases (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Inventory
-CREATE TABLE IF NOT EXISTS inventory (
-  id SERIAL PRIMARY KEY,
-  name VARCHAR(255) NOT NULL,
-  sku VARCHAR(100),
-  category VARCHAR(100),
-  unit VARCHAR(50),
-  quantity NUMERIC(12,2) DEFAULT 0,
-  unit_cost NUMERIC(12,2) DEFAULT 0,
-  reorder_level NUMERIC(12,2) DEFAULT 0,
-  notes TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
 -- Expenses
 CREATE TABLE IF NOT EXISTS expenses (
   id SERIAL PRIMARY KEY,

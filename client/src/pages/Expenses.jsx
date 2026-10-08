@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import api from '../lib/api';
 import {
   Receipt, Plus, Search, X, Edit2, Trash2, RefreshCw, ArrowLeft,
   Tag, Calendar, Repeat, ChevronDown, Check,
   Home, Zap, Droplets, Truck, Coffee, Package, MoreHorizontal,
-  BarChart2, AlertTriangle, TrendingUp, TrendingDown, Banknote,
+  BarChart2, AlertTriangle, TrendingUp, TrendingDown, Banknote, Flame,
 } from 'lucide-react';
 import PeriodPicker, { currentMonthRange } from '../components/PeriodPicker';
 import Drawer from '../components/Drawer';
@@ -20,6 +21,11 @@ const RECURRING_PERIODS = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly'];
 
 // Quick-pick presets — label shown on chip, category is matched to existing categories
 const EXPENSE_PRESETS = [
+  // Project work — pick the project above so the cost lands on it
+  { label: 'Fabric',           icon: '🧵', category: 'Fabric Expanses' },
+  { label: 'Stitching',        icon: '🪡', category: 'Production' },
+  { label: 'Sublimation / Printing', icon: '🎨', category: 'Production' },
+  { label: 'Shipping',         icon: '🚚', category: 'Shipping' },
   { label: 'Petty Cash',       icon: '💵', category: 'Petty Cash' },
   { label: 'Electricity Bill', icon: '⚡', category: 'Electricity' },
   { label: 'Rent',             icon: '🏢', category: 'Rent' },
@@ -106,15 +112,23 @@ function CategoryModal({ category, onClose, onSave }) {
 }
 
 // ── ExpenseModal ───────────────────────────────────────────────────────────
-function ExpenseModal({ expense, categories, onClose, onSave }) {
+function ExpenseModal({ expense, categories, projects = [], defaultProjectId = '', onClose, onSave }) {
   const blank = {
-    title: '', expense_category_id: '', amount: '', paid_by: '',
+    title: '', expense_category_id: '', amount: '', paid_by: '', paid_to: '',
+    project_id: defaultProjectId ? String(defaultProjectId) : '',
     expense_date: today(), payment_method: 'cash', notes: '',
     recurring: false, recurring_period: 'monthly',
   };
   const [form, setForm] = useState(expense
-    ? { ...blank, ...expense, expense_category_id: expense.expense_category_id || '', recurring: !!expense.recurring }
+    ? { ...blank, ...expense,
+        expense_category_id: expense.expense_category_id || '',
+        project_id: expense.project_id ? String(expense.project_id) : '',
+        paid_to: expense.paid_to || '',
+        recurring: !!expense.recurring }
     : blank);
+  // Active projects first, then completed — most recent first within each
+  const projectOptions = [...projects].sort((a, b) =>
+    (a.status === 'completed') - (b.status === 'completed') || String(b.created_at).localeCompare(String(a.created_at)));
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -137,19 +151,38 @@ function ExpenseModal({ expense, categories, onClose, onSave }) {
         ...form,
         amount: parseFloat(form.amount) || 0,
         expense_category_id: form.expense_category_id || null,
+        project_id: form.project_id || null,
         recurring: form.recurring ? 1 : 0,
       };
       const res = expense
         ? await api.put(`/expenses/${expense.id}`, payload)
         : await api.post('/expenses', payload);
-      onSave(res.data);
-      onClose();
+      onSave(res.data); // the page closes the form (and may return to the project)
     } finally { setSaving(false); }
   }
 
   return (
     <Drawer open={true} onClose={onClose} title={expense ? 'Edit Expense' : 'New Expense'} width="max-w-md">
       <form onSubmit={handleSubmit} className="p-6 space-y-4">
+
+          {/* ── Project — charging an expense to a project adds it to that project's cost ── */}
+          <div className={`rounded-xl p-3 border ${form.project_id ? 'bg-orange-50 border-orange-200' : 'bg-slate-50 border-slate-200'}`}>
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 mb-1">
+              <Flame size={12} className="text-orange-500" /> Project <span className="font-normal text-slate-400">(optional)</span>
+            </label>
+            <select value={form.project_id} onChange={e => set('project_id', e.target.value)}
+              className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20">
+              <option value="">No project — business expense / petty cash</option>
+              {projectOptions.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.title}{p.client_name ? ` · ${p.client_name}` : ''}{p.status === 'completed' ? ' (completed)' : ''}
+                </option>
+              ))}
+            </select>
+            {form.project_id && (
+              <p className="text-2xs text-orange-700 mt-1.5">This amount is added to the project's cost automatically.</p>
+            )}
+          </div>
 
           {/* ── Quick-pick presets ── */}
           <div>
@@ -212,11 +245,19 @@ function ExpenseModal({ expense, categories, onClose, onSave }) {
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 mb-1">Paid By</label>
-            <input type="text" value={form.paid_by} onChange={e => set('paid_by', e.target.value)}
-              placeholder="Person or account"
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 mb-1">Paid To</label>
+              <input type="text" value={form.paid_to} onChange={e => set('paid_to', e.target.value)}
+                placeholder="e.g. fabric supplier, stitcher"
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 mb-1">Paid By</label>
+              <input type="text" value={form.paid_by} onChange={e => set('paid_by', e.target.value)}
+                placeholder="Person or account"
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+            </div>
           </div>
 
           {/* Recurring toggle */}
@@ -509,7 +550,15 @@ export default function Expenses() {
   const [search, setSearch] = useState('');
   const [month, setMonth] = useState(''); // empty = all months
   const [catFilter, setCatFilter] = useState('');
-  const [modal, setModal] = useState(null);
+  const [projects, setProjects] = useState([]);
+  // Links from a project: /expenses?project=ID&new=1 opens the form pre-set to
+  // that project (saving returns to it); /expenses?filter=ID shows its expenses.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const fromProject = searchParams.get('new') ? searchParams.get('project') : null;
+  const [projectFilter, setProjectFilter] = useState(() => searchParams.get('filter') || ''); // '' all · 'none' business only · id
+  const [modal, setModal] = useState(() => (fromProject ? 'new' : null));
+  const [linkedProject, setLinkedProject] = useState(fromProject);
   const [catModal, setCatModal] = useState(null);
   const [showCats, setShowCats] = useState(false);
   const [seeding, setSeeding] = useState(false);
@@ -557,12 +606,15 @@ export default function Expenses() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    // Build date params: quarter range takes priority over month picker
-    const dateParams = periodRange.from
-      ? { from: periodRange.from, to: periodRange.to }
-      : month ? { month } : {};
+    // Build date params: quarter range takes priority over month picker.
+    // A single project's expenses are shown across all dates.
+    const oneProject = projectFilter && projectFilter !== 'none';
+    const dateParams = oneProject ? {}
+      : periodRange.from
+        ? { from: periodRange.from, to: periodRange.to }
+        : month ? { month } : {};
     const [expRes, catRes, sumRes] = await Promise.all([
-      api.get('/expenses', { params: { ...dateParams, category_id: catFilter || undefined } }),
+      api.get('/expenses', { params: { ...dateParams, category_id: catFilter || undefined, project_id: projectFilter || undefined } }),
       api.get('/expenses/categories'),
       api.get('/expenses/summary', { params: dateParams }),
     ]);
@@ -570,9 +622,26 @@ export default function Expenses() {
     setCategories(catRes.data);
     setSummary(sumRes.data);
     setLoading(false);
-  }, [month, catFilter, periodRange.from, periodRange.to]);
+  }, [month, catFilter, projectFilter, periodRange.from, periodRange.to]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    api.get('/projects').then(r => setProjects(Array.isArray(r.data) ? r.data : [])).catch(() => {});
+  }, []);
+
+  // The link parameters were read on open — clear them from the address bar
+  useEffect(() => {
+    if (searchParams.get('project') || searchParams.get('filter')) setSearchParams({}, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  function closeModal(saved) {
+    const back = linkedProject;
+    setModal(null);
+    setLinkedProject(null);
+    if (saved) { setSelected(null); load(); }
+    if (back) navigate(`/projects?open=${back}`);
+  }
 
   async function seedCategories() {
     setSeeding(true);
@@ -599,9 +668,11 @@ export default function Expenses() {
     if (catFilter === String(id)) setCatFilter('');
   }
 
-  const filtered = expenses.filter(e =>
-    !search || e.title.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = expenses.filter(e => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return [e.title, e.paid_to, e.project_title, e.notes].some(f => f && String(f).toLowerCase().includes(q));
+  });
 
   const filteredTotal = filtered.reduce((s, e) => s + parseFloat(e.amount || 0), 0);
 
@@ -773,6 +844,15 @@ export default function Expenses() {
               <input placeholder="Search expenses…" value={search} onChange={e => setSearch(e.target.value)}
                 className="w-full pl-9 pr-4 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all" />
             </div>
+            <select value={projectFilter} onChange={e => setProjectFilter(e.target.value)}
+              className="mt-2 w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20">
+              <option value="">All expenses</option>
+              <option value="none">Business only (no project)</option>
+              {projects.map(p => <option key={p.id} value={p.id}>Project: {p.title}</option>)}
+            </select>
+            {projectFilter && projectFilter !== 'none' && (
+              <p className="text-2xs text-orange-600 mt-1.5">Showing this project's expenses from all dates.</p>
+            )}
           </div>
 
           {/* Period picker + category filter — mobile only */}
@@ -857,9 +937,15 @@ export default function Expenses() {
                       </div>
                       <p className="text-xs text-slate-400 mt-0.5 truncate">
                         {fmtDate(exp.expense_date)}
+                        {exp.paid_to && ` · to ${exp.paid_to}`}
                         {exp.payment_method && ` · ${exp.payment_method}`}
                         {exp.paid_by && ` · ${exp.paid_by}`}
                       </p>
+                      {exp.project_title && (
+                        <span className="inline-flex items-center gap-1 mt-1 text-2xs font-semibold bg-orange-50 text-orange-700 border border-orange-100 px-1.5 py-0.5 rounded-full max-w-full truncate">
+                          <Flame size={9} className="flex-shrink-0" /> {exp.project_title}
+                        </span>
+                      )}
                       {exp.notes && (
                         <p className="text-xs text-slate-500 mt-0.5 truncate italic">{exp.notes}</p>
                       )}
@@ -942,6 +1028,8 @@ export default function Expenses() {
               <div className="bg-white rounded-2xl border border-slate-200 divide-y divide-slate-50 overflow-hidden">
                 {[
                   { label: 'Date',           value: fmtDate(selected.expense_date) },
+                  { label: 'Project',        value: selected.project_title || 'None (business expense)' },
+                  { label: 'Paid To',        value: selected.paid_to || '—' },
                   { label: 'Payment Method', value: selected.payment_method || '—' },
                   { label: 'Paid By',        value: selected.paid_by || '—' },
                   { label: 'Category',       value: selected.category_name || 'Uncategorized' },
@@ -1091,8 +1179,10 @@ export default function Expenses() {
         <ExpenseModal
           expense={modal === 'new' ? null : modal}
           categories={categories}
-          onClose={() => setModal(null)}
-          onSave={() => { setModal(null); setSelected(null); load(); }}
+          projects={projects}
+          defaultProjectId={modal === 'new' ? (linkedProject || (projectFilter && projectFilter !== 'none' ? projectFilter : '')) : ''}
+          onClose={() => closeModal(false)}
+          onSave={() => closeModal(true)}
         />
       )}
       {catModal && (

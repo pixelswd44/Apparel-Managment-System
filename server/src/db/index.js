@@ -1,6 +1,7 @@
 import 'dotenv/config'; // ensure .env is loaded before we read DB_PATH (imports run before index.js body)
 import initSqlJs from 'sql.js';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { randomUUID } from 'crypto';
 import { join, dirname, isAbsolute, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -263,20 +264,6 @@ db.exec(`
     created_at    TEXT DEFAULT (datetime('now'))
   );
 
-  CREATE TABLE IF NOT EXISTS inventory (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    name          TEXT NOT NULL,
-    sku           TEXT,
-    category      TEXT,
-    unit          TEXT,
-    quantity      REAL DEFAULT 0,
-    unit_cost     REAL DEFAULT 0,
-    reorder_level REAL DEFAULT 0,
-    notes         TEXT,
-    created_at    TEXT DEFAULT (datetime('now')),
-    updated_at    TEXT DEFAULT (datetime('now'))
-  );
-
   CREATE TABLE IF NOT EXISTS categories (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     name        TEXT NOT NULL,
@@ -527,29 +514,6 @@ db.exec(`
     created_at  TEXT DEFAULT (datetime('now'))
   );
 
-  CREATE TABLE IF NOT EXISTS inventory_items (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    name         TEXT NOT NULL,
-    category     TEXT DEFAULT 'fabric',
-    unit         TEXT DEFAULT 'Yards',
-    qty_total    REAL DEFAULT 0,
-    qty_used     REAL DEFAULT 0,
-    rate         REAL DEFAULT 0,
-    notes        TEXT DEFAULT '',
-    created_at   TEXT DEFAULT (datetime('now')),
-    updated_at   TEXT DEFAULT (datetime('now'))
-  );
-
-  CREATE TABLE IF NOT EXISTS inventory_transactions (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    item_id      INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
-    type         TEXT NOT NULL,   -- 'in' | 'out' | 'adjustment'
-    qty          REAL NOT NULL,
-    reference    TEXT DEFAULT '', -- project name / note
-    notes        TEXT DEFAULT '',
-    created_at   TEXT DEFAULT (datetime('now'))
-  );
-
   CREATE TABLE IF NOT EXISTS employee_advances (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     employee_id     INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
@@ -681,8 +645,11 @@ const migrations = [
   `ALTER TABLE expenses ADD COLUMN recurring INTEGER DEFAULT 0`,
   `ALTER TABLE expenses ADD COLUMN recurring_period TEXT DEFAULT 'monthly'`,
   `ALTER TABLE expenses ADD COLUMN expense_category_id INTEGER`,
-  // Inventory price tracking per stock-in transaction
-  `ALTER TABLE inventory_transactions ADD COLUMN unit_price REAL DEFAULT 0`,
+  // One-screen costing: an expense can be charged to a project, and records who was paid
+  `ALTER TABLE expenses ADD COLUMN project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL`,
+  `ALTER TABLE expenses ADD COLUMN paid_to TEXT DEFAULT ''`,
+  // Where a converted expense came from (old project cost records) — for traceability
+  `ALTER TABLE expenses ADD COLUMN source TEXT`,
   // Password reset tokens on users table
   `ALTER TABLE users ADD COLUMN reset_token TEXT`,
   `ALTER TABLE users ADD COLUMN reset_token_expires TEXT`,
@@ -728,7 +695,7 @@ const migrations = [
   `ALTER TABLE project_shipping ADD COLUMN vendor_id INTEGER REFERENCES vendors(id)`,
   // Shipping-linked payment tracking
   `ALTER TABLE project_vendor_payments ADD COLUMN shipping_id INTEGER REFERENCES project_shipping(id)`,
-  // Capital tracking: investments and loans
+  // Capital tracking: investments
   `CREATE TABLE IF NOT EXISTS capital_investments (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     investor_name TEXT    NOT NULL,
@@ -739,28 +706,6 @@ const migrations = [
     status        TEXT    DEFAULT 'active',
     created_at    TEXT    DEFAULT (datetime('now')),
     updated_at    TEXT    DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS capital_loans (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    lender_name   TEXT    NOT NULL,
-    amount        REAL    NOT NULL DEFAULT 0,
-    date          TEXT    NOT NULL,
-    interest_rate REAL    DEFAULT 0,
-    due_date      TEXT    DEFAULT '',
-    paid_amount   REAL    DEFAULT 0,
-    notes         TEXT    DEFAULT '',
-    status        TEXT    DEFAULT 'active',
-    created_at    TEXT    DEFAULT (datetime('now')),
-    updated_at    TEXT    DEFAULT (datetime('now'))
-  )`,
-  `ALTER TABLE capital_loans ADD COLUMN direction TEXT DEFAULT 'borrowed'`,
-  `CREATE TABLE IF NOT EXISTS loan_repayments (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    loan_id    INTEGER NOT NULL REFERENCES capital_loans(id) ON DELETE CASCADE,
-    amount     REAL    NOT NULL DEFAULT 0,
-    date       TEXT    NOT NULL,
-    notes      TEXT    DEFAULT '',
-    created_at TEXT    DEFAULT (datetime('now'))
   )`,
   // Per-month opening-balance overrides for the Ledger (one per calendar month)
   `CREATE TABLE IF NOT EXISTS monthly_opening_balances (
@@ -1012,6 +957,206 @@ try {
   }
 } catch (e) { console.error('[DB] orphan cleanup:', e.message); }
 
+// A freight vendor's lump-sum payment used to be spread over its shipments only;
+// whatever was left was parked as an overpayment on the newest shipment even when
+// the same vendor still had unpaid project-vendor lines (e.g. a "Full Shipping"
+// line on another project). That made one project look massively overpaid and the
+// other unpaid. Move such parked surplus onto the vendor's unpaid lines — oldest
+// line first, newest payment first. Vendor totals, payment dates and batches are
+// unchanged; only the project the money is attributed to changes. Idempotent.
+export function repairVendorSurplus() {
+  const billed = pv => {
+    let tasks = [];
+    try { tasks = JSON.parse(pv.tasks || '[]'); } catch {}
+    const t = (Array.isArray(tasks) ? tasks : []).reduce((s, x) =>
+      s + (x.type === 'per_piece' ? (parseFloat(x.agreed) || 0) * (parseFloat(x.qty) || 0) : (parseFloat(x.agreed) || 0)), 0);
+    return t > 0 ? t : (parseFloat(pv.invoice_amount) || 0);
+  };
+  let moved = 0;
+  db.transaction(() => {
+    const overpaid = db.prepare(`
+      SELECT id, vendor_id, amount, paid_amount FROM project_shipping
+      WHERE vendor_id IS NOT NULL AND COALESCE(paid_amount,0) > COALESCE(amount,0) + 0.005
+      ORDER BY shipping_date DESC, id DESC
+    `).all();
+    for (const ship of overpaid) {
+      const lines = db.prepare(`
+        SELECT pv.id, pv.project_id, pv.tasks, pv.invoice_amount,
+          COALESCE((SELECT SUM(amount) FROM project_vendor_payments WHERE project_vendor_id = pv.id), 0) as paid
+        FROM project_vendors pv WHERE pv.vendor_id = ? ORDER BY pv.created_at ASC, pv.id ASC
+      `).all(ship.vendor_id).map(pv => ({ ...pv, due: billed(pv) - pv.paid })).filter(pv => pv.due > 0.005);
+      if (!lines.length) continue;
+
+      let excess = (parseFloat(ship.paid_amount) || 0) - (parseFloat(ship.amount) || 0);
+      let shipMoved = 0;
+      const pays = db.prepare('SELECT * FROM project_vendor_payments WHERE shipping_id = ? ORDER BY paid_at DESC, id DESC').all(ship.id);
+      for (const p of pays) {
+        let left = parseFloat(p.amount) || 0;           // still on the shipment
+        let take = Math.min(left, excess);               // surplus portion of this payment
+        let batchId = p.batch_id;
+        while (take > 0.005 && lines.length) {
+          const pv = lines[0];
+          const mv = Math.min(take, pv.due);
+          if (mv >= left - 0.005) {
+            // Whole remaining payment moves — re-point the row
+            db.prepare('UPDATE project_vendor_payments SET project_vendor_id = ?, project_id = ?, shipping_id = NULL WHERE id = ?')
+              .run(pv.id, pv.project_id, p.id);
+          } else {
+            // Split: keep the rest on the shipment, same batch so history shows one transaction
+            if (!batchId) {
+              batchId = randomUUID();
+              db.prepare('UPDATE project_vendor_payments SET batch_id = ? WHERE id = ?').run(batchId, p.id);
+            }
+            db.prepare('UPDATE project_vendor_payments SET amount = amount - ? WHERE id = ?').run(mv, p.id);
+            db.prepare(`
+              INSERT INTO project_vendor_payments (project_vendor_id, project_id, amount, method, reference, notes, paid_at, created_at, receipt_url, batch_id)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(pv.id, pv.project_id, mv, p.method, p.reference || '', p.notes || '', p.paid_at, p.created_at, p.receipt_url || '', batchId);
+          }
+          left -= mv; take -= mv; excess -= mv; shipMoved += mv;
+          pv.due -= mv;
+          if (pv.due <= 0.005) lines.shift();
+        }
+        if (excess <= 0.005 || !lines.length) break;
+      }
+      if (shipMoved > 0) {
+        db.prepare('UPDATE project_shipping SET paid_amount = paid_amount - ?, paid = CASE WHEN paid_amount - ? >= amount THEN 1 ELSE 0 END WHERE id = ?')
+          .run(shipMoved, shipMoved, ship.id);
+        moved += shipMoved;
+      }
+    }
+  })();
+  if (moved > 0) console.log(`[DB] re-applied ₨${Math.round(moved).toLocaleString()} of parked shipping surplus to unpaid vendor lines`);
+  return moved;
+}
+try { repairVendorSurplus(); } catch (e) { console.error('[DB] vendor surplus repair:', e.message); }
+
+// ── One-screen costing: move project costs into Expenses ─────────────────────
+// Projects used to carry their own cost records (fabric lines, process costs,
+// vendor & shipping payments, workers, extra costs). All spending is now entered
+// once, on the Expenses screen, optionally charged to a project. This converts
+// every amount those old records show as PAID into an expense linked to its
+// project — same amount, and the same date the Ledger already used for it — so
+// cash totals don't move. Unpaid balances are not carried over. Runs once
+// (settings flag; every row also gets a `source` key); the old tables are left
+// untouched as history.
+export function migrateProjectCostsToExpenses() {
+  if (db.prepare("SELECT value FROM settings WHERE key = 'project_costs_in_expenses'").get()) return 0;
+
+  const day   = d => String(d || '').replace(' ', 'T').slice(0, 10) || null;
+  const num   = v => parseFloat(v) || 0;
+  const parse = s => { try { const v = JSON.parse(s || '[]'); return Array.isArray(v) ? v : []; } catch { return []; } };
+  const method = m => (m === 'bank_transfer' ? 'bank transfer' : (m || 'cash'));
+  const category = (name, color) => {
+    const row = db.prepare('SELECT id FROM expense_categories WHERE LOWER(TRIM(name)) = LOWER(?)').get(name);
+    return row ? row.id : db.prepare('INSERT INTO expense_categories (name, color, icon) VALUES (?, ?, ?)').run(name, color, '').lastInsertRowid;
+  };
+
+  let moved = 0, total = 0;
+  db.transaction(() => {
+    const FABRIC = category('Fabric Expanses', '#6366f1');
+    const PROD   = category('Production',      '#8b5cf6');
+    const SHIP   = category('Shipping',        '#0ea5e9');
+    const EXTRA  = category('Project Extras',  '#f97316');
+    const projectIds = new Set(db.prepare('SELECT id FROM projects').all().map(r => r.id));
+    const seen = db.prepare('SELECT 1 FROM expenses WHERE source = ?');
+    const ins  = db.prepare(`
+      INSERT INTO expenses (title, category, expense_category_id, amount, paid_by, expense_date, notes,
+                            payment_method, receipt_url, recurring, recurring_period, project_id, paid_to, source)
+      VALUES (?, '', ?, ?, '', ?, ?, ?, '', 0, 'monthly', ?, ?, ?)`);
+    const add = ({ title, cat, amount, date, notes = '', payMethod = 'cash', project, paidTo = '', source }) => {
+      if (!(amount > 0) || seen.get(source)) return;
+      ins.run(String(title || 'Project cost').slice(0, 200), cat, amount, date, notes, payMethod,
+              projectIds.has(project) ? project : null, paidTo || '', source);
+      moved++; total += amount;
+    };
+
+    for (const p of db.prepare('SELECT id, created_at, updated_at, fabrics, extra_costs FROM projects').all()) {
+      const created = day(p.created_at);
+      for (const pp of db.prepare('SELECT * FROM project_products WHERE project_id = ?').all(p.id)) {
+        const qty  = num(pp.total_quantity);
+        const fabs = parse(pp.fabrics);
+        fabs.forEach((f, i) => add({ project: p.id, cat: FABRIC, title: f.name || 'Fabric', amount: num(f.amount_paid),
+          date: day(f.date) || created, source: `pp${pp.id}.fabric.${i}`,
+          notes: `${f.qty || 0} ${f.unit || ''} × ₨${f.rate || 0} · ${pp.product_name}` }));
+        if (!fabs.length) add({ project: p.id, cat: FABRIC, title: pp.fabric_material || 'Fabric', amount: num(pp.fabric_amount_paid),
+          date: created, source: `pp${pp.id}.fabric`, notes: pp.product_name });
+        parse(pp.costs).forEach((c, i) => add({ project: p.id, cat: PROD, title: `${c.label || c.key || 'Process'} — ${pp.product_name}`,
+          amount: num(c.amount_paid), date: day(c.date) || created, source: `pp${pp.id}.cost.${c.key ?? i}`,
+          notes: `₨${c.cost_per_piece || 0}/pc × ${qty} pcs` }));
+        parse(pp.external_costs).forEach((e, i) => add({ project: p.id, cat: PROD, title: e.label || 'External cost',
+          amount: num(e.amount_paid), date: day(e.date) || created, source: `pp${pp.id}.ext.${e.id ?? i}`, notes: pp.product_name }));
+      }
+      parse(p.fabrics).forEach((f, i) => add({ project: p.id, cat: FABRIC, title: f.name || 'Fabric', amount: num(f.amount_paid),
+        date: day(f.date) || created, source: `p${p.id}.fabric.${f.id ?? i}`,
+        notes: `${f.qty || 0} ${f.unit || ''} × ₨${f.rate || 0}` }));
+      parse(p.extra_costs).forEach((c, i) => add({ project: p.id, cat: EXTRA, title: c.label || 'Extra cost', amount: num(c.amount),
+        date: day(c.date) || day(p.updated_at) || created, source: `p${p.id}.extra.${c.id ?? i}`, notes: c.notes || '' }));
+    }
+
+    // Vendor & shipping payments (one expense per payment, same date and method)
+    for (const x of db.prepare(`
+      SELECT pvp.*, pv.vendor_name, pv.service_description, pv.project_id AS line_project,
+             ps.carrier, ps.tracking_number, ps.project_id AS ship_project, v.name AS ship_vendor
+      FROM project_vendor_payments pvp
+      LEFT JOIN project_vendors  pv ON pv.id = pvp.project_vendor_id
+      LEFT JOIN project_shipping ps ON ps.id = pvp.shipping_id
+      LEFT JOIN vendors          v  ON v.id  = ps.vendor_id`).all()) {
+      const project = x.project_id || x.line_project || x.ship_project;
+      const notes = [x.reference, x.notes].filter(s => s && String(s).trim()).join(' · ');
+      if (x.shipping_id) {
+        const agent = x.ship_vendor || x.carrier || 'Shipping agent';
+        add({ project, cat: SHIP, title: `Shipping — ${agent}`, paidTo: agent, amount: num(x.amount), date: day(x.paid_at),
+          payMethod: method(x.method), source: `pvp${x.id}`, notes: [x.tracking_number && `Tracking ${x.tracking_number}`, notes].filter(Boolean).join(' · ') });
+      } else if (x.vendor_name) {
+        add({ project, cat: PROD, title: x.service_description ? `${x.vendor_name} — ${x.service_description}` : x.vendor_name,
+          paidTo: x.vendor_name, amount: num(x.amount), date: day(x.paid_at), payMethod: method(x.method), source: `pvp${x.id}`, notes });
+      } else {
+        add({ project, cat: PROD, title: 'Vendor payment', amount: num(x.amount), date: day(x.paid_at), payMethod: method(x.method),
+          source: `pvp${x.id}`, notes: ['Its vendor line had been deleted', notes].filter(Boolean).join(' · ') });
+      }
+    }
+
+    // Contract workers' paid amounts
+    for (const w of db.prepare('SELECT * FROM project_workers WHERE paid_amount > 0').all()) {
+      add({ project: w.project_id, cat: PROD, title: w.task_description ? `${w.worker_name} — ${w.task_description}` : w.worker_name,
+        paidTo: w.worker_name, amount: num(w.paid_amount), date: day(w.created_at), source: `pw${w.id}`, notes: w.notes || '' });
+    }
+
+    // Shipping marked paid without matching payment rows (older data)
+    for (const s of db.prepare(`
+      SELECT ps.*, v.name AS vendor_name,
+             ps.paid_amount - COALESCE((SELECT SUM(amount) FROM project_vendor_payments WHERE shipping_id = ps.id), 0) AS unrecorded
+      FROM project_shipping ps LEFT JOIN vendors v ON v.id = ps.vendor_id`).all()) {
+      const agent = s.vendor_name || s.carrier || 'Shipping agent';
+      add({ project: s.project_id, cat: SHIP, title: `Shipping — ${agent}`, paidTo: agent, amount: num(s.unrecorded),
+        date: day(s.shipping_date) || day(s.created_at), source: `ps${s.id}`, notes: s.tracking_number ? `Tracking ${s.tracking_number}` : '' });
+    }
+
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('project_costs_in_expenses', ?)")
+      .run(JSON.stringify({ at: new Date().toISOString(), expenses: moved, total }));
+  })();
+  console.log(`[DB] moved ${moved} project cost record(s) (₨${Math.round(total).toLocaleString()}) into Expenses`);
+  return moved;
+}
+try { migrateProjectCostsToExpenses(); } catch (e) { console.error('[DB] project costs → expenses:', e.message); }
+
+// The Inventory and Loans modules were removed. Drop their tables — but only
+// after writing a JSON copy of every row next to the database file, so the data
+// can still be recovered. If the copy can't be written, nothing is dropped.
+try {
+  const REMOVED = ['inventory_transactions', 'inventory_items', 'inventory', 'loan_repayments', 'capital_loans'];
+  const present = REMOVED.filter(t => db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = ?").get(t));
+  if (present.length) {
+    const copy = {};
+    for (const t of present) copy[t] = db.prepare(`SELECT * FROM "${t}"`).all();
+    const file = join(dirname(DB_PATH), `removed-modules-${new Date().toISOString().slice(0, 10)}.json`);
+    writeFileSync(file, JSON.stringify({ removed_at: new Date().toISOString(), tables: copy }, null, 1));
+    for (const t of present) db.exec(`DROP TABLE IF EXISTS "${t}"`);
+    console.log(`[DB] removed modules: dropped ${present.join(', ')} — data copy saved to ${file}`);
+  }
+} catch (e) { console.error('[DB] removed-module cleanup:', e.message); }
+
 // Collapse duplicate project_stages rows (same project + stage_key) left by an
 // id collision, keeping the earliest.
 try {
@@ -1129,7 +1274,6 @@ export function seedUsers() {
     const DEFAULT_USERS = [
       { name: 'Super Admin',       username: 'admin',     email: 'admin@apparel.com',     password: 'admin123',     role: 'super_admin' },
       { name: 'Sales Manager',     username: 'sales',     email: 'sales@apparel.com',     password: 'sales123',     role: 'sales'       },
-      { name: 'Inventory Manager', username: 'inventory', email: 'inventory@apparel.com', password: 'inventory123', role: 'inventory'   },
     ];
     for (const u of DEFAULT_USERS) {
       const hash = bcrypt.hashSync(u.password, 10);

@@ -38,7 +38,6 @@ import QuotationTemplates from './pages/QuotationTemplates';
 import Invoices from './pages/Invoices';
 import InvoiceForm from './pages/InvoiceForm';
 import Purchases from './pages/Purchases';
-import Inventory from './pages/Inventory';
 import Expenses from './pages/Expenses';
 import Ledger from './pages/Ledger';
 import Clients from './pages/Clients';
@@ -50,12 +49,8 @@ import Products from './pages/Products';
 import ProductForm from './pages/ProductForm';
 import Projects from './pages/Projects';
 import ProjectForm from './pages/ProjectForm';
-import Vendors from './pages/Vendors';
-import VendorDetail from './pages/VendorDetail';
 import Templates from './pages/Templates';
 import ResetPassword from './pages/ResetPassword';
-import Loans from './pages/Loans';
-import LoanForm from './pages/LoanForm';
 import api from './lib/api';
 
 // Full-screen spinner
@@ -113,15 +108,12 @@ function AppRoutes({ needsWizard, onWizardComplete }) {
           <Route path="/invoices/new"       element={<ProtectedRoute path="/invoices"><InvoiceForm /></ProtectedRoute>} />
           <Route path="/invoices/:id/edit"  element={<ProtectedRoute path="/invoices"><InvoiceForm /></ProtectedRoute>} />
           <Route path="/purchases"          element={<ProtectedRoute path="/invoices"><Purchases /></ProtectedRoute>} />
-          <Route path="/inventory"          element={<ProtectedRoute path="/inventory"><Inventory /></ProtectedRoute>} />
           <Route path="/products"           element={<ProtectedRoute path="/products"><Products /></ProtectedRoute>} />
           <Route path="/products/new"       element={<ProtectedRoute path="/products"><ProductForm /></ProtectedRoute>} />
           <Route path="/products/:id/edit"  element={<ProtectedRoute path="/products"><ProductForm /></ProtectedRoute>} />
           <Route path="/projects"           element={<ProtectedRoute path="/projects"><Projects /></ProtectedRoute>} />
           <Route path="/projects/new"       element={<ProtectedRoute path="/projects"><ProjectForm /></ProtectedRoute>} />
           <Route path="/projects/:id/edit"  element={<ProtectedRoute path="/projects"><ProjectForm /></ProtectedRoute>} />
-          <Route path="/vendors"            element={<ProtectedRoute path="/vendors"><Vendors /></ProtectedRoute>} />
-          <Route path="/vendors/:id"        element={<ProtectedRoute path="/vendors"><VendorDetail /></ProtectedRoute>} />
           <Route path="/expenses"           element={<ProtectedRoute path="/expenses"><Expenses /></ProtectedRoute>} />
           <Route path="/financials"         element={<Navigate to="/" replace />} />
           <Route path="/ledger"             element={<ProtectedRoute path="/financials"><Ledger /></ProtectedRoute>} />
@@ -129,8 +121,6 @@ function AppRoutes({ needsWizard, onWizardComplete }) {
           <Route path="/clients/new"        element={<ProtectedRoute path="/clients"><ClientForm /></ProtectedRoute>} />
           <Route path="/clients/:id/edit"   element={<ProtectedRoute path="/clients"><ClientForm /></ProtectedRoute>} />
           <Route path="/payroll"            element={<ProtectedRoute path="/payroll"><Payroll /></ProtectedRoute>} />
-          <Route path="/loans"              element={<ProtectedRoute path="/financials"><Loans /></ProtectedRoute>} />
-          <Route path="/loans/new"          element={<ProtectedRoute path="/financials"><LoanForm /></ProtectedRoute>} />
           <Route path="/mockup-generator"   element={<MockupGenerator />} />
           <Route path="/templates"          element={<ProtectedRoute path="/templates"><Templates /></ProtectedRoute>} />
           <Route path="/settings"           element={<ProtectedRoute path="/settings"><Settings /></ProtectedRoute>} />

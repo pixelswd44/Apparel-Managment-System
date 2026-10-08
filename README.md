@@ -1,6 +1,6 @@
 # Apparel CRM
 
-A full-stack business management system built for apparel manufacturers and exporters. Manage clients, quotations, invoices, production, inventory, finances, and personal loans — all in one place.
+A full-stack business management system built for apparel manufacturers and exporters. Manage clients, quotations, invoices, production, vendors and finances — all in one place.
 
 ---
 
@@ -28,9 +28,8 @@ A full-stack business management system built for apparel manufacturers and expo
 - **Product Catalogue** — Multi-currency pricing with a built-in cost calculator and profit margin tool
 - **Purchases** — Purchase order tracking
 
-### Production & Inventory
+### Production
 - **Project Tracking** — Production stages (Cutting → Decoration → Stitching → Press & Pack), vendor payments, worker payments, box tracking with shipping
-- **Inventory** — Raw material tracking with stock-in/out transactions and valuation
 - **Vendors** — Supplier management with per-project payment tracking and balance overview
 
 ### Finance & HR
@@ -39,12 +38,11 @@ A full-stack business management system built for apparel manufacturers and expo
 - **Opening Balance** — Set a starting account balance and cutoff date for a clean-slate ledger view
 - **Expenses** — Business expense tracking by category with recurring support
 - **Employees & Payroll** — Staff records, salary management, advance tracking
-- **Personal Loans** — Track money borrowed from friends and money lent out, with repayment history per person
 
 ### Settings & Admin
 - **Backup & Restore** — Compressed (gzip) backups with selective module export (choose which data to include)
 - **Opening Balance** — Financial fresh-start without deleting historical data
-- **Role-based Access** — Super Admin / Sales / Inventory roles with JWT auth
+- **Role-based Access** — Super Admin / Sales roles with JWT auth
 - **App Branding** — Custom logo and app name via Settings
 - **Multi-company** — Multiple company profiles each with their own logo and bank details
 - **Reminders** — Client-linked reminders with due dates
@@ -120,7 +118,6 @@ The deploy script:
 |-----------------|------------------------------------------|
 | **Super Admin** | Full access to all modules               |
 | **Sales**       | Quotations, Invoices, Clients            |
-| **Inventory**   | Products, Inventory                      |
 
 ---
 
@@ -177,7 +174,6 @@ All routes under `/api/*` require a valid JWT Bearer token (except auth and setu
 | `GET  /api/overview`              | Dashboard summary stats            |
 | `GET  /api/financials/summary`    | P&L overview                       |
 | `GET  /api/financials/ledger`     | Full ledger with running balance   |
-| `GET  /api/loans`                 | Personal loans (borrowed / lent)   |
 | `GET  /api/backup/export`         | Download compressed backup (.gz)   |
 | `POST /api/backup/import`         | Restore from backup file           |
 

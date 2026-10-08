@@ -24,13 +24,10 @@ import paymentsRouter from './routes/payments.js';
 import companiesRouter from './routes/companies.js';
 import remindersRouter from './routes/reminders.js';
 import projectsRouter from './routes/projects.js';
-import vendorsRouter from './routes/vendors.js';
-import inventoryRouter from './routes/inventory.js';
 import employeesRouter from './routes/employees.js';
 import expensesRouter from './routes/expenses.js';
 import incomeRouter from './routes/income.js';
 import financialsRouter from './routes/financials.js';
-import loansRouter     from './routes/loans.js';
 import documentTemplatesRouter from './routes/document-templates.js';
 import backupRouter from './routes/backup.js';
 
@@ -74,15 +71,16 @@ app.use('/api/payments',           paymentsRouter);
 app.use('/api/companies',          companiesRouter);
 app.use('/api/reminders',          remindersRouter);
 app.use('/api/projects',           projectsRouter);
-app.use('/api/vendors',            vendorsRouter);
-app.use('/api/inventory',          inventoryRouter);
 app.use('/api/employees',          employeesRouter);
 app.use('/api/expenses',           expensesRouter);
 app.use('/api/income',             incomeRouter);
 app.use('/api/financials',         financialsRouter);
-app.use('/api/loans',              loansRouter);
 app.use('/api/document-templates', documentTemplatesRouter);
 app.use('/api/backup',             backupRouter);
+
+// Unknown API routes (e.g. the removed /api/inventory and /api/loans) get a JSON
+// 404 instead of falling through to the React app's index.html below.
+app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
 
 // ── Serve React build in production ───────────────────────────────────────────
 const clientDist = join(__dirname, '../../client/dist');

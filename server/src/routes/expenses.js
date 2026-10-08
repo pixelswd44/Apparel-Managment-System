@@ -32,11 +32,12 @@ router.delete('/categories/:id', (req, res) => {
 
 // ── Expenses CRUD ──────────────────────────────────────────────────────────
 router.get('/', (req, res) => {
-  const { month, from, to, category_id } = req.query;
+  const { month, from, to, category_id, project_id } = req.query;
   let sql = `
-    SELECT e.*, ec.name as category_name, ec.color as category_color
+    SELECT e.*, ec.name as category_name, ec.color as category_color, p.title as project_title
     FROM expenses e
     LEFT JOIN expense_categories ec ON ec.id = e.expense_category_id
+    LEFT JOIN projects p ON p.id = e.project_id
     WHERE 1=1
   `;
   const params = [];
@@ -51,6 +52,9 @@ router.get('/', (req, res) => {
     sql += ` AND e.expense_category_id = ?`;
     params.push(category_id);
   }
+  // project_id=none → business expenses only; any id → that project's expenses
+  if (project_id === 'none') sql += ` AND e.project_id IS NULL`;
+  else if (project_id) { sql += ` AND e.project_id = ?`; params.push(project_id); }
   sql += ` ORDER BY e.expense_date DESC, e.created_at DESC`;
   const expenses = db.prepare(sql).all(...params);
   res.json(expenses);
@@ -99,47 +103,57 @@ router.get('/summary', (req, res) => {
   res.json({ thisMonth: thisMonthRow.total, recurringMonthly: recurring.total, byCategory });
 });
 
-router.post('/', (req, res) => {
+// Fields shared by create/update. project_id charges the expense to a project
+// (null = business expense); paid_to is who received the money (optional).
+function expenseFields(body) {
   const {
     title, category = '', expense_category_id = null, amount = 0,
-    paid_by = '', expense_date = null, notes = '',
-    payment_method = 'cash', receipt_url = '', recurring = 0, recurring_period = 'monthly'
-  } = req.body;
+    paid_by = '', paid_to = '', project_id = null, expense_date = null, notes = '',
+    payment_method = 'cash', receipt_url = '', recurring = 0, recurring_period = 'monthly',
+  } = body;
+  const pid = project_id ? parseInt(project_id) : null;
+  return {
+    title, category, expense_category_id: expense_category_id || null, amount: parseFloat(amount) || 0,
+    paid_by, paid_to: (paid_to || '').trim(), project_id: pid && db.prepare('SELECT 1 FROM projects WHERE id = ?').get(pid) ? pid : null,
+    expense_date, notes, payment_method, receipt_url, recurring: recurring ? 1 : 0, recurring_period,
+  };
+}
+
+const SELECT_ONE = `
+  SELECT e.*, ec.name as category_name, ec.color as category_color, p.title as project_title
+  FROM expenses e
+  LEFT JOIN expense_categories ec ON ec.id = e.expense_category_id
+  LEFT JOIN projects p ON p.id = e.project_id
+  WHERE e.id = ?
+`;
+
+router.post('/', (req, res) => {
+  const f = expenseFields(req.body);
+  if (!f.title?.trim()) return res.status(400).json({ error: 'Title is required.' });
   const today = new Date().toISOString().split('T')[0];
   const result = db.prepare(`
     INSERT INTO expenses
-      (title, category, expense_category_id, amount, paid_by, expense_date, notes,
+      (title, category, expense_category_id, amount, paid_by, paid_to, project_id, expense_date, notes,
        payment_method, receipt_url, recurring, recurring_period)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?)
-  `).run(title, category, expense_category_id, amount, paid_by,
-         expense_date || today, notes, payment_method, receipt_url, recurring ? 1 : 0, recurring_period);
-  const exp = db.prepare(`
-    SELECT e.*, ec.name as category_name, ec.color as category_color
-    FROM expenses e LEFT JOIN expense_categories ec ON ec.id = e.expense_category_id
-    WHERE e.id=?
-  `).get(result.lastInsertRowid);
-  res.json(exp);
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `).run(f.title.trim(), f.category, f.expense_category_id, f.amount, f.paid_by, f.paid_to, f.project_id,
+         f.expense_date || today, f.notes, f.payment_method, f.receipt_url, f.recurring, f.recurring_period);
+  res.json(db.prepare(SELECT_ONE).get(result.lastInsertRowid));
 });
 
 router.put('/:id', (req, res) => {
-  const {
-    title, category = '', expense_category_id = null, amount = 0,
-    paid_by = '', expense_date = null, notes = '',
-    payment_method = 'cash', receipt_url = '', recurring = 0, recurring_period = 'monthly'
-  } = req.body;
+  const f = expenseFields(req.body);
+  if (!f.title?.trim()) return res.status(400).json({ error: 'Title is required.' });
   db.prepare(`
     UPDATE expenses SET
-      title=?, category=?, expense_category_id=?, amount=?, paid_by=?, expense_date=?, notes=?,
+      title=?, category=?, expense_category_id=?, amount=?, paid_by=?, paid_to=?, project_id=?, expense_date=?, notes=?,
       payment_method=?, receipt_url=?, recurring=?, recurring_period=?
     WHERE id=?
-  `).run(title, category, expense_category_id, amount, paid_by,
-         expense_date, notes, payment_method, receipt_url, recurring ? 1 : 0, recurring_period,
+  `).run(f.title.trim(), f.category, f.expense_category_id, f.amount, f.paid_by, f.paid_to, f.project_id,
+         f.expense_date, f.notes, f.payment_method, f.receipt_url, f.recurring, f.recurring_period,
          req.params.id);
-  const exp = db.prepare(`
-    SELECT e.*, ec.name as category_name, ec.color as category_color
-    FROM expenses e LEFT JOIN expense_categories ec ON ec.id = e.expense_category_id
-    WHERE e.id=?
-  `).get(req.params.id);
+  const exp = db.prepare(SELECT_ONE).get(req.params.id);
+  if (!exp) return res.status(404).json({ error: 'Not found' });
   res.json(exp);
 });
 

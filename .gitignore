@@ -57,3 +57,5 @@ server/C*.json
 
 # Vite cache
 client/.vite/
+# Data copy written when the Inventory/Loans tables were dropped
+removed-modules-*.json

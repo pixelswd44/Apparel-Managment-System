@@ -4,7 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import zlib from 'zlib';
 import multer from 'multer';
-import db from '../db/index.js';
+import db, { repairVendorSurplus, migrateProjectCostsToExpenses } from '../db/index.js';
 
 const router = Router();
 
@@ -40,13 +40,10 @@ const TABLES_ORDERED = [
   'employees',
   'clients',
   'vendors',
-  // ── Products & inventory ────────────────────────────────────────────────
+  // ── Products ─────────────────────────────────────────────────────────────
   'products',
   'product_prices',
   'product_sales',
-  'inventory_items',
-  'inventory',                   // legacy table — kept for compat
-  'inventory_transactions',
   // ── Quotations & invoices ────────────────────────────────────────────────
   'quotation_templates',
   'quotations',
@@ -69,11 +66,13 @@ const TABLES_ORDERED = [
   'payroll_records',
   'employee_advances',
   'capital_investments',
-  'capital_loans',
-  'loan_repayments',
   // ── Other ───────────────────────────────────────────────────────────────
   'reminders',
 ];
+
+// Tables of the removed Inventory and Loans modules — skipped when restoring an
+// older backup that still contains them (they no longer exist locally).
+const REMOVED_TABLES = new Set(['inventory', 'inventory_items', 'inventory_transactions', 'capital_loans', 'loan_repayments']);
 
 // Any table that exists in the DB but isn't listed above gets appended at the
 // end, so a newly-added table is never silently dropped from backups.
@@ -129,7 +128,7 @@ function restoreBackup(backup, { restoreFiles = true } = {}) {
   const started = Date.now();
   const order = allTablesOrdered();
   // Also restore any table present in the backup but unknown locally (schema drift)
-  const inBackup = Object.keys(backup.tables).filter(t => !order.includes(t));
+  const inBackup = Object.keys(backup.tables).filter(t => !order.includes(t) && !REMOVED_TABLES.has(t));
   const wipeOrder = [...order, ...inBackup].reverse();
   const insertOrder = [...order, ...inBackup];
 
@@ -168,7 +167,9 @@ function restoreBackup(backup, { restoreFiles = true } = {}) {
     const run1 = (sql) => { try { raw ? raw.run(sql) : db.exec(sql); } catch (e) { stats.errors.push(`restore fixup: ${e.message}`); } };
     const scalar = (sql) => {
       try {
-        if (raw) { const r = raw.prepare(sql).get(); return Array.isArray(r) ? (r[0] ?? 0) : ((r && (r.v ?? Object.values(r)[0])) ?? 0); }
+        // sql.js: Statement.get() with no params does NOT step — it returns [] for an
+        // un-stepped statement, which used to re-seed every sequence to 0.
+        if (raw) { const st = raw.prepare(sql); const r = st.step() ? st.get() : []; st.free(); return r[0] ?? 0; }
         return db.prepare(sql).get()?.v ?? 0;
       } catch { return 0; }
     };
@@ -197,6 +198,9 @@ function restoreBackup(backup, { restoreFiles = true } = {}) {
   });
   tx();
   db.pragma('foreign_keys = ON');
+  try { repairVendorSurplus(); } catch (e) { stats.errors.push(`vendor surplus repair: ${e.message}`); }
+  // An older backup still has costs inside its projects — move them into Expenses
+  try { migrateProjectCostsToExpenses(); } catch (e) { stats.errors.push(`project costs → expenses: ${e.message}`); }
   // Persist to disk immediately (sql.js keeps the DB in memory until saved)
   try { if (typeof db._save === 'function') db._save(); } catch {}
 

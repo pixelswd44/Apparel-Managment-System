@@ -4,7 +4,7 @@ import {
   TrendingUp, TrendingDown,
   ArrowUpRight, ArrowDownRight, RefreshCw, Wallet, Users,
   Receipt, Store, Clock, Package, Plus, Pencil, Trash2, X,
-  Landmark, HandCoins, CheckCircle2, AlertCircle, ChevronDown,
+  Landmark, CheckCircle2, ChevronDown,
 } from 'lucide-react';
 import PeriodPicker from '../components/PeriodPicker';
 
@@ -153,11 +153,10 @@ function SummaryCard({ label, value, full, sub, Icon, accent, negative }) {
 }
 
 // ── Capital Inline Form Page ───────────────────────────────────────────────
-function CapitalForm({ type, item, onClose, onSave }) {
-  const isInv = type === 'investment';
+function CapitalForm({ item, onClose, onSave }) {
   const [form, setForm] = useState(item ? { ...item } : {
-    investor_name: '', lender_name: '', amount: '', date: new Date().toISOString().split('T')[0],
-    equity_pct: '', interest_rate: '', due_date: '', paid_amount: '', notes: '', status: 'active',
+    investor_name: '', amount: '', date: new Date().toISOString().split('T')[0],
+    equity_pct: '', notes: '', status: 'active',
   });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const [saving, setSaving] = useState(false);
@@ -168,7 +167,7 @@ function CapitalForm({ type, item, onClose, onSave }) {
     e.preventDefault();
     setSaving(true);
     try {
-      const endpoint = isInv ? '/financials/investments' : '/financials/loans';
+      const endpoint = '/financials/investments';
       const res = item
         ? await api.put(`${endpoint}/${item.id}`, form)
         : await api.post(endpoint, form);
@@ -187,18 +186,18 @@ function CapitalForm({ type, item, onClose, onSave }) {
         </button>
         <span className="text-slate-300">/</span>
         <h2 className="font-bold text-slate-900 text-lg">
-          {item ? 'Edit' : 'New'} {isInv ? 'Investment' : 'Loan'}
+          {item ? 'Edit' : 'New'} Investment
         </h2>
       </div>
 
       <form onSubmit={submit}>
         <div className="max-w-lg bg-white border border-slate-200 rounded-2xl shadow-sm p-6 space-y-5">
           <div>
-            <label className={labelCls}>{isInv ? 'Investor Name' : 'Lender Name'} *</label>
-            <input required value={isInv ? form.investor_name : form.lender_name}
-              onChange={e => set(isInv ? 'investor_name' : 'lender_name', e.target.value)}
+            <label className={labelCls}>Investor Name *</label>
+            <input required value={form.investor_name}
+              onChange={e => set('investor_name', e.target.value)}
               className={inputCls}
-              placeholder={isInv ? 'e.g. Ahmed Khan' : 'e.g. Bank Al-Habib'} />
+              placeholder="e.g. Ahmed Khan" />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -214,41 +213,16 @@ function CapitalForm({ type, item, onClose, onSave }) {
             </div>
           </div>
 
-          {isInv ? (
-            <div>
-              <label className={labelCls}>Equity % (optional)</label>
-              <input type="number" min="0" max="100" step="any" value={form.equity_pct}
-                onChange={e => set('equity_pct', e.target.value)} className={inputCls} placeholder="0" />
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={labelCls}>Interest Rate %</label>
-                <input type="number" min="0" step="any" value={form.interest_rate}
-                  onChange={e => set('interest_rate', e.target.value)} className={inputCls} placeholder="0" />
-              </div>
-              <div>
-                <label className={labelCls}>Due Date</label>
-                <input type="date" value={form.due_date}
-                  onChange={e => set('due_date', e.target.value)} className={inputCls} />
-              </div>
-            </div>
-          )}
-
-          {!isInv && (
-            <div>
-              <label className={labelCls}>Amount Paid Back (PKR)</label>
-              <input type="number" min="0" step="any" value={form.paid_amount}
-                onChange={e => set('paid_amount', e.target.value)} className={inputCls} placeholder="0" />
-            </div>
-          )}
+          <div>
+            <label className={labelCls}>Equity % (optional)</label>
+            <input type="number" min="0" max="100" step="any" value={form.equity_pct}
+              onChange={e => set('equity_pct', e.target.value)} className={inputCls} placeholder="0" />
+          </div>
 
           <div>
             <label className={labelCls}>Status</label>
             <select value={form.status} onChange={e => set('status', e.target.value)} className={inputCls}>
-              {isInv
-                ? [['active','Active'], ['exited','Exited']].map(([v,l]) => <option key={v} value={v}>{l}</option>)
-                : [['active','Active'], ['paid','Paid']].map(([v,l]) => <option key={v} value={v}>{l}</option>)}
+              {[['active','Active'], ['exited','Exited']].map(([v,l]) => <option key={v} value={v}>{l}</option>)}
             </select>
           </div>
 
@@ -265,7 +239,7 @@ function CapitalForm({ type, item, onClose, onSave }) {
             </button>
             <button type="submit" disabled={saving}
               className="flex-1 px-4 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 transition-colors disabled:opacity-50">
-              {saving ? 'Saving…' : item ? 'Save Changes' : `Add ${isInv ? 'Investment' : 'Loan'}`}
+              {saving ? 'Saving…' : item ? 'Save Changes' : 'Add Investment'}
             </button>
           </div>
         </div>
@@ -276,7 +250,7 @@ function CapitalForm({ type, item, onClose, onSave }) {
 
 // ── Main ───────────────────────────────────────────────────────────────────
 export default function Financials() {
-  const [tab, setTab] = useState('investments'); // P&L now lives on the Dashboard (Overview)
+  const [tab] = useState('investments'); // P&L now lives on the Dashboard (Overview)
   const [summary, setSummary] = useState(null);
   const [monthly, setMonthly] = useState([]);
   const [transactions, setTransactions] = useState([]);
@@ -292,20 +266,18 @@ export default function Financials() {
   );
 
   const [investments, setInvestments] = useState([]);
-  const [loans, setLoans] = useState([]);
-  const [capitalModal, setCapitalModal] = useState(null); // { type: 'investment'|'loan', item?: {} }
+  const [capitalModal, setCapitalModal] = useState(null); // { item?: {} }
   const [capitalLoading, setCapitalLoading] = useState(false);
 
   const loadCapital = useCallback(async () => {
     setCapitalLoading(true);
     try {
-      const [inv, ln] = await Promise.all([api.get('/financials/investments'), api.get('/financials/loans')]);
+      const inv = await api.get('/financials/investments');
       setInvestments(inv.data);
-      setLoans(ln.data);
     } finally { setCapitalLoading(false); }
   }, []);
 
-  useEffect(() => { if (tab === 'investments' || tab === 'loans') loadCapital(); }, [tab, loadCapital]);
+  useEffect(() => { if (tab === 'investments') loadCapital(); }, [tab, loadCapital]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -402,7 +374,6 @@ export default function Financials() {
   if (capitalModal) {
     return (
       <CapitalForm
-        type={capitalModal.type}
         item={capitalModal.item}
         onClose={() => setCapitalModal(null)}
         onSave={() => { loadCapital(); setCapitalModal(null); }}
@@ -415,7 +386,7 @@ export default function Financials() {
       {/* Header */}
       <div className="flex items-center justify-between mb-4 gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Investments &amp; Loans</h1>
+          <h1 className="text-2xl font-bold text-slate-900">Investments</h1>
           <p className="text-sm text-slate-500 mt-0.5">Capital tracking · P&amp;L now lives on the Dashboard</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -429,28 +400,13 @@ export default function Financials() {
           <button onClick={tab === 'pl' ? load : loadCapital} className="flex items-center gap-1.5 px-3 py-2 text-sm border border-slate-200 bg-white rounded-xl text-slate-600 hover:border-indigo-300 font-medium">
             <RefreshCw size={14} />
           </button>
-          {(tab === 'investments' || tab === 'loans') && (
-            <button onClick={() => setCapitalModal({ type: tab === 'investments' ? 'investment' : 'loan' })}
+          {tab === 'investments' && (
+            <button onClick={() => setCapitalModal({})}
               className="flex items-center gap-1.5 px-3.5 py-2 text-sm bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-colors">
-              <Plus size={14} /> New {tab === 'investments' ? 'Investment' : 'Loan'}
+              <Plus size={14} /> New Investment
             </button>
           )}
         </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex gap-1 bg-slate-100 rounded-xl p-1 mb-5 overflow-x-auto scrollbar-hide">
-        {[
-          { key: 'investments', label: 'Investments' },
-          { key: 'loans',       label: 'Loans' },
-        ].map(({ key, label }) => (
-          <button key={key} onClick={() => setTab(key)}
-            className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors whitespace-nowrap flex-shrink-0 ${
-              tab === key ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-            }`}>
-            {label}
-          </button>
-        ))}
       </div>
 
       {/* ── Investments Tab ── */}
@@ -502,7 +458,7 @@ export default function Financials() {
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <p className="text-base font-black text-indigo-700 break-all text-right">{fmt(inv.amount)}</p>
-                      <button onClick={() => setCapitalModal({ type: 'investment', item: inv })}
+                      <button onClick={() => setCapitalModal({ item: inv })}
                         className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors">
                         <Pencil size={13} />
                       </button>
@@ -513,92 +469,6 @@ export default function Financials() {
                     </div>
                   </div>
                 ))}
-              </div>
-            )}
-          </div>
-        );
-      })()}
-
-      {/* ── Loans Tab ── */}
-      {tab === 'loans' && (() => {
-        const totalBorrowed = loans.reduce((s, l) => s + parseFloat(l.amount || 0), 0);
-        const totalPaid     = loans.reduce((s, l) => s + parseFloat(l.paid_amount || 0), 0);
-        const outstanding   = totalBorrowed - totalPaid;
-        const activeLoans   = loans.filter(l => l.status === 'active');
-        return (
-          <div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-5">
-              <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
-                <p className="text-xs font-semibold text-rose-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><HandCoins size={13} /> Total Borrowed</p>
-                <p className="text-xl sm:text-2xl font-bold text-slate-900 break-all">{fmt(totalBorrowed)}</p>
-                <p className="text-xs text-slate-400 mt-1">{loans.length} loan{loans.length !== 1 ? 's' : ''}</p>
-              </div>
-              <div className="bg-white border border-rose-100 rounded-2xl p-5 shadow-sm">
-                <p className="text-xs font-semibold text-rose-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><AlertCircle size={13} /> Outstanding</p>
-                <p className="text-xl sm:text-2xl font-bold text-rose-600 break-all">{fmt(outstanding)}</p>
-                <p className="text-xs text-slate-400 mt-1">{activeLoans.length} active</p>
-              </div>
-              <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm col-span-2 sm:col-span-1">
-                <p className="text-xs font-semibold text-emerald-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><CheckCircle2 size={13} /> Paid Back</p>
-                <p className="text-xl sm:text-2xl font-bold text-emerald-600 break-all">{fmt(totalPaid)}</p>
-                <p className="text-xs text-slate-400 mt-1">{loans.length - activeLoans.length} fully paid</p>
-              </div>
-            </div>
-            {capitalLoading ? (
-              <div className="flex items-center justify-center py-16"><div className="w-6 h-6 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" /></div>
-            ) : loans.length === 0 ? (
-              <div className="bg-white border border-slate-200 rounded-2xl py-16 text-center">
-                <HandCoins size={32} className="mx-auto text-slate-300 mb-3" />
-                <p className="text-slate-500 font-semibold">No loans recorded</p>
-                <p className="text-slate-400 text-sm mt-1">Click "New Loan" to add one</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {loans.map(ln => {
-                  const remaining = parseFloat(ln.amount || 0) - parseFloat(ln.paid_amount || 0);
-                  const pct = parseFloat(ln.amount) > 0 ? Math.min(100, (parseFloat(ln.paid_amount || 0) / parseFloat(ln.amount)) * 100) : 0;
-                  return (
-                    <div key={ln.id} className="bg-white border border-slate-200 rounded-2xl px-5 py-4 shadow-sm">
-                      <div className="flex items-start justify-between gap-3 mb-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap mb-1">
-                            <p className="font-semibold text-slate-900">{ln.lender_name}</p>
-                            <span className={`text-2xs font-semibold px-2 py-0.5 rounded-full ${ln.status === 'paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
-                              {ln.status}
-                            </span>
-                            {parseFloat(ln.interest_rate) > 0 && (
-                              <span className="text-2xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">{ln.interest_rate}% interest</span>
-                            )}
-                          </div>
-                          <p className="text-xs text-slate-400">
-                            Borrowed {ln.date}{ln.due_date ? ` · Due ${ln.due_date}` : ''}{ln.notes ? ` · ${ln.notes}` : ''}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <div className="text-right">
-                            <p className="text-base font-black text-rose-600 break-all">{fmt(ln.amount)}</p>
-                            <p className="text-xs text-slate-400">Remaining: {fmt(remaining)}</p>
-                          </div>
-                          <button onClick={() => setCapitalModal({ type: 'loan', item: ln })}
-                            className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors">
-                            <Pencil size={13} />
-                          </button>
-                          <button onClick={() => deleteCapital('loans', ln.id)}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors">
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
-                      </div>
-                      <div className="w-full bg-slate-100 rounded-full h-1.5">
-                        <div className="bg-emerald-500 h-1.5 rounded-full transition-all" style={{ width: `${pct}%` }} />
-                      </div>
-                      <div className="flex justify-between mt-1">
-                        <span className="text-2xs text-slate-400">Paid: {fmt(ln.paid_amount)}</span>
-                        <span className="text-2xs text-slate-400">{pct.toFixed(0)}%</span>
-                      </div>
-                    </div>
-                  );
-                })}
               </div>
             )}
           </div>

@@ -67,7 +67,7 @@ router.post('/users', verifyToken, requireRole('super_admin'), (req, res) => {
     if (!name || !username || !email || !password || !role)
       return res.status(400).json({ error: 'All fields required' });
 
-    const validRoles = ['super_admin', 'sales', 'inventory'];
+    const validRoles = ['super_admin', 'sales'];
     if (!validRoles.includes(role))
       return res.status(400).json({ error: 'Invalid role' });
 
@@ -92,7 +92,7 @@ router.put('/users/:id', verifyToken, requireRole('super_admin'), (req, res) => 
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    const validRoles = ['super_admin', 'sales', 'inventory'];
+    const validRoles = ['super_admin', 'sales'];
     if (role && !validRoles.includes(role))
       return res.status(400).json({ error: 'Invalid role' });
 
