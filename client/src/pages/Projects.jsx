@@ -6,6 +6,7 @@ import {
   Search, Shirt, Tag, Trash2, TrendingUp, Truck, User, Wand2, X,
 } from 'lucide-react';
 import api, { imgUrl } from '../lib/api';
+import { ExpenseModal } from './Expenses';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -1482,7 +1483,8 @@ function ProjectDetail({ projectId, onBack, catalogProducts, currencies, baseCur
       {/* ── Expenses Tab — everything charged to this project on the Expenses screen ── */}
       {tab === 'Expenses' && (
         <ProjectExpensesTab project={project} fmt={fmt} onAdd={addExpense}
-          onOpen={() => navigate(`/expenses?filter=${projectId}`)} />
+          onOpen={() => navigate(`/expenses?filter=${projectId}`)}
+          onChanged={async () => { await load(); onProjectUpdated?.(); }} />
       )}
 
       {/* ── Shipping Tab — shipping agent + tracking number ── */}
@@ -1559,9 +1561,36 @@ function CompletedProjectRow({ project, onClick }) {
 // ─── Expenses Tab — the costs charged to this project ─────────────────────────
 // Read-only here: expenses are entered and edited on the Expenses screen.
 
-function ProjectExpensesTab({ project, fmt = pkr, onAdd, onOpen }) {
+function ProjectExpensesTab({ project, fmt = pkr, onAdd, onOpen, onChanged }) {
   const expenses = Array.isArray(project.expenses) ? project.expenses : [];
   const total    = expenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
+  // Edit opens the same form as the Expenses screen; delete asks first
+  const [editing, setEditing]       = useState(null);  // expense being edited
+  const [delTarget, setDelTarget]   = useState(null);  // expense id pending delete
+  const [deletingId, setDeletingId] = useState(null);
+  const [lists, setLists]           = useState({ categories: [], projects: [] });
+
+  async function openEdit(e) {
+    const [cats, projs] = await Promise.all([
+      api.get('/expenses/categories').catch(() => ({ data: [] })),
+      api.get('/projects').catch(() => ({ data: [] })),
+    ]);
+    setLists({ categories: Array.isArray(cats.data) ? cats.data : [], projects: Array.isArray(projs.data) ? projs.data : [] });
+    setDelTarget(null);
+    setEditing(e);
+  }
+
+  async function confirmDelete(id) {
+    setDeletingId(id);
+    try {
+      await api.delete(`/expenses/${id}`);
+      setDelTarget(null);
+      await onChanged?.();
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -1606,6 +1635,30 @@ function ProjectExpensesTab({ project, fmt = pkr, onAdd, onOpen }) {
                 </p>
               </div>
               <span className="text-sm font-bold text-slate-800 flex-shrink-0">{fmt(e.amount)}</span>
+              {delTarget === e.id ? (
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <span className="text-xs font-medium text-rose-600">Delete?</span>
+                  <button onClick={() => confirmDelete(e.id)} disabled={deletingId === e.id}
+                    className="px-2 py-1 text-xs bg-rose-600 text-white rounded-lg hover:bg-rose-700 font-medium disabled:opacity-60">
+                    {deletingId === e.id ? 'Deleting…' : 'Delete'}
+                  </button>
+                  <button onClick={() => setDelTarget(null)}
+                    className="px-2 py-1 text-xs border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 font-medium">
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-0.5 flex-shrink-0">
+                  <button onClick={() => openEdit(e)} title="Edit"
+                    className="p-1.5 rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 transition-colors">
+                    <Pencil size={13} />
+                  </button>
+                  <button onClick={() => setDelTarget(e.id)} title="Delete"
+                    className="p-1.5 rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition-colors">
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              )}
             </div>
           ))}
           <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50">
@@ -1613,6 +1666,16 @@ function ProjectExpensesTab({ project, fmt = pkr, onAdd, onOpen }) {
             <span className="text-sm font-black text-rose-600">{fmt(total)}</span>
           </div>
         </div>
+      )}
+
+      {editing && (
+        <ExpenseModal
+          expense={editing}
+          categories={lists.categories}
+          projects={lists.projects}
+          onClose={() => setEditing(null)}
+          onSave={async () => { setEditing(null); await onChanged?.(); }}
+        />
       )}
     </div>
   );

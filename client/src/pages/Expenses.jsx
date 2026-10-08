@@ -112,7 +112,7 @@ function CategoryModal({ category, onClose, onSave }) {
 }
 
 // ── ExpenseModal ───────────────────────────────────────────────────────────
-function ExpenseModal({ expense, categories, projects = [], defaultProjectId = '', onClose, onSave }) {
+export function ExpenseModal({ expense, categories, projects = [], defaultProjectId = '', onClose, onSave }) {
   const blank = {
     title: '', expense_category_id: '', amount: '', paid_by: '', paid_to: '',
     project_id: defaultProjectId ? String(defaultProjectId) : '',
