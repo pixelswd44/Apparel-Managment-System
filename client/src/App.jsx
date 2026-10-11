@@ -38,6 +38,7 @@ import Invoices from './pages/Invoices';
 import InvoiceForm from './pages/InvoiceForm';
 import Purchases from './pages/Purchases';
 import Expenses from './pages/Expenses';
+import ExpenseForm from './pages/ExpenseForm';
 import Ledger from './pages/Ledger';
 import Clients from './pages/Clients';
 import ClientForm from './pages/ClientForm';
@@ -112,6 +113,8 @@ function AppRoutes({ needsWizard, onWizardComplete }) {
           <Route path="/projects/new"       element={<ProtectedRoute path="/projects"><ProjectForm /></ProtectedRoute>} />
           <Route path="/projects/:id/edit"  element={<ProtectedRoute path="/projects"><ProjectForm /></ProtectedRoute>} />
           <Route path="/expenses"           element={<ProtectedRoute path="/expenses"><Expenses /></ProtectedRoute>} />
+          <Route path="/expenses/new"       element={<ProtectedRoute path="/expenses"><ExpenseForm /></ProtectedRoute>} />
+          <Route path="/expenses/:id/edit"  element={<ProtectedRoute path="/expenses"><ExpenseForm /></ProtectedRoute>} />
           <Route path="/shipping-agents"    element={<Navigate to="/expenses?tab=shipping" replace />} />
           <Route path="/financials"         element={<Navigate to="/" replace />} />
           <Route path="/ledger"             element={<ProtectedRoute path="/financials"><Ledger /></ProtectedRoute>} />

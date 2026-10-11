@@ -104,8 +104,22 @@ function CategoryModal({ category, onClose, onSave }) {
   );
 }
 
+// Defined at module level so the form isn't remounted (losing focus) on every keystroke.
+function ExpenseShell({ page, expense, onClose, children }) {
+  if (!page) return <Drawer open={true} onClose={onClose} title={expense ? 'Edit Expense' : 'New Expense'} width="max-w-md">{children}</Drawer>;
+  return (
+    <div className="max-w-xl mx-auto pb-10">
+      <button type="button" onClick={onClose} className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 mb-3">
+        <ArrowLeft size={15} /> Back
+      </button>
+      <h1 className="text-2xl font-bold text-slate-900 mb-4">{expense ? 'Edit Expense' : 'New Expense'}</h1>
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm">{children}</div>
+    </div>
+  );
+}
+
 // ── ExpenseModal ───────────────────────────────────────────────────────────
-export function ExpenseModal({ expense, categories, projects = [], defaultProjectId = '', onClose, onSave }) {
+export function ExpenseModal({ expense, categories, projects = [], defaultProjectId = '', onClose, onSave, page = false }) {
   const blank = {
     title: '', expense_category_id: '', amount: '', paid_by: '', paid_to: '',
     project_id: defaultProjectId ? String(defaultProjectId) : '',
@@ -157,8 +171,8 @@ export function ExpenseModal({ expense, categories, projects = [], defaultProjec
   }
 
   return (
-    <Drawer open={true} onClose={onClose} title={expense ? 'Edit Expense' : 'New Expense'} width="max-w-md">
-      <form onSubmit={handleSubmit} className="p-6 space-y-4">
+    <ExpenseShell page={page} expense={expense} onClose={onClose}>
+      <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4">
 
           {/* ── Project — charging an expense to a project adds it to that project's cost ── */}
           <div className={`rounded-xl p-3 border ${form.project_id ? 'bg-orange-50 border-orange-200' : 'bg-slate-50 border-slate-200'}`}>
@@ -287,7 +301,7 @@ export function ExpenseModal({ expense, categories, projects = [], defaultProjec
             </button>
           </div>
         </form>
-    </Drawer>
+    </ExpenseShell>
   );
 }
 
@@ -679,11 +693,8 @@ export default function Expenses() {
   // that project (saving returns to it); /expenses?filter=ID shows its expenses.
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const fromProject = searchParams.get('new') ? searchParams.get('project') : null;
   const [projectFilter, setProjectFilter] = useState(() => searchParams.get('filter') || ''); // '' all · 'none' business only · id
-  const [modal, setModal] = useState(() => (fromProject ? 'new' : null));
-  const [linkedProject, setLinkedProject] = useState(fromProject);
-  const [catModal, setCatModal] = useState(null);
+    const [catModal, setCatModal] = useState(null);
   const [showCats, setShowCats] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [showBreakdown, setShowBreakdown] = useState(false);
@@ -754,16 +765,11 @@ export default function Expenses() {
 
   // The link parameters were read on open — clear them from the address bar
   useEffect(() => {
-    if (searchParams.get('project') || searchParams.get('filter') || searchParams.get('tab')) setSearchParams({}, { replace: true });
+    if (searchParams.get('filter') || searchParams.get('tab')) setSearchParams({}, { replace: true });
   }, [searchParams, setSearchParams]);
 
-  function closeModal(saved) {
-    const back = linkedProject;
-    setModal(null);
-    setLinkedProject(null);
-    if (saved) { setSelected(null); load(); }
-    if (back) navigate(`/projects?open=${back}`);
-  }
+  const goNew = () => navigate('/expenses/new' + (projectFilter && projectFilter !== 'none' ? `?project=${projectFilter}` : ''));
+  const goEdit = exp => navigate(`/expenses/${exp.id}/edit`, { state: { expense: exp } });
 
   async function seedCategories() {
     setSeeding(true);
@@ -831,7 +837,7 @@ export default function Expenses() {
             </button>
           )}
           {activeTab === 'expenses' && (
-            <button onClick={() => setModal('new')}
+            <button onClick={() => goNew()}
               className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 font-semibold text-sm shadow-sm transition-colors">
               <Plus size={16} /> <span>Add<span className="hidden sm:inline"> Expense</span></span>
             </button>
@@ -1014,7 +1020,7 @@ export default function Expenses() {
             <div className="flex flex-col items-center justify-center py-16 text-center px-6">
               <Receipt size={28} className="mb-3 text-slate-300" />
               <p className="text-sm font-medium text-slate-400">No expenses found</p>
-              <button onClick={() => setModal('new')} className="mt-3 text-xs text-indigo-600 hover:underline font-medium">Record an expense</button>
+              <button onClick={() => goNew()} className="mt-3 text-xs text-indigo-600 hover:underline font-medium">Record an expense</button>
             </div>
           ) : (
             <div className="divide-y divide-slate-100">
@@ -1047,7 +1053,7 @@ export default function Expenses() {
                   <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
                     <span className="text-sm font-bold text-slate-800">{pkr(exp.amount)}</span>
                     <div className="flex gap-1" onClick={e => e.stopPropagation()}>
-                      <button onClick={() => setModal(exp)} title="Edit"
+                      <button onClick={() => goEdit(exp)} title="Edit"
                         className="p-2 rounded-lg bg-slate-100 hover:bg-indigo-100 text-slate-500 hover:text-indigo-600 transition-colors">
                         <Edit2 size={14} />
                       </button>
@@ -1161,12 +1167,12 @@ export default function Expenses() {
       {activeTab === 'shipping' && <ShippingTab />}
 
       {/* ── Expense detail (drawer — works the same on phone and desktop) ── */}
-      {selected && !modal && (
+      {selected && (
         <Drawer open onClose={() => setSelected(null)} title={selected.title}
           subtitle={selected.category_name || 'Uncategorized'} width="max-w-md"
           footer={
             <div className="flex gap-3">
-              <button onClick={() => { setModal(selected); setSelected(null); }}
+              <button onClick={() => { goEdit(selected); }}
                 className="flex-1 flex items-center justify-center gap-2 py-2.5 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors">
                 <Edit2 size={14} /> Edit
               </button>
@@ -1226,16 +1232,6 @@ export default function Expenses() {
       )}
 
       {/* ── Modals ── */}
-      {modal && (
-        <ExpenseModal
-          expense={modal === 'new' ? null : modal}
-          categories={categories}
-          projects={projects}
-          defaultProjectId={modal === 'new' ? (linkedProject || (projectFilter && projectFilter !== 'none' ? projectFilter : '')) : ''}
-          onClose={() => closeModal(false)}
-          onSave={() => closeModal(true)}
-        />
-      )}
       {catModal && (
         <CategoryModal
           category={catModal === 'new' ? null : catModal}

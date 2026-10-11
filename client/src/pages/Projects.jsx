@@ -1185,7 +1185,7 @@ function ProjectDetail({ projectId, onBack, catalogProducts, currencies, baseCur
   }
 
   // All spending is entered on the Expenses screen — open it pre-set to this project
-  const addExpense = () => navigate(`/expenses?project=${projectId}&new=1`);
+  const addExpense = () => navigate(`/expenses/new?project=${projectId}`);
 
   async function handleSaveImages(images) {
     await api.put(`/projects/${projectId}/images`, { images });
