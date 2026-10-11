@@ -3,7 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import api from '../lib/api';
 import {
   Receipt, Plus, Search, X, Edit2, Trash2, RefreshCw, ArrowLeft,
-  Tag, Calendar, Repeat, ChevronDown, Check,
+  Tag, Calendar, Repeat, ChevronDown, Check, SlidersHorizontal,
   Home, Zap, Droplets, Truck, Coffee, Package, MoreHorizontal,
   BarChart2, AlertTriangle, TrendingUp, TrendingDown, Banknote, Flame,
 } from 'lucide-react';
@@ -126,9 +126,11 @@ export function ExpenseModal({ expense, categories, projects = [], defaultProjec
         paid_to: expense.paid_to || '',
         recurring: !!expense.recurring }
     : blank);
-  // Active projects first, then completed — most recent first within each
-  const projectOptions = [...projects].sort((a, b) =>
-    (a.status === 'completed') - (b.status === 'completed') || String(b.created_at).localeCompare(String(a.created_at)));
+  // Only active projects — except the one this expense is already on, so editing
+  // an old expense doesn't blank its project. Most recent first.
+  const projectOptions = projects
+    .filter(p => p.status !== 'completed' || String(p.id) === String(expense?.project_id))
+    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -541,6 +543,134 @@ function DetailReport({ expenses }) {
   );
 }
 
+
+// ── Shipping tab ───────────────────────────────────────────────────────────
+// Read-only overview of every shipment and what was paid for it. Shipments and
+// their costs are entered on the project's Shipping tab — tapping a row opens it.
+function ShippingTab() {
+  const navigate = useNavigate();
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [range, setRange] = useState({ from: null, to: null, label: 'All Time' });
+
+  useEffect(() => {
+    setLoading(true);
+    api.get('/shipping-agents/shipments/all', { params: range.from ? { from: range.from, to: range.to } : {} })
+      .then(r => setRows(Array.isArray(r.data) ? r.data : []))
+      .catch(() => setRows([]))
+      .finally(() => setLoading(false));
+  }, [range.from, range.to]);
+
+  const q = search.trim().toLowerCase();
+  const shown = rows.filter(r => !q || [r.project_title, r.client_name, r.agent_name, r.tracking_number]
+    .some(f => f && String(f).toLowerCase().includes(q)));
+  const total = shown.reduce((s, r) => s + (parseFloat(r.cost_total) || 0), 0);
+  const open = r => r.project_id && navigate(`/projects?open=${r.project_id}`);
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-3 shadow-sm">
+          <div className="bg-sky-50 text-sky-600 p-2.5 rounded-xl flex-shrink-0 hidden sm:block"><Truck size={18} /></div>
+          <div className="min-w-0">
+            <p className="text-lg font-bold text-slate-900 break-words">{pkr(total)}</p>
+            <p className="text-xs text-slate-500">Shipping Paid</p>
+            <p className="text-2xs text-slate-400 truncate">{range.label}</p>
+          </div>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-3 shadow-sm">
+          <div className="bg-indigo-50 text-indigo-600 p-2.5 rounded-xl flex-shrink-0 hidden sm:block"><Package size={18} /></div>
+          <div className="min-w-0">
+            <p className="text-lg font-bold text-slate-900">{shown.length}</p>
+            <p className="text-xs text-slate-500">Shipments</p>
+            <p className="text-2xs text-slate-400 truncate">tap one to open its project</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm space-y-3">
+        <div className="relative">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input placeholder="Search project, client, agent, tracking…" value={search} onChange={e => setSearch(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+        </div>
+        <PeriodPicker defaultMode="all" onChange={setRange} />
+      </div>
+
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+        {loading ? (
+          <div className="flex justify-center py-16"><div className="w-6 h-6 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" /></div>
+        ) : shown.length === 0 ? (
+          <div className="py-16 text-center">
+            <Truck size={28} className="mx-auto mb-3 text-slate-300" />
+            <p className="text-sm font-medium text-slate-400">No shipments found</p>
+            <p className="text-xs text-slate-400 mt-1">Add shipments on a project's Shipping tab.</p>
+          </div>
+        ) : (<>
+          {/* Desktop table */}
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  <th className="px-4 py-3">Date</th>
+                  <th className="px-4 py-3">Project</th>
+                  <th className="px-4 py-3">Client</th>
+                  <th className="px-4 py-3">Agent</th>
+                  <th className="px-4 py-3">Tracking #</th>
+                  <th className="px-4 py-3 text-right">Shipping Payment</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {shown.map(r => (
+                  <tr key={r.id} onClick={() => open(r)} className="hover:bg-slate-50 cursor-pointer">
+                    <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{fmtDate(r.shipping_date)}</td>
+                    <td className="px-4 py-3 font-medium text-slate-800">{r.project_title || '—'}</td>
+                    <td className="px-4 py-3 text-slate-600">{r.client_name || '—'}</td>
+                    <td className="px-4 py-3 text-slate-600">{r.agent_name || '—'}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-slate-500">{r.tracking_number || '—'}</td>
+                    <td className="px-4 py-3 text-right font-bold text-slate-900 whitespace-nowrap">
+                      {r.cost_total > 0 ? pkr(r.cost_total) : <span className="font-normal text-slate-300">not entered</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-slate-50 border-t border-slate-200">
+                  <td colSpan={5} className="px-4 py-3 text-xs font-semibold text-slate-500">{shown.length} shipments</td>
+                  <td className="px-4 py-3 text-right font-bold text-slate-900">{pkr(total)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          {/* Mobile cards */}
+          <div className="md:hidden divide-y divide-slate-100">
+            {shown.map(r => (
+              <button key={r.id} type="button" onClick={() => open(r)} className="w-full text-left px-4 py-3 hover:bg-slate-50 flex items-start gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-slate-800">{r.project_title || 'Project'}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {fmtDate(r.shipping_date)}{r.agent_name ? ` · ${r.agent_name}` : ''}{r.client_name ? ` · ${r.client_name}` : ''}
+                  </p>
+                  {r.tracking_number && <p className="text-2xs font-mono text-slate-400 mt-0.5">#{r.tracking_number}</p>}
+                </div>
+                <span className="text-sm font-bold text-slate-900 flex-shrink-0">
+                  {r.cost_total > 0 ? pkr(r.cost_total) : <span className="text-xs font-normal text-slate-300">—</span>}
+                </span>
+              </button>
+            ))}
+            <div className="flex items-center justify-between px-4 py-3 bg-slate-50">
+              <span className="text-xs font-semibold text-slate-500">{shown.length} shipments</span>
+              <span className="text-sm font-bold text-slate-900">{pkr(total)}</span>
+            </div>
+          </div>
+        </>)}
+      </div>
+    </div>
+  );
+}
+
 // ── Main ───────────────────────────────────────────────────────────────────
 export default function Expenses() {
   const [expenses, setExpenses] = useState([]);
@@ -548,7 +678,6 @@ export default function Expenses() {
   const [summary, setSummary] = useState({ thisMonth: 0, recurringMonthly: 0, byCategory: [] });
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [month, setMonth] = useState(''); // empty = all months
   const [catFilter, setCatFilter] = useState('');
   const [projects, setProjects] = useState([]);
   // Links from a project: /expenses?project=ID&new=1 opens the form pre-set to
@@ -561,15 +690,17 @@ export default function Expenses() {
   const [linkedProject, setLinkedProject] = useState(fromProject);
   const [catModal, setCatModal] = useState(null);
   const [showCats, setShowCats] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  const [showBreakdown, setShowBreakdown] = useState(false);
   const [seeding, setSeeding] = useState(false);
   const [delTarget, setDelTarget] = useState(null);       // expense id pending delete
   const [delCatTarget, setDelCatTarget] = useState(null); // category id pending delete
-  const [selected, setSelected] = useState(null);         // expense shown in detail panel
+  const [selected, setSelected] = useState(null);         // expense shown in detail drawer
   // Period filter: { from, to, label } — defaults to the current month; null from/to means "all time"
   const [periodRange, setPeriodRange] = useState(currentMonthRange());
 
   // ── Income tab ──────────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState('expenses'); // 'expenses' | 'income'
+  const [activeTab, setActiveTab] = useState('expenses'); // 'expenses' | 'income' | 'shipping'
   const [income, setIncome] = useState([]);
   const [incomeSummary, setIncomeSummary] = useState({ thisMonth: 0, bySource: [] });
   const [incomeLoading, setIncomeLoading] = useState(true);
@@ -606,13 +737,9 @@ export default function Expenses() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    // Build date params: quarter range takes priority over month picker.
     // A single project's expenses are shown across all dates.
     const oneProject = projectFilter && projectFilter !== 'none';
-    const dateParams = oneProject ? {}
-      : periodRange.from
-        ? { from: periodRange.from, to: periodRange.to }
-        : month ? { month } : {};
+    const dateParams = oneProject ? {} : periodRange.from ? { from: periodRange.from, to: periodRange.to } : {};
     const [expRes, catRes, sumRes] = await Promise.all([
       api.get('/expenses', { params: { ...dateParams, category_id: catFilter || undefined, project_id: projectFilter || undefined } }),
       api.get('/expenses/categories'),
@@ -622,7 +749,7 @@ export default function Expenses() {
     setCategories(catRes.data);
     setSummary(sumRes.data);
     setLoading(false);
-  }, [month, catFilter, projectFilter, periodRange.from, periodRange.to]);
+  }, [catFilter, projectFilter, periodRange.from, periodRange.to]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -675,62 +802,67 @@ export default function Expenses() {
   });
 
   const filteredTotal = filtered.reduce((s, e) => s + parseFloat(e.amount || 0), 0);
+  const activeFilters = (catFilter ? 1 : 0) + (projectFilter ? 1 : 0) + (periodRange.from ? 1 : 0);
+  const chipCls = on => `px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors ${on ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 hover:text-slate-700'}`;
 
   return (
-    <div className="flex flex-col" style={{ height: 'calc(100vh - 8.5rem)' }}>
+    <div className="pb-8">
 
       {/* ── Header ── */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-3 flex-shrink-0">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">{activeTab === 'income' ? 'Other Income' : 'Expenses'}</h1>
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-bold text-slate-900">
+            {activeTab === 'income' ? 'Other Income' : activeTab === 'shipping' ? 'Shipping' : 'Expenses'}
+          </h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            {activeTab === 'income'
-              ? 'Miscellaneous income outside the invoice flow'
+            {activeTab === 'income' ? 'Miscellaneous income outside the invoice flow'
+              : activeTab === 'shipping' ? 'What you paid to ship each project'
               : 'Track business spending and recurring costs'}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0">
           {activeTab === 'expenses' && (
-            <button onClick={() => setShowCats(v => !v)}
-              className={`flex items-center gap-1.5 px-3 py-2 text-sm border rounded-xl font-medium transition-colors ${
+            <button onClick={() => setShowCats(v => !v)} title="Categories"
+              className={`flex items-center gap-1.5 px-3 py-2.5 text-sm border rounded-xl font-medium transition-colors ${
                 showCats ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-300'
               }`}>
-              <Tag size={14} /> Categories
+              <Tag size={14} /> <span className="hidden sm:inline">Categories</span>
             </button>
           )}
-          {activeTab === 'income' ? (
+          {activeTab === 'income' && (
             <button onClick={() => setIncomeModal('new')}
               className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 font-semibold text-sm shadow-sm transition-colors">
-              <Plus size={16} /> Add Income
+              <Plus size={16} /> <span>Add<span className="hidden sm:inline"> Income</span></span>
             </button>
-          ) : (
+          )}
+          {activeTab === 'expenses' && (
             <button onClick={() => setModal('new')}
               className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 font-semibold text-sm shadow-sm transition-colors">
-              <Plus size={16} /> Add Expense
+              <Plus size={16} /> <span>Add<span className="hidden sm:inline"> Expense</span></span>
             </button>
           )}
         </div>
       </div>
 
       {/* ── Tab switcher ── */}
-      <div className="flex gap-1 bg-slate-100 rounded-xl p-1 mb-4 w-fit flex-shrink-0">
-        <button onClick={() => setActiveTab('expenses')}
-          className={`flex items-center gap-1.5 px-4 py-1.5 text-sm rounded-lg font-semibold transition-all ${
-            activeTab === 'expenses' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-          }`}>
-          <TrendingDown size={14} /> Expenses
-        </button>
-        <button onClick={() => setActiveTab('income')}
-          className={`flex items-center gap-1.5 px-4 py-1.5 text-sm rounded-lg font-semibold transition-all ${
-            activeTab === 'income' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-          }`}>
-          <TrendingUp size={14} /> Income
-        </button>
+      <div className="flex gap-1 bg-slate-100 rounded-xl p-1 mb-4 w-fit max-w-full overflow-x-auto">
+        {[
+          { key: 'expenses', label: 'Expenses', icon: TrendingDown },
+          { key: 'income',   label: 'Income',   icon: TrendingUp },
+          { key: 'shipping', label: 'Shipping', icon: Truck },
+        ].map(({ key, label, icon: Icon }) => (
+          <button key={key} onClick={() => setActiveTab(key)}
+            className={`flex items-center gap-1.5 px-4 py-1.5 text-sm rounded-lg font-semibold transition-all whitespace-nowrap ${
+              activeTab === key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+            }`}>
+            <Icon size={14} /> {label}
+          </button>
+        ))}
       </div>
 
       {/* ── Categories panel (collapsible) ── */}
       {activeTab === 'expenses' && showCats && (
-        <div className="bg-white rounded-2xl px-5 py-4 shadow-sm border border-slate-200 mb-3 flex-shrink-0">
+        <div className="bg-white rounded-2xl px-5 py-4 shadow-sm border border-slate-200 mb-4">
           <div className="flex items-center justify-between mb-3">
             <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Manage Categories</p>
             <div className="flex gap-2">
@@ -772,109 +904,62 @@ export default function Expenses() {
         </div>
       )}
 
+      {/* ════════════ EXPENSES TAB ════════════ */}
       {activeTab === 'expenses' && (<>
-      {/* ── Stats ── */}
-      {(() => {
-        const total = summary.thisMonth || 0;
-        const count = expenses.length;
-        const stats = [
-          { label: 'Total Spent',   value: pkr(total),                        sub: periodRange.label || 'this period',    icon: TrendingDown, color: 'text-rose-600',    bg: 'bg-rose-50' },
-          { label: 'Entries',       value: String(count),                     sub: 'expenses recorded',                   icon: Receipt,      color: 'text-indigo-600',  bg: 'bg-indigo-50' },
-          { label: 'Avg / Entry',   value: count > 0 ? pkr(total / count) : '—', sub: 'per transaction',                  icon: BarChart2,    color: 'text-slate-700',   bg: 'bg-slate-100' },
-          { label: 'Recurring / mo', value: pkr(summary.recurringMonthly || 0), sub: 'fixed monthly cost',                icon: Repeat,       color: 'text-violet-600',  bg: 'bg-violet-50' },
-        ];
-        return (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4 flex-shrink-0">
-            {stats.map(({ label, value, sub, icon: Icon, color, bg }) => (
-              <div key={label} className="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-3 shadow-sm">
-                <div className={`${bg} ${color} p-2.5 rounded-xl flex-shrink-0`}><Icon size={18} /></div>
-                <div className="min-w-0">
-                  <p className="text-lg font-bold text-slate-900 truncate">{value}</p>
-                  <p className="text-xs text-slate-500">{label}</p>
-                  <p className="text-2xs text-slate-400 truncate">{sub}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        );
-      })()}
-
-      {/* ── Filters (desktop) ── */}
-      <div className="hidden lg:flex flex-col gap-2.5 mb-4 flex-shrink-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <PeriodPicker defaultMode="month" onChange={range => setPeriodRange(range)} />
-          {!periodRange.from && (
-            <>
-              <input type="month" value={month} onChange={e => setMonth(e.target.value)}
-                className="px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
-              {month && (
-                <button onClick={() => setMonth('')}
-                  className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1.5 rounded-lg hover:bg-slate-100 transition-colors whitespace-nowrap">
-                  Show All
-                </button>
-              )}
-            </>
-          )}
-        </div>
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <button onClick={() => setCatFilter('')}
-            className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${!catFilter ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:text-slate-700'}`}>
-            All
-          </button>
-          {categories.map(c => (
-            <button key={c.id} onClick={() => setCatFilter(catFilter === String(c.id) ? '' : String(c.id))}
-              className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${catFilter === String(c.id) ? 'text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:text-slate-700'}`}
-              style={catFilter === String(c.id) ? { background: c.color } : {}}>
-              {c.name}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* ── Two-panel split ── */}
-      <div className="flex-1 min-h-0 flex flex-col lg:flex-row rounded-2xl border border-slate-200 shadow-sm overflow-hidden bg-white">
-
-        {/* ── LEFT: filters + list ── */}
-        <div className={`w-full lg:w-72 flex-1 min-h-0 lg:flex-none flex flex-col border-b lg:border-b-0 lg:border-r border-slate-200 bg-white ${selected ? 'hidden lg:flex' : ''}`}>
-
-          {/* Search */}
-          <div className="px-4 pt-4 pb-3 border-b border-slate-100">
-            <div className="relative">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input placeholder="Search expenses…" value={search} onChange={e => setSearch(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all" />
+        {/* Stats — two big numbers */}
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-3 shadow-sm">
+            <div className="bg-rose-50 text-rose-600 p-2.5 rounded-xl flex-shrink-0 hidden sm:block"><TrendingDown size={18} /></div>
+            <div className="min-w-0">
+              <p className="text-lg font-bold text-slate-900 break-words">{pkr(summary.thisMonth || 0)}</p>
+              <p className="text-xs text-slate-500">Total Spent</p>
+              <p className="text-2xs text-slate-400 truncate">{projectFilter && projectFilter !== 'none' ? 'all dates' : periodRange.label || 'all time'}</p>
             </div>
-            <select value={projectFilter} onChange={e => setProjectFilter(e.target.value)}
-              className="mt-2 w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20">
-              <option value="">All expenses</option>
-              <option value="none">Business only (no project)</option>
-              {projects.map(p => <option key={p.id} value={p.id}>Project: {p.title}</option>)}
-            </select>
-            {projectFilter && projectFilter !== 'none' && (
-              <p className="text-2xs text-orange-600 mt-1.5">Showing this project's expenses from all dates.</p>
-            )}
           </div>
+          <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-3 shadow-sm">
+            <div className="bg-indigo-50 text-indigo-600 p-2.5 rounded-xl flex-shrink-0 hidden sm:block"><Receipt size={18} /></div>
+            <div className="min-w-0">
+              <p className="text-lg font-bold text-slate-900">{expenses.length}</p>
+              <p className="text-xs text-slate-500">Entries</p>
+              <p className="text-2xs text-slate-400 truncate">{pkr(summary.recurringMonthly || 0)} recurring / mo</p>
+            </div>
+          </div>
+        </div>
 
-          {/* Period picker + category filter — mobile only */}
-          <div className="lg:hidden px-4 py-3 border-b border-slate-100 space-y-2">
-            <PeriodPicker defaultMode="month" onChange={range => setPeriodRange(range)} />
-            {!periodRange.from && (
-              <div className="flex items-center gap-2">
-                <input type="month" value={month} onChange={e => setMonth(e.target.value)}
-                  className="flex-1 px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
-                {month && (
-                  <button onClick={() => setMonth('')}
-                    className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1.5 rounded-lg hover:bg-slate-100 transition-colors whitespace-nowrap">
-                    Show All
-                  </button>
-                )}
-              </div>
+        {/* Toolbar: search + Filters + Breakdown */}
+        <div className="flex items-center gap-2 mb-3">
+          <div className="relative flex-1 min-w-0">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input placeholder="Search expenses…" value={search} onChange={e => setSearch(e.target.value)}
+              className="w-full pl-9 pr-4 py-2.5 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+          </div>
+          <button onClick={() => setShowFilters(v => !v)}
+            className={`relative flex items-center gap-1.5 px-3.5 py-2.5 text-sm border rounded-xl font-medium transition-colors flex-shrink-0 ${
+              showFilters ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-300'
+            }`}>
+            <SlidersHorizontal size={14} /> Filters
+            {activeFilters > 0 && (
+              <span className="ml-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-600 text-white text-2xs font-bold flex items-center justify-center">{activeFilters}</span>
             )}
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              <button onClick={() => setCatFilter('')}
-                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors ${!catFilter ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 hover:text-slate-700'}`}>
-                All
-              </button>
+          </button>
+          <button onClick={() => setShowBreakdown(v => !v)} title="Breakdown by category"
+            className={`flex items-center gap-1.5 px-3 py-2.5 text-sm border rounded-xl font-medium transition-colors flex-shrink-0 ${
+              showBreakdown ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-300'
+            }`}>
+            <BarChart2 size={14} /> <span className="hidden sm:inline">Breakdown</span>
+          </button>
+        </div>
+
+        {/* Filter panel — hidden, not unmounted, so the period picker keeps its state */}
+        <div className={`${showFilters ? '' : 'hidden'} bg-white border border-slate-200 rounded-2xl p-4 mb-3 shadow-sm space-y-4`}>
+          <div>
+            <p className="text-xs font-semibold text-slate-500 mb-2">Period</p>
+            <PeriodPicker defaultMode="month" onChange={range => setPeriodRange(range)} />
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-slate-500 mb-2">Category</p>
+            <div className="flex flex-wrap gap-1.5">
+              <button onClick={() => setCatFilter('')} className={chipCls(!catFilter)}>All</button>
               {categories.map(c => (
                 <button key={c.id} onClick={() => setCatFilter(catFilter === String(c.id) ? '' : String(c.id))}
                   className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors ${catFilter === String(c.id) ? 'text-white' : 'bg-slate-100 text-slate-500 hover:text-slate-700'}`}
@@ -884,219 +969,128 @@ export default function Expenses() {
               ))}
             </div>
           </div>
-
-          {/* Inline delete confirmation */}
-          {delTarget && (
-            <div className="flex items-center gap-2 px-4 py-2.5 bg-rose-50 border-b border-rose-200 text-xs flex-shrink-0">
-              <AlertTriangle size={13} className="text-rose-500 flex-shrink-0" />
-              <span className="flex-1 text-rose-700 font-medium">Delete this expense?</span>
-              <button onClick={() => setDelTarget(null)}
-                className="px-2 py-1 border border-rose-200 rounded-lg text-rose-600 hover:bg-rose-100 font-medium">Cancel</button>
-              <button onClick={confirmDeleteExpense}
-                className="px-2 py-1 bg-rose-600 text-white rounded-lg hover:bg-rose-700 font-medium">Delete</button>
-            </div>
-          )}
-
-          {/* Expense list */}
-          <div className="flex-1 min-h-0 overflow-y-auto">
-            {loading ? (
-              <div className="flex flex-col items-center justify-center py-16 gap-2">
-                <div className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
-                <p className="text-xs text-slate-400">Loading…</p>
-              </div>
-            ) : filtered.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 text-center px-6">
-                <Receipt size={28} className="mb-3 text-slate-300" />
-                <p className="text-sm font-medium text-slate-400">No expenses found</p>
-                <button onClick={() => setModal('new')}
-                  className="mt-3 text-xs text-indigo-600 hover:underline font-medium">
-                  Record first expense
-                </button>
-              </div>
-            ) : (
-              <div className="divide-y divide-slate-50">
-                {filtered.map(exp => (
-                  <div key={exp.id}
-                    onClick={() => setSelected(s => s?.id === exp.id ? null : exp)}
-                    className={`group flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors ${
-                      selected?.id === exp.id ? 'bg-indigo-50 border-l-2 border-indigo-500' : 'hover:bg-slate-50 border-l-2 border-transparent'
-                    }`}>
-                    {/* Category colour dot */}
-                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-0.5"
-                      style={{ background: exp.category_color || '#94a3b8' }} />
-
-                    {/* Title + meta */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <p className="text-sm font-medium text-slate-800 truncate">{exp.title}</p>
-                        {exp.recurring && (
-                          <span className="flex items-center gap-0.5 text-2xs bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0">
-                            <Repeat size={9} /> {exp.recurring_period}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-slate-400 mt-0.5 truncate">
-                        {fmtDate(exp.expense_date)}
-                        {exp.paid_to && ` · to ${exp.paid_to}`}
-                        {exp.payment_method && ` · ${exp.payment_method}`}
-                        {exp.paid_by && ` · ${exp.paid_by}`}
-                      </p>
-                      {exp.project_title && (
-                        <span className="inline-flex items-center gap-1 mt-1 text-2xs font-semibold bg-orange-50 text-orange-700 border border-orange-100 px-1.5 py-0.5 rounded-full max-w-full truncate">
-                          <Flame size={9} className="flex-shrink-0" /> {exp.project_title}
-                        </span>
-                      )}
-                      {exp.notes && (
-                        <p className="text-xs text-slate-500 mt-0.5 truncate italic">{exp.notes}</p>
-                      )}
-                    </div>
-
-                    {/* Amount */}
-                    <span className="text-sm font-bold text-slate-800 flex-shrink-0">{pkr(exp.amount)}</span>
-
-                    {/* Actions — always visible */}
-                    <div className="flex gap-0.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
-                      <button onClick={() => setModal(exp)} title="Edit"
-                        className="p-1.5 rounded-lg bg-slate-100 hover:bg-indigo-100 text-slate-400 hover:text-indigo-600 transition-colors">
-                        <Edit2 size={13} />
-                      </button>
-                      <button onClick={() => setDelTarget(exp.id)} title="Delete"
-                        className="p-1.5 rounded-lg bg-slate-100 hover:bg-rose-100 text-slate-400 hover:text-rose-500 transition-colors">
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+          <div>
+            <p className="text-xs font-semibold text-slate-500 mb-2">Project</p>
+            <select value={projectFilter} onChange={e => setProjectFilter(e.target.value)}
+              className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20">
+              <option value="">All expenses</option>
+              <option value="none">Business only (no project)</option>
+              {projects.map(p => <option key={p.id} value={p.id}>{p.title}{p.status === 'completed' ? ' (completed)' : ''}</option>)}
+            </select>
+            {projectFilter && projectFilter !== 'none' && (
+              <p className="text-2xs text-orange-600 mt-1.5">Showing this project's expenses from all dates.</p>
             )}
           </div>
-
-          {/* Total footer */}
-          {!loading && filtered.length > 0 && (
-            <div className="flex-shrink-0 border-t border-slate-100 bg-slate-50 px-4 py-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-500">{filtered.length} {filtered.length === 1 ? 'expense' : 'expenses'}</span>
-                <span className="text-sm font-bold text-slate-800">{pkr(filteredTotal)}</span>
-              </div>
-            </div>
-          )}
         </div>
 
-        {/* ── RIGHT: detail or analytics ── */}
-        <div className="flex-1 min-w-0 min-h-0 overflow-y-auto p-5">
+        {/* Active filter summary (when the panel is closed) */}
+        {!showFilters && activeFilters > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 mb-3 text-2xs">
+            {periodRange.from && !(projectFilter && projectFilter !== 'none') && (
+              <span className="px-2 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-semibold">{periodRange.label}</span>
+            )}
+            {catFilter && (
+              <span className="px-2 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-semibold flex items-center gap-1">
+                {categories.find(c => String(c.id) === catFilter)?.name || 'Category'}
+                <button onClick={() => setCatFilter('')}><X size={10} /></button>
+              </span>
+            )}
+            {projectFilter && (
+              <span className="px-2 py-1 rounded-lg bg-orange-50 text-orange-700 font-semibold flex items-center gap-1">
+                {projectFilter === 'none' ? 'Business only' : projects.find(p => String(p.id) === projectFilter)?.title || 'Project'}
+                <button onClick={() => setProjectFilter('')}><X size={10} /></button>
+              </span>
+            )}
+          </div>
+        )}
+
+        {showBreakdown && !loading && (
+          <div className="mb-3"><DetailReport expenses={filtered} /></div>
+        )}
+
+        {/* Expense list — a normal page list, no inner scroll box */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           {loading ? (
-            <div className="flex flex-col items-center justify-center h-full gap-3">
-              <div className="w-8 h-8 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
-              <p className="text-sm text-slate-400">Loading…</p>
+            <div className="flex flex-col items-center justify-center py-16 gap-2">
+              <div className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+              <p className="text-xs text-slate-400">Loading…</p>
             </div>
-          ) : selected ? (
-            /* ── Expense Detail ── */
-            <div className="space-y-4">
-              {/* Header */}
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <button onClick={() => setSelected(null)} className="lg:hidden p-1 -ml-1 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors flex-shrink-0">
-                    <ArrowLeft size={16} />
-                  </button>
-                  <div className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0"
-                    style={{ background: (selected.category_color || '#94a3b8') + '22' }}>
-                    <Receipt size={18} style={{ color: selected.category_color || '#94a3b8' }} />
-                  </div>
-                  <div>
-                    <h2 className="text-lg font-bold text-slate-900 leading-tight">{selected.title}</h2>
-                    {selected.category_name && (
-                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
-                        style={{ background: (selected.category_color || '#94a3b8') + '22', color: selected.category_color || '#94a3b8' }}>
-                        {selected.category_name}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <button onClick={() => setSelected(null)}
-                  className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors flex-shrink-0">
-                  <X size={16} />
-                </button>
-              </div>
-
-              {/* Amount */}
-              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Amount Paid</p>
-                <p className="text-xl sm:text-3xl font-bold text-rose-600 break-all">{pkr(selected.amount)}</p>
-              </div>
-
-              {/* Details grid */}
-              <div className="bg-white rounded-2xl border border-slate-200 divide-y divide-slate-50 overflow-hidden">
-                {[
-                  { label: 'Date',           value: fmtDate(selected.expense_date) },
-                  { label: 'Project',        value: selected.project_title || 'None (business expense)' },
-                  { label: 'Paid To',        value: selected.paid_to || '—' },
-                  { label: 'Payment Method', value: selected.payment_method || '—' },
-                  { label: 'Paid By',        value: selected.paid_by || '—' },
-                  { label: 'Category',       value: selected.category_name || 'Uncategorized' },
-                  { label: 'Recurring',      value: selected.recurring ? `Yes · ${selected.recurring_period}` : 'No' },
-                ].map(({ label, value }) => (
-                  <div key={label} className="flex items-center justify-between px-5 py-3 gap-4">
-                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex-shrink-0">{label}</span>
-                    <span className="text-sm font-medium text-slate-800 text-right capitalize">{value}</span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Notes */}
-              {selected.notes && (
-                <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4">
-                  <p className="text-xs font-semibold text-amber-600 uppercase tracking-wider mb-2">Notes / Description</p>
-                  <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">{selected.notes}</p>
-                </div>
-              )}
-
-              {/* Actions */}
-              <div className="flex gap-3 pt-1">
-                <button onClick={() => { setModal(selected); setSelected(null); }}
-                  className="flex-1 flex items-center justify-center gap-2 py-2.5 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors">
-                  <Edit2 size={14} /> Edit
-                </button>
-                <button onClick={() => { setDelTarget(selected.id); setSelected(null); }}
-                  className="flex-1 flex items-center justify-center gap-2 py-2.5 border border-rose-200 rounded-xl text-sm font-medium text-rose-600 hover:bg-rose-50 transition-colors">
-                  <Trash2 size={14} /> Delete
-                </button>
-              </div>
-            </div>
-          ) : expenses.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-center">
-              <BarChart2 size={40} className="mb-4 text-slate-200" />
-              <p className="text-base font-semibold text-slate-400">No data for this period</p>
-              <p className="text-sm text-slate-400 mt-1">Add expenses to see analytics here</p>
-              <button onClick={() => setModal('new')}
-                className="mt-4 flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 font-semibold text-sm transition-colors">
-                <Plus size={15} /> Add First Expense
-              </button>
+          ) : filtered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center px-6">
+              <Receipt size={28} className="mb-3 text-slate-300" />
+              <p className="text-sm font-medium text-slate-400">No expenses found</p>
+              <button onClick={() => setModal('new')} className="mt-3 text-xs text-indigo-600 hover:underline font-medium">Record an expense</button>
             </div>
           ) : (
-            <DetailReport expenses={expenses} />
+            <div className="divide-y divide-slate-100">
+              {filtered.map(exp => (
+                <div key={exp.id} onClick={() => setSelected(exp)}
+                  className="flex items-start gap-3 px-4 py-3.5 cursor-pointer hover:bg-slate-50 transition-colors">
+                  <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1.5" style={{ background: exp.category_color || '#94a3b8' }} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <p className="text-sm font-semibold text-slate-800">{exp.title}</p>
+                      {exp.recurring ? (
+                        <span className="flex items-center gap-0.5 text-2xs bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full font-semibold">
+                          <Repeat size={9} /> {exp.recurring_period}
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {fmtDate(exp.expense_date)}
+                      {exp.category_name && ` · ${exp.category_name}`}
+                      {exp.paid_to && ` · to ${exp.paid_to}`}
+                      {exp.payment_method && ` · ${exp.payment_method}`}
+                    </p>
+                    {exp.project_title && (
+                      <span className="inline-flex items-center gap-1 mt-1 text-2xs font-semibold bg-orange-50 text-orange-700 border border-orange-100 px-1.5 py-0.5 rounded-full max-w-full">
+                        <Flame size={9} className="flex-shrink-0" /> <span className="truncate">{exp.project_title}</span>
+                      </span>
+                    )}
+                    {exp.notes && <p className="text-xs text-slate-500 mt-1 italic">{exp.notes}</p>}
+                  </div>
+                  <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                    <span className="text-sm font-bold text-slate-800">{pkr(exp.amount)}</span>
+                    <div className="flex gap-1" onClick={e => e.stopPropagation()}>
+                      <button onClick={() => setModal(exp)} title="Edit"
+                        className="p-2 rounded-lg bg-slate-100 hover:bg-indigo-100 text-slate-500 hover:text-indigo-600 transition-colors">
+                        <Edit2 size={14} />
+                      </button>
+                      <button onClick={() => setDelTarget(exp.id)} title="Delete"
+                        className="p-2 rounded-lg bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-500 transition-colors">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {!loading && filtered.length > 0 && (
+            <div className="border-t border-slate-200 bg-slate-50 px-4 py-3 flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-500">{filtered.length} {filtered.length === 1 ? 'expense' : 'expenses'}</span>
+              <span className="text-sm font-bold text-slate-800">{pkr(filteredTotal)}</span>
+            </div>
           )}
         </div>
-      </div>
       </>)}
 
+      {/* ════════════ INCOME TAB ════════════ */}
       {activeTab === 'income' && (
-        <div className="flex-1 min-h-0 flex flex-col">
-          {/* Period picker */}
-          <div className="mb-3 flex-shrink-0">
+        <div>
+          <div className="mb-3">
             <PeriodPicker defaultMode="month" onChange={range => setIncomePeriodRange(range)} />
           </div>
 
-          {/* Summary cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-4 flex-shrink-0">
+          <div className="grid grid-cols-2 gap-3 mb-4">
             {[
-              { label: 'Total Income', value: pkr(filteredIncomeTotal),                         sub: incomePeriodRange.label || 'this period', icon: TrendingUp, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-              { label: 'Entries',      value: String(filteredIncome.length),                    sub: 'income recorded',                        icon: Banknote,   color: 'text-indigo-600',  bg: 'bg-indigo-50' },
-              { label: 'Top Source',   value: incomeSummary.bySource?.[0]?.category || '—',     sub: 'largest income category',                icon: Tag,        color: 'text-slate-700',   bg: 'bg-slate-100' },
+              { label: 'Total Income', value: pkr(filteredIncomeTotal), sub: incomePeriodRange.label || 'this period', icon: TrendingUp, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+              { label: 'Entries',      value: String(filteredIncome.length), sub: incomeSummary.bySource?.[0]?.category ? `top: ${incomeSummary.bySource[0].category}` : 'income recorded', icon: Banknote, color: 'text-indigo-600', bg: 'bg-indigo-50' },
             ].map(({ label, value, sub, icon: Icon, color, bg }) => (
               <div key={label} className="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-3 shadow-sm">
-                <div className={`${bg} ${color} p-2.5 rounded-xl flex-shrink-0`}><Icon size={18} /></div>
+                <div className={`${bg} ${color} p-2.5 rounded-xl flex-shrink-0 hidden sm:block`}><Icon size={18} /></div>
                 <div className="min-w-0">
-                  <p className="text-lg font-bold text-slate-900 truncate">{value}</p>
+                  <p className="text-lg font-bold text-slate-900 break-words">{value}</p>
                   <p className="text-xs text-slate-500">{label}</p>
                   <p className="text-2xs text-slate-400 truncate">{sub}</p>
                 </div>
@@ -1104,16 +1098,14 @@ export default function Expenses() {
             ))}
           </div>
 
-          {/* Search */}
-          <div className="relative mb-3 flex-shrink-0">
+          <div className="relative mb-3">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input placeholder="Search income…" value={incomeSearch} onChange={e => setIncomeSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 transition-all" />
+              className="w-full pl-9 pr-4 py-2.5 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20" />
           </div>
 
-          {/* Inline delete confirmation */}
           {incomeDelTarget && (
-            <div className="flex items-center gap-2 px-4 py-2.5 mb-3 bg-rose-50 border border-rose-200 rounded-xl text-xs flex-shrink-0">
+            <div className="flex items-center gap-2 px-4 py-2.5 mb-3 bg-rose-50 border border-rose-200 rounded-xl text-xs">
               <AlertTriangle size={13} className="text-rose-500 flex-shrink-0" />
               <span className="flex-1 text-rose-700 font-medium">Delete this income entry?</span>
               <button onClick={() => setIncomeDelTarget(null)}
@@ -1123,8 +1115,7 @@ export default function Expenses() {
             </div>
           )}
 
-          {/* Income list */}
-          <div className="flex-1 min-h-0 overflow-y-auto bg-white border border-slate-200 rounded-2xl shadow-sm">
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
             {incomeLoading ? (
               <div className="flex flex-col items-center justify-center py-16 gap-2">
                 <div className="w-5 h-5 border-2 border-emerald-200 border-t-emerald-600 rounded-full animate-spin" />
@@ -1134,37 +1125,34 @@ export default function Expenses() {
               <div className="flex flex-col items-center justify-center py-16 text-center px-6">
                 <Banknote size={28} className="mb-3 text-slate-300" />
                 <p className="text-sm font-medium text-slate-400">No income recorded</p>
-                <button onClick={() => setIncomeModal('new')}
-                  className="mt-3 text-xs text-emerald-600 hover:underline font-medium">
-                  Record first income
-                </button>
+                <button onClick={() => setIncomeModal('new')} className="mt-3 text-xs text-emerald-600 hover:underline font-medium">Record first income</button>
               </div>
             ) : (
-              <div className="divide-y divide-slate-50">
+              <div className="divide-y divide-slate-100">
                 {filteredIncome.map(inc => (
-                  <div key={inc.id} className="group flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
-                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-emerald-400 mt-0.5" />
+                  <div key={inc.id} className="flex items-start gap-3 px-4 py-3.5">
+                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-emerald-400 mt-1.5" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-800 truncate">{inc.title}</p>
-                      <p className="text-xs text-slate-400 mt-0.5 truncate">
+                      <p className="text-sm font-semibold text-slate-800">{inc.title}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">
                         {fmtDate(inc.income_date)}
                         {inc.category && ` · ${inc.category}`}
                         {inc.received_by && ` · ${inc.received_by}`}
                       </p>
-                      {inc.notes && (
-                        <p className="text-xs text-slate-500 mt-0.5 truncate italic">{inc.notes}</p>
-                      )}
+                      {inc.notes && <p className="text-xs text-slate-500 mt-1 italic">{inc.notes}</p>}
                     </div>
-                    <span className="text-sm font-bold text-emerald-600 flex-shrink-0">+{pkr(inc.amount)}</span>
-                    <div className="flex gap-0.5 flex-shrink-0">
-                      <button onClick={() => setIncomeModal(inc)} title="Edit"
-                        className="p-1.5 rounded-lg bg-slate-100 hover:bg-emerald-100 text-slate-400 hover:text-emerald-600 transition-colors">
-                        <Edit2 size={13} />
-                      </button>
-                      <button onClick={() => setIncomeDelTarget(inc.id)} title="Delete"
-                        className="p-1.5 rounded-lg bg-slate-100 hover:bg-rose-100 text-slate-400 hover:text-rose-500 transition-colors">
-                        <Trash2 size={13} />
-                      </button>
+                    <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                      <span className="text-sm font-bold text-emerald-600">+{pkr(inc.amount)}</span>
+                      <div className="flex gap-1">
+                        <button onClick={() => setIncomeModal(inc)} title="Edit"
+                          className="p-2 rounded-lg bg-slate-100 hover:bg-emerald-100 text-slate-500 hover:text-emerald-600 transition-colors">
+                          <Edit2 size={14} />
+                        </button>
+                        <button onClick={() => setIncomeDelTarget(inc.id)} title="Delete"
+                          className="p-2 rounded-lg bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-500 transition-colors">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -1172,6 +1160,74 @@ export default function Expenses() {
             )}
           </div>
         </div>
+      )}
+
+      {/* ════════════ SHIPPING TAB ════════════ */}
+      {activeTab === 'shipping' && <ShippingTab />}
+
+      {/* ── Expense detail (drawer — works the same on phone and desktop) ── */}
+      {selected && !modal && (
+        <Drawer open onClose={() => setSelected(null)} title={selected.title}
+          subtitle={selected.category_name || 'Uncategorized'} width="max-w-md"
+          footer={
+            <div className="flex gap-3">
+              <button onClick={() => { setModal(selected); setSelected(null); }}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors">
+                <Edit2 size={14} /> Edit
+              </button>
+              <button onClick={() => { setDelTarget(selected.id); setSelected(null); }}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 border border-rose-200 rounded-xl text-sm font-medium text-rose-600 hover:bg-rose-50 transition-colors">
+                <Trash2 size={14} /> Delete
+              </button>
+            </div>
+          }>
+          <div className="p-6 space-y-4">
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Amount Paid</p>
+              <p className="text-2xl font-bold text-rose-600 break-all">{pkr(selected.amount)}</p>
+            </div>
+            <div className="bg-white rounded-2xl border border-slate-200 divide-y divide-slate-50 overflow-hidden">
+              {[
+                { label: 'Date',           value: fmtDate(selected.expense_date) },
+                { label: 'Project',        value: selected.project_title || 'None (business expense)' },
+                { label: 'Paid To',        value: selected.paid_to || '—' },
+                { label: 'Payment Method', value: selected.payment_method || '—' },
+                { label: 'Paid By',        value: selected.paid_by || '—' },
+                { label: 'Category',       value: selected.category_name || 'Uncategorized' },
+                { label: 'Recurring',      value: selected.recurring ? `Yes · ${selected.recurring_period}` : 'No' },
+              ].map(({ label, value }) => (
+                <div key={label} className="flex items-center justify-between px-5 py-3 gap-4">
+                  <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex-shrink-0">{label}</span>
+                  <span className="text-sm font-medium text-slate-800 text-right capitalize">{value}</span>
+                </div>
+              ))}
+            </div>
+            {selected.notes && (
+              <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4">
+                <p className="text-xs font-semibold text-amber-600 uppercase tracking-wider mb-2">Notes / Description</p>
+                <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">{selected.notes}</p>
+              </div>
+            )}
+          </div>
+        </Drawer>
+      )}
+
+      {/* ── Delete confirmation ── */}
+      {delTarget && (
+        <Drawer open onClose={() => setDelTarget(null)} title="Delete expense?" width="max-w-sm">
+          <div className="p-6 space-y-4">
+            <div className="flex items-start gap-2 bg-rose-50 border border-rose-200 rounded-xl p-3 text-sm text-rose-700">
+              <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+              <span>This removes the expense permanently and takes it off its project's cost.</span>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setDelTarget(null)}
+                className="flex-1 px-4 py-2.5 text-sm border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 font-medium">Cancel</button>
+              <button onClick={confirmDeleteExpense}
+                className="flex-1 px-4 py-2.5 text-sm bg-rose-600 text-white rounded-xl hover:bg-rose-700 font-medium">Delete</button>
+            </div>
+          </div>
+        </Drawer>
       )}
 
       {/* ── Modals ── */}

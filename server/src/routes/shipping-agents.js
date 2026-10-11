@@ -33,6 +33,30 @@ router.get('/', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ── GET every shipment across projects (Expenses → Shipping tab) ─────────────
+// Optional ?from=&to= filters on shipping_date. Must stay above '/:id'.
+router.get('/shipments/all', (req, res) => {
+  try {
+    const { from, to } = req.query;
+    const where = [], params = [];
+    if (from) { where.push('ps.shipping_date >= ?'); params.push(from); }
+    if (to)   { where.push('ps.shipping_date <= ?'); params.push(to); }
+    res.json(db.prepare(`
+      SELECT ps.id, ps.project_id, ps.tracking_number, ps.shipping_date, ps.notes,
+             COALESCE(sa.name, ps.carrier) as agent_name,
+             p.title as project_title, c.name as client_name,
+             COALESCE((SELECT SUM(amount) FROM shipping_costs WHERE shipment_id = ps.id), 0) as cost_total,
+             (SELECT COUNT(*) FROM shipping_costs WHERE shipment_id = ps.id) as cost_count
+      FROM project_shipping ps
+      LEFT JOIN shipping_agents sa ON sa.id = ps.agent_id
+      LEFT JOIN projects p ON p.id = ps.project_id
+      LEFT JOIN clients  c ON c.id = p.client_id
+      ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+      ORDER BY ps.shipping_date DESC, ps.id DESC
+    `).all(...params));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── GET profile with its shipments ───────────────────────────────────────────
 router.get('/:id', (req, res) => {
   try {
