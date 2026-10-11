@@ -9,7 +9,6 @@ import {
 } from 'lucide-react';
 import api, { imgUrl } from '../lib/api';
 import { printDoc, downloadDoc } from '../lib/printDoc';
-import TemplatePicker from '../components/TemplatePicker';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -265,13 +264,6 @@ function QuotationView({ quotationId, onClose, onEdit, onConverted, embedded = f
             className="p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">
             <Pencil size={14} />
           </button>
-          <div className="w-px h-4 bg-slate-200 mx-0.5" />
-          <TemplatePicker
-            type="quotation"
-            selected={activeTemplate}
-            templates={templates}
-            onSelect={setActiveTemplate}
-          />
           <div className="w-px h-4 bg-slate-200 mx-0.5" />
           <button title="Print" onClick={() => {
               const t = [quotation?.number, quotation?.client_name, quotation?.subject].filter(Boolean).join(' – ');

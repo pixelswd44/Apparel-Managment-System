@@ -186,7 +186,7 @@ function AgentProfile({ agentId, onClose, onEdit, onDeleted }) {
 }
 
 // ── Page ─────────────────────────────────────────────────────────────────────
-export default function ShippingAgents() {
+export default function ShippingAgents({ embedded = false }) {
   const [agents, setAgents]   = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch]   = useState('');
@@ -207,14 +207,18 @@ export default function ShippingAgents() {
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6">
+      <div className={`flex items-center justify-between gap-3 ${embedded ? 'mb-4' : 'mb-6'}`}>
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Shipping Agents</h1>
-          <p className="text-slate-500 text-sm mt-0.5">Agencies you ship orders with — pick them on a project's Shipping tab</p>
+          {embedded
+            ? <p className="text-sm text-slate-500">Agencies you ship orders with — pick them on a project's Shipping tab</p>
+            : <>
+                <h1 className="text-2xl font-bold text-slate-900">Shipping Agents</h1>
+                <p className="text-slate-500 text-sm mt-0.5">Agencies you ship orders with — pick them on a project's Shipping tab</p>
+              </>}
         </div>
         <button onClick={() => setEditing('new')}
-          className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-indigo-700 transition-colors shadow-sm w-full sm:w-auto justify-center">
-          <Plus size={16} /> Add Agent
+          className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-indigo-700 transition-colors shadow-sm flex-shrink-0">
+          <Plus size={16} /> Add<span className="hidden sm:inline"> Agent</span>
         </button>
       </div>
 

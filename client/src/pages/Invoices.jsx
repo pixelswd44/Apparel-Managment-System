@@ -8,7 +8,6 @@ import {
 } from 'lucide-react';
 import api, { imgUrl } from '../lib/api';
 import { printDoc, downloadDoc } from '../lib/printDoc';
-import TemplatePicker from '../components/TemplatePicker';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -236,14 +235,6 @@ function ReceiptVoucher({ invoice, payment, settings, onClose, templates = [], a
           <span className="text-sm font-semibold text-slate-700">Payment Receipt · {invoice.number}</span>
         </div>
         <div className="flex items-center gap-2">
-          {onTemplateSelect && (
-            <TemplatePicker
-              type="voucher"
-              selected={activeTemplate}
-              templates={templates}
-              onSelect={onTemplateSelect}
-            />
-          )}
           <button onClick={() => printDoc(voucherRef, `Receipt – ${invoice.number}`)}
             className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold transition-colors">
             <Printer size={14} /> Print
@@ -569,13 +560,6 @@ function InvoiceView({ invoiceId, onClose, onConverted, embedded = false }) {
                 <Receipt size={12} /> Record Payment
               </button>
             )}
-            <div className="w-px h-4 bg-slate-200 mx-0.5" />
-            <TemplatePicker
-              type="invoice"
-              selected={activeTemplate}
-              templates={templates}
-              onSelect={setActiveTemplate}
-            />
             <div className="w-px h-4 bg-slate-200 mx-0.5" />
             <button title="Print" onClick={() => {
                 const t = [invoice?.number, invoice?.client_name, invoice?.subject].filter(Boolean).join(' – ');

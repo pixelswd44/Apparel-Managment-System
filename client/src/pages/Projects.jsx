@@ -1790,7 +1790,7 @@ function ShippingTab({ project, onReload }) {
         <div>
           <label className="flex items-center justify-between text-xs font-semibold text-slate-500 mb-1">
             Shipping Agent *
-            <button type="button" onClick={() => navigate('/shipping-agents')} className="font-medium text-indigo-600 hover:underline">Manage</button>
+            <button type="button" onClick={() => navigate('/expenses?tab=shipping')} className="font-medium text-indigo-600 hover:underline">Manage</button>
           </label>
           <select value={form.agent} onChange={e => set('agent', e.target.value)} className={inputCls2} autoFocus>
             <option value="">{form.carrier && !form.agent ? `${form.carrier} (not in agents list)` : '— Choose agent —'}</option>

@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import PeriodPicker, { currentMonthRange } from '../components/PeriodPicker';
 import Drawer from '../components/Drawer';
+import ShippingAgents from './ShippingAgents';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 const pkr = n => `₨${Number(n || 0).toLocaleString()}`;
@@ -21,23 +22,15 @@ const RECURRING_PERIODS = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly'];
 
 // Quick-pick presets — label shown on chip, category is matched to existing categories
 const EXPENSE_PRESETS = [
-  // Project work — pick the project above so the cost lands on it
-  // (shipping costs are entered on the project's Shipping tab instead)
-  { label: 'Fabric',           icon: '🧵', category: 'Fabric Expanses' },
-  { label: 'Stitching',        icon: '🪡', category: 'Production' },
-  { label: 'Sublimation / Printing', icon: '🎨', category: 'Production' },
-  { label: 'Petty Cash',       icon: '💵', category: 'Petty Cash' },
-  { label: 'Electricity Bill', icon: '⚡', category: 'Electricity' },
-  { label: 'Rent',             icon: '🏢', category: 'Rent' },
-  { label: 'Gas / Water',      icon: '🔥', category: 'Gas / Utilities' },
-  { label: 'Internet / Phone', icon: '📡', category: 'Miscellaneous' },
-  { label: 'Fuel / Transport', icon: '⛽', category: 'Transport' },
-  { label: 'Staff Meals',      icon: '🍱', category: 'Staff Meals' },
-  { label: 'Office Supplies',  icon: '📦', category: 'Miscellaneous' },
-  { label: 'Maintenance',      icon: '🔧', category: 'Maintenance' },
-  { label: 'Labour / Wages',   icon: '👷', category: 'Miscellaneous' },
-  { label: 'Printing',         icon: '🖨️', category: 'Miscellaneous' },
-  { label: 'Cleaning',         icon: '🧹', category: 'Miscellaneous' },
+  { label: 'Fabric',           category: 'Fabric Expanses' },
+  { label: 'Production',       category: 'Production' },
+  { label: 'Sublimation',      category: 'Production' },
+  { label: 'Petty Cash',       category: 'Petty Cash' },
+  { label: 'Bills',            category: 'Electricity' },
+  { label: 'Rent',             category: 'Rent' },
+  { label: 'Office Supplies',  category: 'Miscellaneous' },
+  { label: 'Labour / Wages',   category: 'Miscellaneous' },
+  { label: 'Staff Meals',      category: 'Staff Meals' },
 ];
 
 const DEFAULT_CATEGORIES = [
@@ -116,7 +109,7 @@ export function ExpenseModal({ expense, categories, projects = [], defaultProjec
   const blank = {
     title: '', expense_category_id: '', amount: '', paid_by: '', paid_to: '',
     project_id: defaultProjectId ? String(defaultProjectId) : '',
-    expense_date: today(), payment_method: 'cash', notes: '',
+    expense_date: today(), payment_method: 'bank transfer', notes: '',
     recurring: false, recurring_period: 'monthly',
   };
   const [form, setForm] = useState(expense
@@ -186,25 +179,15 @@ export function ExpenseModal({ expense, categories, projects = [], defaultProjec
             )}
           </div>
 
-          {/* ── Quick-pick presets ── */}
+          {/* ── Type — fills the title and category ── */}
           <div>
-            <label className="block text-xs font-semibold text-slate-500 mb-2">Quick Pick</label>
-            <div className="flex flex-wrap gap-1.5">
-              {EXPENSE_PRESETS.map(p => {
-                const active = form.title === p.label;
-                return (
-                  <button key={p.label} type="button" onClick={() => applyPreset(p)}
-                    className={`flex items-center gap-1 px-2.5 py-1 text-xs rounded-lg border font-medium transition-all
-                      ${active
-                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-                        : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-700 hover:bg-indigo-50'
-                      }`}>
-                    <span>{p.icon}</span>
-                    <span>{p.label}</span>
-                  </button>
-                );
-              })}
-            </div>
+            <label className="block text-xs font-semibold text-slate-500 mb-1">Type</label>
+            <select value={EXPENSE_PRESETS.some(p => p.label === form.title) ? form.title : ''}
+              onChange={e => { const p = EXPENSE_PRESETS.find(x => x.label === e.target.value); if (p) applyPreset(p); }}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20">
+              <option value="">Select type…</option>
+              {EXPENSE_PRESETS.map(p => <option key={p.label} value={p.label}>{p.label}</option>)}
+            </select>
           </div>
 
           <div>
@@ -549,6 +532,7 @@ function DetailReport({ expenses }) {
 // their costs are entered on the project's Shipping tab — tapping a row opens it.
 function ShippingTab() {
   const navigate = useNavigate();
+  const [view, setView] = useState('shipments'); // 'shipments' | 'agents'
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -568,8 +552,19 @@ function ShippingTab() {
   const total = shown.reduce((s, r) => s + (parseFloat(r.cost_total) || 0), 0);
   const open = r => r.project_id && navigate(`/projects?open=${r.project_id}`);
 
+  const viewSwitch = (
+    <div className="flex gap-1 bg-slate-100 rounded-xl p-1 w-fit">
+      {[['shipments', 'Shipments'], ['agents', 'Agents']].map(([k, l]) => (
+        <button key={k} onClick={() => setView(k)}
+          className={`px-4 py-1.5 text-sm rounded-lg font-semibold transition-all ${view === k ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>{l}</button>
+      ))}
+    </div>
+  );
+  if (view === 'agents') return <div className="space-y-4">{viewSwitch}<ShippingAgents embedded /></div>;
+
   return (
     <div className="space-y-4">
+      {viewSwitch}
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-3 shadow-sm">
           <div className="bg-sky-50 text-sky-600 p-2.5 rounded-xl flex-shrink-0 hidden sm:block"><Truck size={18} /></div>
@@ -700,7 +695,7 @@ export default function Expenses() {
   const [periodRange, setPeriodRange] = useState(currentMonthRange());
 
   // ── Income tab ──────────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState('expenses'); // 'expenses' | 'income' | 'shipping'
+  const [activeTab, setActiveTab] = useState(() => (searchParams.get('tab') === 'shipping' ? 'shipping' : 'expenses')); // 'expenses' | 'income' | 'shipping'
   const [income, setIncome] = useState([]);
   const [incomeSummary, setIncomeSummary] = useState({ thisMonth: 0, bySource: [] });
   const [incomeLoading, setIncomeLoading] = useState(true);
@@ -759,7 +754,7 @@ export default function Expenses() {
 
   // The link parameters were read on open — clear them from the address bar
   useEffect(() => {
-    if (searchParams.get('project') || searchParams.get('filter')) setSearchParams({}, { replace: true });
+    if (searchParams.get('project') || searchParams.get('filter') || searchParams.get('tab')) setSearchParams({}, { replace: true });
   }, [searchParams, setSearchParams]);
 
   function closeModal(saved) {

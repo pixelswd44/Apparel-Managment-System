@@ -110,9 +110,7 @@ const ALL_NAV = [
   { to: '/products',   icon: Box,             label: 'Products'   },
   { to: '/projects',   icon: Flame,           label: 'Projects'   },
   { to: '/expenses',   icon: Wallet,          label: 'Expenses'   },
-  { to: '/shipping-agents', icon: Truck,      label: 'Shipping Agents' },
   { to: '/payroll',    icon: UserCheck,       label: 'Employees'  },
-  { to: '/templates',  icon: LayoutTemplate,  label: 'Templates'  },
   { to: '/settings',   icon: Settings,        label: 'Settings'   },
 ];
 

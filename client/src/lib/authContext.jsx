@@ -54,7 +54,7 @@ export function useAuth() {
 
 // Role-based permission map
 export const ROLE_PERMISSIONS = {
-  super_admin: ['/', '/quotations', '/invoices', '/products', '/projects', '/shipping-agents', '/payroll', '/expenses', '/financials', '/clients', '/templates', '/settings'],
+  super_admin: ['/', '/quotations', '/invoices', '/products', '/projects', '/shipping-agents', '/payroll', '/expenses', '/financials', '/clients', '/settings'],
   sales:       ['/', '/quotations', '/invoices', '/clients'],
 };
 
