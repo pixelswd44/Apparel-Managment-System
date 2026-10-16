@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import FilterBtn from '../components/FilterBtn';
 import api from '../lib/api';
 import {
   Users, Plus, Search, X, ChevronRight, Edit2, Trash2, Check,
@@ -612,6 +613,7 @@ export default function Payroll() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [showF, setShowF] = useState(false);
   const [modal, setModal] = useState(null);       // null | 'new' | employee obj
   const [selected, setSelected] = useState(null); // employee panel
   const [delTarget, setDelTarget] = useState(null); // employee id pending delete
@@ -679,8 +681,8 @@ export default function Payroll() {
         ))}
       </div>
 
-      {/* ── Status filter (top) ── */}
-      <div className="flex gap-1.5 mb-4 flex-shrink-0">
+      {/* ── Status filter (behind the filter button) ── */}
+      {showF && <div className="flex gap-1.5 mb-4 flex-shrink-0">
         {['all', 'active', 'inactive'].map(s => {
           const n = s === 'all' ? employees.length : employees.filter(e => e.status === s).length;
           return (
@@ -692,7 +694,7 @@ export default function Payroll() {
             </button>
           );
         })}
-      </div>
+      </div>}
 
       {/* ── Two-panel split ── */}
       <div className="flex-1 min-h-0 flex flex-col lg:flex-row rounded-2xl border border-slate-200 shadow-sm overflow-hidden bg-white">
@@ -705,8 +707,9 @@ export default function Payroll() {
             <div className="relative">
               <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input value={search} onChange={e => setSearch(e.target.value)}
-                className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100 bg-slate-50"
+                className="w-full pl-8 pr-10 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100 bg-slate-50"
                 placeholder="Search employees…" />
+              <FilterBtn open={showF} onClick={() => setShowF(v => !v)} active={statusFilter !== 'all'} />
             </div>
           </div>
 

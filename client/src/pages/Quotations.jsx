@@ -8,6 +8,7 @@ import {
   Check, Download, Copy,
 } from 'lucide-react';
 import api, { imgUrl } from '../lib/api';
+import FilterBtn from '../components/FilterBtn';
 import { printDoc, downloadDoc } from '../lib/printDoc';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -528,6 +529,7 @@ export default function Quotations() {
   const [loading,      setLoading]      = useState(true);
   const [search,       setSearch]       = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [showF, setShowF] = useState(false);
   const [delConfirm,   setDelConfirm]   = useState(null);
   const [deleting,     setDeleting]     = useState(false);
   const [delError,     setDelError]     = useState('');
@@ -641,12 +643,14 @@ export default function Quotations() {
             <div className="relative">
               <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input value={search} onChange={e => setSearch(e.target.value)}
-                className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100 bg-slate-50"
+                className="w-full pl-8 pr-10 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100 bg-slate-50"
                 placeholder="Search quotations…" />
+              <FilterBtn open={showF} onClick={() => setShowF(v => !v)} active={!!filterStatus} />
             </div>
           </div>
 
           {/* Status filters */}
+{showF && (
           <div className="px-3 py-2 border-b border-slate-100 flex flex-wrap gap-1">
             {['', ...STATUSES].map(s => (
               <button key={s} onClick={() => setFilterStatus(s)}
@@ -660,6 +664,7 @@ export default function Quotations() {
             ))}
           </div>
 
+)}
           {/* List */}
           <div className="flex-1 min-h-0 overflow-y-auto">
             {loading ? (

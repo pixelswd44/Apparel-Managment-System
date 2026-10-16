@@ -22,15 +22,16 @@ const RECURRING_PERIODS = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly'];
 
 // Quick-pick presets — label shown on chip, category is matched to existing categories
 const EXPENSE_PRESETS = [
-  { label: 'Fabric',           category: 'Fabric Expanses' },
-  { label: 'Production',       category: 'Production' },
-  { label: 'Sublimation',      category: 'Production' },
-  { label: 'Petty Cash',       category: 'Petty Cash' },
-  { label: 'Bills',            category: 'Electricity' },
-  { label: 'Rent',             category: 'Rent' },
-  { label: 'Office Supplies',  category: 'Miscellaneous' },
-  { label: 'Labour / Wages',   category: 'Miscellaneous' },
-  { label: 'Staff Meals',      category: 'Staff Meals' },
+  { label: 'Fabric Purchased', category: 'Fabric Expanses', color: '#8b5cf6' },
+  { label: 'Production',       category: 'Production',      color: '#3b82f6' },
+  { label: 'Embroidery',       category: 'Production',      color: '#3b82f6' },
+  { label: 'Sublimation',      category: 'Production',      color: '#3b82f6' },
+  { label: 'Petty Cash',       category: 'Petty Cash',      color: '#f97316' },
+  { label: 'Internet Bill',    category: 'Bills',           color: '#f59e0b' },
+  { label: 'Electricity Bill', category: 'Bills',           color: '#f59e0b' },
+  { label: 'Rent',             category: 'Rent',            color: '#6366f1' },
+  { label: 'Office Supplies',  category: 'Office Supplies', color: '#14b8a6' },
+  { label: 'Staff Meals',      category: 'Staff Meals',     color: '#ec4899' },
 ];
 
 const DEFAULT_CATEGORIES = [
@@ -124,14 +125,12 @@ export function ExpenseModal({ expense, categories, projects = [], defaultProjec
     title: '', expense_category_id: '', amount: '', paid_by: '', paid_to: '',
     project_id: defaultProjectId ? String(defaultProjectId) : '',
     expense_date: today(), payment_method: 'bank transfer', notes: '',
-    recurring: false, recurring_period: 'monthly',
   };
   const [form, setForm] = useState(expense
     ? { ...blank, ...expense,
         expense_category_id: expense.expense_category_id || '',
         project_id: expense.project_id ? String(expense.project_id) : '',
-        paid_to: expense.paid_to || '',
-        recurring: !!expense.recurring }
+        paid_to: expense.paid_to || '' }
     : blank);
   // Only active projects — except the one this expense is already on, so editing
   // an old expense doesn't blank its project. Most recent first.
@@ -141,15 +140,20 @@ export function ExpenseModal({ expense, categories, projects = [], defaultProjec
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-  function applyPreset(preset) {
-    const matchedCat = categories.find(c =>
-      c.name.toLowerCase() === preset.category?.toLowerCase()
-    );
-    setForm(f => ({
-      ...f,
-      title: preset.label,
-      ...(matchedCat ? { expense_category_id: String(matchedCat.id) } : {}),
-    }));
+  // Picking a type fills the title and category; the category is created on first use.
+  const [cats, setCats] = useState(categories);
+  useEffect(() => { setCats(categories); }, [categories]);
+
+  async function applyPreset(preset) {
+    let cat = cats.find(c => c.name.toLowerCase() === preset.category.toLowerCase());
+    setForm(f => ({ ...f, title: preset.label, ...(cat ? { expense_category_id: String(cat.id) } : {}) }));
+    if (!cat) {
+      try {
+        const { data } = await api.post('/expenses/categories', { name: preset.category, color: preset.color });
+        setCats(c => [...c, data]);
+        setForm(f => (f.title === preset.label ? { ...f, expense_category_id: String(data.id) } : f));
+      } catch {}
+    }
   }
 
   async function handleSubmit(e) {
@@ -161,7 +165,7 @@ export function ExpenseModal({ expense, categories, projects = [], defaultProjec
         amount: parseFloat(form.amount) || 0,
         expense_category_id: form.expense_category_id || null,
         project_id: form.project_id || null,
-        recurring: form.recurring ? 1 : 0,
+        recurring: 0,
       };
       const res = expense
         ? await api.put(`/expenses/${expense.id}`, payload)
@@ -232,7 +236,7 @@ export function ExpenseModal({ expense, categories, projects = [], defaultProjec
               <select value={form.expense_category_id} onChange={e => set('expense_category_id', e.target.value)}
                 className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20">
                 <option value="">Uncategorized</option>
-                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
             <div>
@@ -257,33 +261,6 @@ export function ExpenseModal({ expense, categories, projects = [], defaultProjec
                 placeholder="Person or account"
                 className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
             </div>
-          </div>
-
-          {/* Recurring toggle */}
-          <div className="bg-slate-50 rounded-xl p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Repeat size={14} className="text-slate-500" />
-                <span className="text-sm font-medium text-slate-700">Recurring Expense</span>
-              </div>
-              <button type="button" onClick={() => set('recurring', !form.recurring)}
-                className={`w-10 h-6 rounded-full transition-colors relative ${form.recurring ? 'bg-indigo-600' : 'bg-slate-300'}`}>
-                <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${form.recurring ? 'translate-x-4' : 'translate-x-0.5'}`} />
-              </button>
-            </div>
-            {form.recurring && (
-              <div className="mt-3">
-                <label className="block text-xs font-semibold text-slate-500 mb-1">Frequency</label>
-                <div className="flex gap-2 flex-wrap">
-                  {RECURRING_PERIODS.map(p => (
-                    <button key={p} type="button" onClick={() => set('recurring_period', p)}
-                      className={`px-3 py-1 text-xs rounded-lg font-medium capitalize transition-colors ${form.recurring_period === p ? 'bg-indigo-600 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:border-indigo-300'}`}>
-                      {p}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
 
           <div>
@@ -810,7 +787,7 @@ export default function Expenses() {
     <div className="pb-8">
 
       {/* ── Header ── */}
-      <div className="flex items-start justify-between gap-3 mb-4">
+      <div className="sticky top-[57px] lg:top-0 z-10 bg-[#f2f2f7] flex items-start justify-between gap-3 mb-3 py-2 -mt-2">
         <div className="min-w-0">
           <h1 className="text-2xl font-bold text-slate-900">
             {activeTab === 'income' ? 'Other Income' : activeTab === 'shipping' ? 'Shipping' : 'Expenses'}
@@ -818,7 +795,7 @@ export default function Expenses() {
           <p className="text-sm text-slate-500 mt-0.5">
             {activeTab === 'income' ? 'Miscellaneous income outside the invoice flow'
               : activeTab === 'shipping' ? 'What you paid to ship each project'
-              : 'Track business spending and recurring costs'}
+              : 'Track business spending'}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -922,7 +899,7 @@ export default function Expenses() {
             <div className="min-w-0">
               <p className="text-lg font-bold text-slate-900">{expenses.length}</p>
               <p className="text-xs text-slate-500">Entries</p>
-              <p className="text-2xs text-slate-400 truncate">{pkr(summary.recurringMonthly || 0)} recurring / mo</p>
+              <p className="text-2xs text-slate-400 truncate">recorded</p>
             </div>
           </div>
         </div>
@@ -1031,11 +1008,6 @@ export default function Expenses() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <p className="text-sm font-semibold text-slate-800">{exp.title}</p>
-                      {exp.recurring ? (
-                        <span className="flex items-center gap-0.5 text-2xs bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full font-semibold">
-                          <Repeat size={9} /> {exp.recurring_period}
-                        </span>
-                      ) : null}
                     </div>
                     <p className="text-xs text-slate-400 mt-0.5">
                       {fmtDate(exp.expense_date)}
@@ -1195,7 +1167,6 @@ export default function Expenses() {
                 { label: 'Payment Method', value: selected.payment_method || '—' },
                 { label: 'Paid By',        value: selected.paid_by || '—' },
                 { label: 'Category',       value: selected.category_name || 'Uncategorized' },
-                { label: 'Recurring',      value: selected.recurring ? `Yes · ${selected.recurring_period}` : 'No' },
               ].map(({ label, value }) => (
                 <div key={label} className="flex items-center justify-between px-5 py-3 gap-4">
                   <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex-shrink-0">{label}</span>

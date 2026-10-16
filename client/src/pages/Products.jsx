@@ -6,6 +6,7 @@ import {
   XCircle, DollarSign, Layers, TrendingUp, AlertCircle,
   ChevronDown, Box, Calculator, Save, Copy, Globe,
 } from 'lucide-react';
+import FilterBtn from '../components/FilterBtn';
 import api, { apiFetch, imgUrl } from '../lib/api';
 import Drawer from '../components/Drawer';
 
@@ -1081,6 +1082,7 @@ export default function Products() {
   const [search, setSearch]         = useState('');
   const [catFilter, setCatFilter]   = useState('');
   const [statusFilter, setStatus]   = useState('all');
+  const [showF, setShowF] = useState(false);
   const [catModal, setCatModal]     = useState(null);
   const [drawer, setDrawer]         = useState(null);
   const [delTarget, setDelTarget]   = useState(null);
@@ -1264,8 +1266,10 @@ export default function Products() {
                 <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input value={search} onChange={e => setSearch(e.target.value)}
                   placeholder="Search products…"
-                  className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-xl text-xs outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all bg-white" />
+                  className="w-full pl-8 pr-10 py-2 border border-slate-200 rounded-xl text-xs outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all bg-white" />
+              <FilterBtn open={showF} onClick={() => setShowF(v => !v)} active={statusFilter !== 'all' || !!catFilter} />
               </div>
+              {showF && (<>
               <div className="flex gap-1">
                 {[['all', 'All'], ['active', 'Active'], ['inactive', 'Inactive']].map(([v, label]) => (
                   <button key={v} onClick={() => setStatus(v)}
@@ -1279,6 +1283,7 @@ export default function Products() {
                 <option value="">All Categories</option>
                 {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
+              </>)}
             </div>
 
             {/* Scrollable product list */}

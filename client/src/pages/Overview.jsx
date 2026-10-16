@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowDownLeft, ArrowUpRight, ArrowRight, Banknote, Clock, Scale } from 'lucide-react';
 import api from '../lib/api';
 import PeriodPicker from '../components/PeriodPicker';
+import PLChart from '../components/PLChart';
 
 // Minimal dashboard — four numbers and two short lists, all in PKR.
 //   Money In    = payments received + other income        (in the period)
@@ -45,6 +46,7 @@ export default function Overview() {
   const [fin, setFin]           = useState(null);
   const [projects, setProjects] = useState([]);
   const [invoices, setInvoices] = useState([]);
+  const [ledger, setLedger]     = useState([]);
   const [loading, setLoading]   = useState(true);
 
   useEffect(() => {
@@ -53,7 +55,9 @@ export default function Overview() {
       api.get('/financials/summary', { params }),
       api.get('/projects'),
       api.get('/invoices'),
-    ]).then(([fs, pr, inv]) => {
+      api.get('/financials/ledger', { params }),
+    ]).then(([fs, pr, inv, lg]) => {
+      setLedger(Array.isArray(lg.data?.ledger) ? lg.data.ledger : []);
       setFin(fs.data || {});
       setProjects(Array.isArray(pr.data) ? pr.data : []);
       setInvoices(Array.isArray(inv.data) ? inv.data : []);
@@ -112,6 +116,8 @@ export default function Overview() {
         <StatCard label="To Receive" value={pkr(f.outstanding)} icon={Clock} tone="amber"
           sub={`${unpaid.length} unpaid invoice${unpaid.length !== 1 ? 's' : ''} · as of today`} />
       </div>
+
+      <PLChart rows={ledger} from={period.from} to={period.to} periodLabel={period.label} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Projects — cost, received, profit */}

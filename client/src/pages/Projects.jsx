@@ -5,6 +5,7 @@ import {
   ImagePlus, Layers, PackageOpen, Pencil, Plus, Printer, Receipt, Save, Scissors,
   Search, Shirt, Tag, Trash2, TrendingUp, Truck, User, Wand2, X,
 } from 'lucide-react';
+import FilterBtn from '../components/FilterBtn';
 import api, { imgUrl } from '../lib/api';
 import { ExpenseModal } from './Expenses';
 
@@ -1962,6 +1963,7 @@ export default function Projects() {
   }, [location.key, location.search]);
   const [search,   setSearch]         = useState('');
   const [statusFilter, setStatus]     = useState('all');
+  const [showF, setShowF] = useState(false);
   const [catalogProducts, setCatalog] = useState([]);
   const [currencies, setCurrencies]   = useState([]);
   const [baseCurrency, setBaseCurrency] = useState('PKR');
@@ -2054,16 +2056,17 @@ export default function Projects() {
           <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Search projects, clients, invoices…"
-            className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 bg-white" />
+            className="w-full pl-10 pr-11 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 bg-white" />
+          <FilterBtn open={showF} onClick={() => setShowF(v => !v)} active={statusFilter !== 'all'} />
         </div>
-        <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
+        {showF && (<div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
           {[['all','All'],['active','Active'],['completed','Completed']].map(([v,label]) => (
             <button key={v} onClick={() => setStatus(v)}
               className={`px-3.5 py-1.5 text-sm rounded-lg font-medium transition-all ${
                 statusFilter === v ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
               }`}>{label}</button>
           ))}
-        </div>
+        </div>)}
       </div>
 
       {/* Grid */}

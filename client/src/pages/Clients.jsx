@@ -7,6 +7,7 @@ import {
   User, CreditCard, Clock, DollarSign, Package,
   ChevronDown, Receipt, Users, FileImage, MessageSquare, Send,
 } from 'lucide-react';
+import FilterBtn from '../components/FilterBtn';
 import api, { imgUrl } from '../lib/api';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -739,6 +740,7 @@ export default function Clients() {
   const [loading,      setLoading]      = useState(true);
   const [search,       setSearch]       = useState('');
   const [filter,       setFilter]       = useState('All');
+  const [showF, setShowF] = useState(false);
   const [selected,     setSelected]     = useState(null);
 
   // Re-clicking "Clients" in the sidebar returns to the list from a detail view
@@ -845,10 +847,11 @@ export default function Clients() {
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Search clients…"
-                className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all bg-white"
+                className="w-full pl-8 pr-10 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all bg-white"
               />
+              <FilterBtn open={showF} onClick={() => setShowF(v => !v)} active={filter !== 'All'} />
             </div>
-            <div className="flex gap-1">
+            {showF && (<div className="flex gap-1">
               {FILTERS.map(f => (
                 <button key={f.key} onClick={() => setFilter(f.key)}
                   className={`flex-1 py-1 text-xs rounded-lg font-medium transition-all ${
@@ -857,7 +860,7 @@ export default function Clients() {
                   {f.label}
                 </button>
               ))}
-            </div>
+            </div>)}
             <p className="text-xs text-slate-400 px-0.5">
               {filtered.length} of {clients.length} customer{clients.length !== 1 ? 's' : ''}
             </p>

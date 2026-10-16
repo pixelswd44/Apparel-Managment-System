@@ -293,7 +293,7 @@ router.get('/ledger', (req, res) => {
   `).all();
   for (const p of payments) {
     entries.push({ date: p.date, section: 'Income', category: p.category,
-      description: `Invoice ${p.reference || ''}`, party: p.party || '',
+      description: `Invoice ${p.reference || ''}`, party: p.party || '', paid_by: p.party || '', paid_to: '',
       credit: paymentToPKR(p, rates), debit: 0,
       currency: p.currency, amount_orig: parseFloat(p.amount) });
   }
@@ -307,7 +307,7 @@ router.get('/ledger', (req, res) => {
   `).all();
   for (const inc of otherIncome) {
     entries.push({ date: inc.date, section: 'Income', category: inc.category || 'Other Income',
-      description: inc.title, party: inc.received_by || '',
+      description: inc.title, party: inc.received_by || '', paid_by: '', paid_to: inc.received_by || '',
       credit: parseFloat(inc.amount) || 0, debit: 0,
       currency: 'PKR', amount_orig: parseFloat(inc.amount) || 0 });
   }
@@ -316,7 +316,7 @@ router.get('/ledger', (req, res) => {
   // All spending is entered on the Expenses screen. Expenses charged to a project
   // show under "Project Costs" (with the project name); the rest are business expenses.
   const expenseRows = db.prepare(`
-    SELECT e.id, e.expense_date as date, e.amount, e.title as description, e.project_id,
+    SELECT e.id, e.expense_date as date, e.amount, e.title as description, e.project_id, e.paid_to as paid_to_raw, e.paid_by as paid_by_raw,
            COALESCE(ec.name,'Expense') as category,
            COALESCE(NULLIF(TRIM(e.paid_to),''), e.paid_by) as party,
            p.title as project_title
@@ -330,7 +330,8 @@ router.get('/ledger', (req, res) => {
     const isProject = !!e.project_id;
     entries.push({ date: e.date, section: isProject ? 'Project Costs' : 'Business Expenses', category: e.category,
       description: `${e.description || e.category}${isProject && e.project_title ? ` (${e.project_title})` : ''}`,
-      party: e.party || '', credit: 0, debit: parseFloat(e.amount) || 0, currency: 'PKR', amount_orig: parseFloat(e.amount) || 0 });
+      party: e.party || '', paid_to: (e.paid_to_raw || '').trim(), paid_by: (e.paid_by_raw || '').trim(),
+      credit: 0, debit: parseFloat(e.amount) || 0, currency: 'PKR', amount_orig: parseFloat(e.amount) || 0 });
   }
 
   // Shipping costs — entered on project shipments
@@ -347,7 +348,7 @@ router.get('/ledger', (req, res) => {
   for (const s of shippingRows) {
     entries.push({ date: s.date, section: 'Project Costs', category: 'Shipping',
       description: `Shipping${s.party ? ` — ${s.party}` : ''}${s.project_title ? ` (${s.project_title})` : ''}`,
-      party: s.party, credit: 0, debit: parseFloat(s.amount) || 0, currency: 'PKR', amount_orig: parseFloat(s.amount) || 0,
+      party: s.party, paid_to: s.party || '', paid_by: '', credit: 0, debit: parseFloat(s.amount) || 0, currency: 'PKR', amount_orig: parseFloat(s.amount) || 0,
       reference: s.tracking_number || '' });
   }
 
@@ -362,7 +363,7 @@ router.get('/ledger', (req, res) => {
   `).all();
   for (const s of salaries) {
     entries.push({ date: s.date, section: 'Salaries', category: 'Salary',
-      description: `Salary – ${s.party || 'Employee'}`, party: s.party || '',
+      description: `Salary – ${s.party || 'Employee'}`, party: s.party || '', paid_to: s.party || '', paid_by: '',
       credit: 0, debit: parseFloat(s.amount) || 0, currency: 'PKR', amount_orig: parseFloat(s.amount) || 0 });
   }
 
@@ -376,7 +377,7 @@ router.get('/ledger', (req, res) => {
   `).all();
   for (const a of advances) {
     entries.push({ date: a.date, section: 'Salaries', category: 'Advance',
-      description: `Advance${a.reason ? ` – ${a.reason}` : ''}`, party: a.party || '',
+      description: `Advance${a.reason ? ` – ${a.reason}` : ''}`, party: a.party || '', paid_to: a.party || '', paid_by: '',
       credit: 0, debit: parseFloat(a.amount) || 0, currency: 'PKR', amount_orig: parseFloat(a.amount) || 0 });
   }
 
