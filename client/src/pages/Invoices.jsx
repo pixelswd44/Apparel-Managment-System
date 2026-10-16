@@ -795,6 +795,7 @@ function InvoiceView({ invoiceId, onClose, onConverted, embedded = false }) {
                     <p className="text-xs text-slate-600 whitespace-pre-line leading-relaxed">{invoice.customer_notes}</p>
                   </div>
                 )}
+                <div className={`grid gap-x-6 gap-y-3 ${((invoice.bank_details || co.bank_details) && tplCfg.showBankDetails !== false) && (invoice.terms_conditions && tplCfg.showTerms !== false) ? 'grid-cols-2' : 'grid-cols-1'}`}>
                 {(invoice.bank_details || co.bank_details) && tplCfg.showBankDetails !== false && (
                   <div className="doc-bank-block">
                     <p className="text-2xs font-black text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1.5">
@@ -811,6 +812,7 @@ function InvoiceView({ invoiceId, onClose, onConverted, embedded = false }) {
                     <p className="text-xs text-slate-500 whitespace-pre-line leading-relaxed">{invoice.terms_conditions}</p>
                   </div>
                 )}
+                </div>
               </div>
             )}
 

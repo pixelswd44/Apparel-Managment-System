@@ -480,6 +480,7 @@ function QuotationView({ quotationId, onClose, onEdit, onConverted, embedded = f
                   <p className="text-xs text-slate-600 whitespace-pre-line leading-relaxed">{quotation.customer_notes}</p>
                 </div>
               )}
+              <div className={`grid gap-x-6 gap-y-3 ${((quotation.bank_details || co.bank_details) && tplCfg.showBankDetails !== false) && (quotation.terms_conditions && tplCfg.showTerms !== false) ? 'grid-cols-2' : 'grid-cols-1'}`}>
               {(quotation.bank_details || co.bank_details) && tplCfg.showBankDetails !== false && (
                 <div className="doc-bank-block">
                   <p className="text-2xs font-black text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1.5">
@@ -498,6 +499,7 @@ function QuotationView({ quotationId, onClose, onEdit, onConverted, embedded = f
                   <p className="text-xs text-slate-500 whitespace-pre-line leading-relaxed">{quotation.terms_conditions}</p>
                 </div>
               )}
+              </div>
             </div>
           )}
 

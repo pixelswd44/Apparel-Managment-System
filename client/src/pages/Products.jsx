@@ -440,7 +440,7 @@ const ORDER_STATUS_COLORS = {
   expired:   'bg-amber-100 text-amber-700',
 };
 
-function ProductDrawer({ product, onClose, onEdit, onDelete, onDuplicate, onApply, embedded = false }) {
+export function ProductDrawer({ product, onClose, onEdit, onDelete, onDuplicate, onApply, embedded = false }) {
   const [tab, setTab] = useState('Overview');
 
   // Overview data
@@ -701,6 +701,10 @@ function ProductDrawer({ product, onClose, onEdit, onDelete, onDuplicate, onAppl
 
           {/* Right: actions */}
           <div className="flex items-center gap-1 flex-shrink-0">
+            <button onClick={() => onEdit?.(product)} title="Edit"
+              className="flex items-center gap-1.5 px-3 py-1.5 mr-1 text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700 rounded-lg transition-colors">
+              <Pencil size={12} /> Edit
+            </button>
             <button onClick={() => onDuplicate?.(product)} title="Duplicate"
               className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors">
               <Copy size={14} />
@@ -1083,6 +1087,7 @@ export default function Products() {
   const [catFilter, setCatFilter]   = useState('');
   const [statusFilter, setStatus]   = useState('all');
   const [showF, setShowF] = useState(false);
+  const [sort, setSort]           = useState('popular'); // popular | newest | name
   const [catModal, setCatModal]     = useState(null);
   const [drawer, setDrawer]         = useState(null);
   const [delTarget, setDelTarget]   = useState(null);
@@ -1157,13 +1162,33 @@ export default function Products() {
     if (catFilter && String(p.category_id) !== catFilter) return false;
     if (search) {
       const q = search.toLowerCase();
-      return [p.name, p.sku, p.category_name, p.description].some(f => f?.toLowerCase().includes(q));
+      return [p.name, p.sku, p.article_number, p.category_name, p.description].some(f => f?.toLowerCase().includes(q));
     }
     return true;
+  }).sort((a, b) => {
+    if (sort === 'name') return String(a.name).localeCompare(String(b.name));
+    if (sort === 'newest') return String(b.created_at).localeCompare(String(a.created_at));
+    return (b.popularity || 0) - (a.popularity || 0) || String(a.name).localeCompare(String(b.name));
   });
 
+  // The three best sellers get a "Popular" badge
+  const popularIds = new Set([...products].filter(p => (p.popularity || 0) > 0)
+    .sort((a, b) => b.popularity - a.popularity).slice(0, 3).map(p => p.id));
+
+  const priceText = p => {
+    let prices = [];
+    try { prices = JSON.parse(p.prices_json || '[]'); } catch {}
+    if (prices.length > 0) {
+      const defCur = currencies.find(c => c.is_default === 1);
+      const first = (defCur && prices.find(pr => pr.currency === defCur.code)) || prices[0];
+      const sym = currencies.find(c => c.code === first.currency)?.symbol || first.currency;
+      return `${sym}${fmtPrice(first.selling_price)}`;
+    }
+    return parseFloat(p.selling_price) > 0 ? fmtPrice(p.selling_price) : '';
+  };
+
   return (
-    <div className="flex flex-col animate-page" style={{ height: 'calc(100vh - 8.5rem)' }}>
+    <div className="animate-page pb-8">
 
       {/* ── Header row ── */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-5 flex-shrink-0">
@@ -1200,29 +1225,6 @@ export default function Products() {
         </div>
       </div>
 
-      {/* ── Stats ── */}
-      {view === 'products' && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5 flex-shrink-0">
-          {[
-            { label: 'Total Products', value: stats.total,  sub: `${stats.active} active`,              icon: Package,     color: 'text-indigo-600',  bg: 'bg-indigo-50' },
-            { label: 'Active',         value: stats.active,  sub: `${stats.total - stats.active} inactive`, icon: Check,    color: 'text-emerald-600', bg: 'bg-emerald-50' },
-            { label: 'Categories',     value: stats.cats,    sub: 'product groups',                      icon: Tag,         color: 'text-violet-600',  bg: 'bg-violet-50' },
-            { label: 'Low Stock',      value: stats.lowStock, sub: 'at or below reorder',                icon: AlertCircle,
-              color: stats.lowStock > 0 ? 'text-amber-600' : 'text-slate-400',
-              bg:    stats.lowStock > 0 ? 'bg-amber-50'    : 'bg-slate-100' },
-          ].map(({ label, value, sub, icon: Icon, color, bg }) => (
-            <div key={label} className="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-3 shadow-sm">
-              <div className={`${bg} ${color} p-2.5 rounded-xl flex-shrink-0`}><Icon size={18} /></div>
-              <div className="min-w-0">
-                <p className="text-lg font-bold text-slate-900 truncate">{value}</p>
-                <p className="text-xs text-slate-500">{label}</p>
-                <p className="text-2xs text-slate-400">{sub}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
       {/* Inline delete confirmation */}
       {delTarget && (
         <div className={`flex items-center gap-3 px-4 py-3 mb-1 border rounded-xl text-sm flex-shrink-0 ${
@@ -1253,187 +1255,123 @@ export default function Products() {
         </div>
       )}
 
-      {/* ── Products two-panel view ── */}
+      {/* ── Products grid ── */}
       {view === 'products' && (
-        <div className="flex-1 min-h-0 flex flex-col lg:flex-row rounded-2xl border border-slate-200 shadow-sm overflow-hidden bg-white">
-
-          {/* LEFT PANEL — product list */}
-          <div className={`w-full lg:w-80 flex-1 min-h-0 lg:flex-none flex flex-col border-b lg:border-b-0 lg:border-r border-slate-200 ${drawer ? 'hidden lg:flex' : ''}`}>
-
-            {/* Search + filters */}
-            <div className="p-3 border-b border-slate-100 space-y-2 flex-shrink-0">
-              <div className="relative">
-                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input value={search} onChange={e => setSearch(e.target.value)}
-                  placeholder="Search products…"
-                  className="w-full pl-8 pr-10 py-2 border border-slate-200 rounded-xl text-xs outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all bg-white" />
-              <FilterBtn open={showF} onClick={() => setShowF(v => !v)} active={statusFilter !== 'all' || !!catFilter} />
-              </div>
-              {showF && (<>
-              <div className="flex gap-1">
-                {[['all', 'All'], ['active', 'Active'], ['inactive', 'Inactive']].map(([v, label]) => (
-                  <button key={v} onClick={() => setStatus(v)}
-                    className={`flex-1 py-1.5 text-xs rounded-lg font-medium transition-all duration-150 ${
-                      statusFilter === v ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
-                    }`}>{label}</button>
-                ))}
-              </div>
-              <select value={catFilter} onChange={e => setCatFilter(e.target.value)}
-                className="w-full border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs outline-none focus:border-indigo-400 bg-white cursor-pointer text-slate-600">
-                <option value="">All Categories</option>
-                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-              </>)}
+        <div>
+          {/* Search + filters */}
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-3 mb-4 space-y-3">
+            <div className="relative">
+              <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input value={search} onChange={e => setSearch(e.target.value)}
+                placeholder="Search by name, article no., category…"
+                className="w-full pl-10 pr-11 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 bg-white" />
+              <FilterBtn open={showF} onClick={() => setShowF(v => !v)} active={statusFilter !== 'all' || !!catFilter || sort !== 'popular'} />
             </div>
-
-            {/* Scrollable product list */}
-            <div className="flex-1 min-h-0 overflow-y-auto">
-              {loading ? (
-                <div className="py-16 text-center">
-                  <div className="w-6 h-6 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mx-auto mb-2" />
-                  <p className="text-slate-400 text-xs">Loading…</p>
-                </div>
-              ) : filtered.length === 0 ? (
-                <div className="py-16 text-center px-4">
-                  <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-2">
-                    <Package size={18} className="text-slate-300" />
-                  </div>
-                  <p className="text-slate-500 text-xs font-medium">
-                    {search || catFilter || statusFilter !== 'all' ? 'No matches' : 'No products yet'}
-                  </p>
-                  <p className="text-slate-400 text-xs mt-1">
-                    {search || catFilter || statusFilter !== 'all' ? 'Try different filters' : 'Click "New Product" to start'}
-                  </p>
-                </div>
-              ) : (
+            {showF && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  {filtered.map(p => {
-                    const isSelected = drawer?.id === p.id;
-                    const isLow = parseFloat(p.reorder_level) > 0 && parseFloat(p.stock_quantity) <= parseFloat(p.reorder_level);
-                    return (
-                      <div key={p.id}
-                        onClick={() => setDrawer(p)}
-                        className={`group relative flex items-start gap-2.5 px-3.5 py-3 cursor-pointer border-l-[3px] transition-all duration-100 border-b border-slate-50 ${
-                          isSelected
-                            ? 'border-l-indigo-600 bg-indigo-50/70'
-                            : 'border-l-transparent hover:bg-slate-50/80 hover:border-l-slate-200'
-                        }`}>
-                        {/* Icon */}
-                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                          isSelected ? 'bg-indigo-100' : 'bg-slate-100'
-                        }`}>
-                          {p.product_type === 'service'
-                            ? <span className="text-2xs">⚙️</span>
-                            : <Box size={12} className={isSelected ? 'text-indigo-600' : 'text-slate-400'} />
-                          }
-                        </div>
-                        {/* Info */}
-                        <div className="flex-1 min-w-0">
-                          <p className={`text-sm font-semibold truncate leading-tight ${isSelected ? 'text-indigo-900' : 'text-slate-800'}`}>
-                            {p.name}
-                          </p>
-                          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                            {p.article_number && (
-                              <span className="text-xs font-mono text-indigo-600 bg-indigo-50 px-1 py-0.5 rounded leading-none">{p.article_number}</span>
-                            )}
-                            {p.category_name && (
-                              <span className="text-xs text-slate-400 truncate">{p.category_name}</span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium capitalize ${
-                              p.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
-                            }`}>{p.status}</span>
-                            {isLow && (
-                              <span className="text-xs text-amber-600 flex items-center gap-0.5 font-medium">
-                                <AlertCircle size={10} />low
-                              </span>
-                            )}
-                            {(() => {
-                              let prices = [];
-                              try { prices = JSON.parse(p.prices_json || '[]'); } catch {}
-                              if (prices.length > 0) {
-                                // Sort: default currency first
-                                const defCur = currencies.find(c => c.is_default === 1);
-                                const sorted = defCur
-                                  ? [...prices.filter(pr => pr.currency === defCur.code), ...prices.filter(pr => pr.currency !== defCur.code)]
-                                  : prices;
-                                const defPrice = sorted[0];
-                                const others   = sorted.slice(1);
-                                const defSym   = currencies.find(c => c.code === defPrice?.currency)?.symbol || '';
-                                return (
-                                  <div className="ml-auto text-right flex-shrink-0">
-                                    <p className="text-xs font-bold text-slate-800 font-mono">{defSym}{fmtPrice(defPrice?.selling_price)}</p>
-                                    {others.length > 0 && (
-                                      <p className="text-2xs text-slate-400 font-mono leading-snug">
-                                        {others.slice(0, 2).map((pr, i) => {
-                                          const sym = currencies.find(c => c.code === pr.currency)?.symbol || pr.currency;
-                                          return (i > 0 ? ' · ' : '') + sym + fmtPrice(pr.selling_price);
-                                        }).join('')}
-                                        {others.length > 2 ? ` +${others.length - 2}` : ''}
-                                      </p>
-                                    )}
-                                  </div>
-                                );
-                              }
-                              if (parseFloat(p.selling_price) > 0) {
-                                return <span className="text-xs text-slate-500 ml-auto font-mono">{fmtPrice(p.selling_price)}</span>;
-                              }
-                              return null;
-                            })()}
-                          </div>
-                        </div>
-                        {/* Hover actions */}
-                        <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 self-center">
-                          <button onClick={e => { e.stopPropagation(); navigate(`/products/${p.id}/edit`); }} title="Edit"
-                            className="p-1 text-slate-300 hover:text-indigo-600 hover:bg-indigo-100 rounded transition-colors">
-                            <Pencil size={11} />
-                          </button>
-                          <button onClick={e => { e.stopPropagation(); setDelTarget({ type: 'product', item: p }); }} title="Delete"
-                            className="p-1 text-slate-300 hover:text-rose-600 hover:bg-rose-100 rounded transition-colors">
-                            <Trash2 size={11} />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {/* Count footer */}
-                  <div className="px-3.5 py-2 border-t border-slate-100">
-                    <p className="text-2xs text-slate-400">{filtered.length} of {products.length} product{products.length !== 1 ? 's' : ''}</p>
+                  <p className="text-xs font-semibold text-slate-500 mb-1.5">Sort</p>
+                  <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
+                    {[['popular', 'Popular'], ['newest', 'Newest'], ['name', 'A–Z']].map(([v, label]) => (
+                      <button key={v} onClick={() => setSort(v)}
+                        className={`flex-1 py-1.5 text-xs rounded-lg font-medium transition-all ${sort === v ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>{label}</button>
+                    ))}
                   </div>
                 </div>
-              )}
-            </div>
-          </div>
-
-          {/* RIGHT PANEL — product detail */}
-          <div className="flex-1 min-w-0 min-h-0 flex flex-col">
-            {drawer ? (
-              <ProductDrawer
-                product={drawer}
-                embedded={true}
-                onClose={() => setDrawer(null)}
-                onEdit={p => navigate(`/products/${p.id}/edit`)}
-                onDelete={p => setDelTarget({ type: 'product', item: p })}
-                onDuplicate={handleDuplicateProduct}
-                onApply={handleCalcApply}
-              />
-            ) : (
-              <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
-                <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mb-4">
-                  <Package size={28} className="text-slate-300" />
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 mb-1.5">Status</p>
+                  <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
+                    {[['all', 'All'], ['active', 'Active'], ['inactive', 'Inactive']].map(([v, label]) => (
+                      <button key={v} onClick={() => setStatus(v)}
+                        className={`flex-1 py-1.5 text-xs rounded-lg font-medium transition-all ${statusFilter === v ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>{label}</button>
+                    ))}
+                  </div>
                 </div>
-                <p className="text-slate-500 font-medium">Select a product</p>
-                <p className="text-slate-400 text-sm mt-1 max-w-xs">
-                  Click any product on the left to view its details, pricing, and order history.
-                </p>
-                <button onClick={() => navigate('/products/new')}
-                  className="mt-5 flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm rounded-xl hover:bg-indigo-700 transition-colors font-medium shadow-sm">
-                  <Plus size={14} /> New Product
-                </button>
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 mb-1.5">Category</p>
+                  <select value={catFilter} onChange={e => setCatFilter(e.target.value)}
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-indigo-400 bg-white text-slate-600">
+                    <option value="">All Categories</option>
+                    {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
               </div>
             )}
           </div>
+
+          {loading ? (
+            <div className="py-24 text-center">
+              <div className="w-8 h-8 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mx-auto mb-3" />
+              <p className="text-slate-400 text-sm">Loading products…</p>
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="py-20 text-center bg-white border border-slate-200 rounded-2xl">
+              <Package size={32} className="text-slate-200 mx-auto mb-3" />
+              <p className="text-slate-600 font-medium">{search || catFilter || statusFilter !== 'all' ? 'No products match' : 'No products yet'}</p>
+              {!(search || catFilter || statusFilter !== 'all') && (
+                <button onClick={() => navigate('/products/new')} className="mt-3 text-sm text-indigo-600 hover:underline font-medium">Add your first product</button>
+              )}
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
+                {filtered.map(p => {
+                  let imgs = [];
+                  try { imgs = JSON.parse(p.images || '[]'); } catch {}
+                  const img = imgs[0]?.url;
+                  const isLow = parseFloat(p.reorder_level) > 0 && parseFloat(p.stock_quantity) <= parseFloat(p.reorder_level);
+                  const orders = (p.invoice_count || 0) + (p.quotation_count || 0);
+                  const price = priceText(p);
+                  return (
+                    <div key={p.id} onClick={() => navigate(`/products/${p.id}`)}
+                      className="group bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden cursor-pointer hover:shadow-md hover:border-indigo-200 transition-all">
+                      {/* Image */}
+                      <div className="relative aspect-square bg-slate-100 overflow-hidden">
+                        {img ? (
+                          <img src={imgUrl(img)} alt={p.name} loading="lazy"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                        ) : (
+                          <div className="w-full h-full flex flex-col items-center justify-center text-slate-300 bg-gradient-to-br from-slate-50 to-slate-100">
+                            <Package size={34} />
+                            <span className="text-2xs mt-1">No image</span>
+                          </div>
+                        )}
+                        <div className="absolute top-2 left-2 flex flex-col gap-1 items-start">
+                          {popularIds.has(p.id) && (
+                            <span className="text-2xs font-bold bg-amber-400 text-amber-950 px-2 py-0.5 rounded-full shadow-sm">🔥 Popular</span>
+                          )}
+                          {p.status !== 'active' && (
+                            <span className="text-2xs font-semibold bg-slate-800/80 text-white px-2 py-0.5 rounded-full capitalize">{p.status}</span>
+                          )}
+                          {isLow && (
+                            <span className="text-2xs font-semibold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full flex items-center gap-1"><AlertCircle size={9} /> Low stock</span>
+                          )}
+                        </div>
+                        {/* Quick actions */}
+                        <div className="absolute top-2 right-2 flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                          <button onClick={() => navigate(`/products/${p.id}/edit`)} title="Edit"
+                            className="p-1.5 bg-white/95 text-slate-600 hover:text-indigo-600 rounded-lg shadow-sm"><Pencil size={13} /></button>
+                        </div>
+                      </div>
+                      {/* Info */}
+                      <div className="p-3">
+                        <p className="text-sm font-semibold text-slate-900 leading-tight line-clamp-2">{p.name}</p>
+                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                          {p.article_number && <span className="text-2xs font-mono text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">{p.article_number}</span>}
+                          {p.category_name && <span className="text-2xs text-slate-400 truncate">{p.category_name}</span>}
+                        </div>
+                        <div className="flex items-end justify-between gap-2 mt-2.5">
+                          <span className="text-sm font-bold text-slate-900 font-mono">{price || <span className="text-slate-300 font-normal">No price</span>}</span>
+                          {orders > 0 && <span className="text-2xs text-slate-400 whitespace-nowrap">{orders} order{orders !== 1 ? 's' : ''}</span>}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-slate-400 text-center mt-4">{filtered.length} of {products.length} product{products.length !== 1 ? 's' : ''}</p>
+            </>
+          )}
         </div>
       )}
 

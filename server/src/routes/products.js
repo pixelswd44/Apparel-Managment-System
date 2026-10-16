@@ -30,9 +30,46 @@ function coerce(f, v) {
   return v ?? null;
 }
 
+// How often each product shows up on invoices / quotations (matched by product id
+// or by name, like order-history does). Drives "most popular first" in the grid.
+function orderCounts(products) {
+  const counts = new Map(products.map(p => [p.id, { invoices: 0, quotations: 0 }]));
+  const keys = products.map(p => ({
+    id: p.id,
+    name: (p.name || '').toLowerCase().trim(),
+    art: (p.article_number || '').toLowerCase().trim(),
+  }));
+  const tally = (table, field) => {
+    let rows = [];
+    try { rows = db.prepare(`SELECT items FROM ${table}`).all(); } catch { return; }
+    for (const r of rows) {
+      let items = [];
+      try { items = JSON.parse(r.items || '[]'); } catch {}
+      const hit = new Set();
+      for (const it of items) {
+        const n = (it.name || '').toLowerCase();
+        for (const k of keys) {
+          if ((it.product_id && Number(it.product_id) === k.id) || (k.name && n.includes(k.name)) || (k.art && n.includes(k.art))) hit.add(k.id);
+        }
+      }
+      for (const id of hit) counts.get(id)[field]++;
+    }
+  };
+  tally('invoices', 'invoices');
+  tally('quotations', 'quotations');
+  return counts;
+}
+
 router.get('/', (req, res) => {
   try {
     const rows = db.prepare(`${withCategory} ORDER BY p.created_at DESC`).all();
+    const counts = orderCounts(rows);
+    for (const r of rows) {
+      const c = counts.get(r.id);
+      r.invoice_count = c.invoices;
+      r.quotation_count = c.quotations;
+      r.popularity = (parseFloat(r.total_sold) || 0) + c.invoices * 3 + c.quotations;
+    }
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });

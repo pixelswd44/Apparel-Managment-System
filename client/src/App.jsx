@@ -47,6 +47,7 @@ import MockupGenerator from './pages/MockupGenerator';
 import Settings from './pages/Settings';
 import Products from './pages/Products';
 import ProductForm from './pages/ProductForm';
+import ProductView from './pages/ProductView';
 import Projects from './pages/Projects';
 import ProjectForm from './pages/ProjectForm';
 import ResetPassword from './pages/ResetPassword';
@@ -108,6 +109,7 @@ function AppRoutes({ needsWizard, onWizardComplete }) {
           <Route path="/purchases"          element={<ProtectedRoute path="/invoices"><Purchases /></ProtectedRoute>} />
           <Route path="/products"           element={<ProtectedRoute path="/products"><Products /></ProtectedRoute>} />
           <Route path="/products/new"       element={<ProtectedRoute path="/products"><ProductForm /></ProtectedRoute>} />
+          <Route path="/products/:id"       element={<ProtectedRoute path="/products"><ProductView /></ProtectedRoute>} />
           <Route path="/products/:id/edit"  element={<ProtectedRoute path="/products"><ProductForm /></ProtectedRoute>} />
           <Route path="/projects"           element={<ProtectedRoute path="/projects"><Projects /></ProtectedRoute>} />
           <Route path="/projects/new"       element={<ProtectedRoute path="/projects"><ProjectForm /></ProtectedRoute>} />
