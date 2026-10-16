@@ -374,6 +374,7 @@ export default function Ledger() {
                   <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Entry</th>
                   <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Paid To</th>
                   <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Paid By</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Type</th>
                   <th className="text-right px-4 py-3 text-xs font-bold text-emerald-600 uppercase tracking-wider">In</th>
                   <th className="text-right px-4 py-3 text-xs font-bold text-rose-600 uppercase tracking-wider">Out</th>
                   <th className="text-right px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Balance</th>
@@ -387,14 +388,14 @@ export default function Ledger() {
                       <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap tabular-nums">{fmtD(e.date)}</td>
                       <td className="px-4 py-3 max-w-md">
                         <p className="text-sm text-slate-800 font-medium truncate">{e.description}</p>
-                        <p className="text-xs text-slate-500 flex items-center gap-1.5 mt-0.5 truncate">
-                          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dot}`} />
-                          <span className={`font-semibold ${(SECTION_COLORS[e.section] || 'text-slate-500').split(' ')[0]}`}>{e.section}</span>
-                          {e.category && e.category !== e.section && <><span className="text-slate-300">·</span><span>{e.category}</span></>}
-                        </p>
                       </td>
                       <td className="px-4 py-3 text-xs text-slate-600 max-w-[160px] truncate">{e.paid_to || <span className="text-slate-300">—</span>}</td>
                       <td className="px-4 py-3 text-xs text-slate-600 max-w-[160px] truncate">{e.paid_by || <span className="text-slate-300">—</span>}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <span className={`inline-block text-2xs font-semibold px-2 py-0.5 rounded-full ${SECTION_COLORS[e.section] || 'text-slate-600 bg-slate-100'}`}>
+                          {e.isOpeningBalance ? 'Opening' : (e.category && e.category !== e.section ? e.category : e.section)}
+                        </span>
+                      </td>
                       <td className="px-4 py-3 text-right tabular-nums">
                         {e.credit > 0 ? <span className="font-bold text-emerald-600">+{pkr(e.credit)}</span> : <span className="text-slate-200">—</span>}
                       </td>
@@ -410,7 +411,7 @@ export default function Ledger() {
               </tbody>
               <tfoot>
                 <tr className="bg-white border-t-2 border-slate-300 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
-                  <td colSpan={4} className="px-4 py-3 text-sm font-bold text-slate-700">Period total</td>
+                  <td colSpan={5} className="px-4 py-3 text-sm font-bold text-slate-700">Period total</td>
                   <td className="px-4 py-3 text-right font-black text-emerald-600 tabular-nums">+{pkr(rows.reduce((s,e)=>s+e.credit,0))}</td>
                   <td className="px-4 py-3 text-right font-black text-rose-500 tabular-nums">−{pkr(rows.reduce((s,e)=>s+e.debit,0))}</td>
                   <td className={`px-4 py-3 text-right font-black tabular-nums ${(rows[rows.length-1]?.balance||0) >= 0 ? 'text-indigo-700' : 'text-rose-600'}`}>
