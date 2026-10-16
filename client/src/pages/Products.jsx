@@ -4,7 +4,7 @@ import {
   Plus, Search, Pencil, Trash2, X, Package, Tag,
   ChevronRight, AlertTriangle, Check, Upload, Image, ArrowLeft,
   XCircle, DollarSign, Layers, TrendingUp, AlertCircle,
-  ChevronDown, Box, Calculator, Save, Copy, Globe,
+  ChevronDown, Box, Calculator, Save, Copy, Globe, Star, FileText,
 } from 'lucide-react';
 import FilterBtn from '../components/FilterBtn';
 import api, { apiFetch, imgUrl } from '../lib/api';
@@ -1258,6 +1258,36 @@ export default function Products() {
       {/* ── Products grid ── */}
       {view === 'products' && (
         <div>
+          {/* Info cards */}
+          {(() => {
+            const best = [...products].sort((x, y) => (y.popularity || 0) - (x.popularity || 0))[0];
+            const invoiceLines = products.reduce((n, p) => n + (p.invoice_count || 0), 0);
+            const quoteLines = products.reduce((n, p) => n + (p.quotation_count || 0), 0);
+            const noImage = products.filter(p => { try { return JSON.parse(p.images || '[]').length === 0; } catch { return true; } }).length;
+            const cards = [
+              { label: 'Products', value: stats.total, sub: `${stats.active} active · ${stats.cats} categories`, icon: Package, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+              { label: 'Best Seller', value: best && best.popularity > 0 ? best.name : '—', sub: best && best.popularity > 0 ? `${(best.invoice_count || 0) + (best.quotation_count || 0)} orders` : 'no orders yet', icon: Star, color: 'text-amber-600', bg: 'bg-amber-50', small: true, onClick: best && best.popularity > 0 ? () => navigate(`/products/${best.id}`) : null },
+              { label: 'Orders', value: invoiceLines + quoteLines, sub: `${invoiceLines} invoiced · ${quoteLines} quoted`, icon: FileText, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+              { label: 'Needs attention', value: stats.lowStock + noImage, sub: `${stats.lowStock} low stock · ${noImage} no image`, icon: AlertCircle,
+                color: stats.lowStock + noImage > 0 ? 'text-rose-600' : 'text-slate-400', bg: stats.lowStock + noImage > 0 ? 'bg-rose-50' : 'bg-slate-100' },
+            ];
+            return (
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+                {cards.map(({ label, value, sub, icon: Icon, color, bg, small, onClick }) => (
+                  <div key={label} onClick={onClick || undefined}
+                    className={`bg-white border border-slate-200 rounded-xl p-3.5 sm:p-4 flex items-center gap-3 shadow-sm ${onClick ? 'cursor-pointer hover:border-indigo-200 hover:shadow' : ''}`}>
+                    <div className={`${bg} ${color} p-2.5 rounded-xl flex-shrink-0 hidden sm:block`}><Icon size={18} /></div>
+                    <div className="min-w-0">
+                      <p className="text-2xs font-semibold uppercase tracking-wider text-slate-400">{label}</p>
+                      <p className={`font-bold text-slate-900 truncate ${small ? 'text-sm sm:text-base' : 'text-xl'}`}>{value}</p>
+                      <p className="text-2xs text-slate-400 truncate">{sub}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+
           {/* Search + filters */}
           <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-3 mb-4 space-y-3">
             <div className="relative">
