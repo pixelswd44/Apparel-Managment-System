@@ -35,6 +35,7 @@ const EXPENSE_PRESETS = [
   { label: 'Rent',             category: 'Rent',            color: '#6366f1' },
   { label: 'Office Supplies',  category: 'Office Supplies', color: '#14b8a6' },
   { label: 'Staff Meals',      category: 'Staff Meals',     color: '#ec4899' },
+  { label: 'Self Use / Personal Use', category: 'Personal Use', color: '#64748b' },
 ];
 
 const DEFAULT_CATEGORIES = [
