@@ -1,16 +1,10 @@
 import { useState, useMemo } from 'react';
 import { ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { pkr, pkrShort as short } from '../lib/currency';
 
 // Dashboard "Profit & Loss" card in the warm theme: thin pill bars per day/month —
 // charcoal for income, yellow for expenses — with the best period highlighted.
 
-const pkr = n => `${n < 0 ? '−' : ''}₨${Math.round(Math.abs(n || 0)).toLocaleString('en-US')}`;
-const short = n => {
-  const a = Math.abs(n);
-  if (a >= 1e6) return `${(n / 1e6).toFixed(1).replace(/\.0$/, '')}M`;
-  if (a >= 1e3) return `${Math.round(n / 1e3)}k`;
-  return String(Math.round(n));
-};
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 function bucketize(rows, from, to) {

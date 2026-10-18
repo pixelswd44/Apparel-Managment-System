@@ -5,6 +5,7 @@ import api from '../lib/api';
 import { useAuth } from '../lib/authContext';
 import PeriodPicker from '../components/PeriodPicker';
 import WarmPL from '../components/WarmPL';
+import { pkr, displayCurrency } from '../lib/currency';
 
 // Dashboard — warm "Crextio"-style theme. All amounts in PKR.
 //   Money In    = payments received + other income        (in the period)
@@ -12,10 +13,6 @@ import WarmPL from '../components/WarmPL';
 //   Net         = Money In − Money Out
 //   To Receive  = unpaid invoice balances right now (not filtered by period)
 
-const pkr = v => {
-  const n = Math.round(parseFloat(v) || 0);
-  return `${n < 0 ? '−' : ''}₨${Math.abs(n).toLocaleString('en-US')}`;
-};
 const money = (v, cc) => {
   const n = parseFloat(v) || 0;
   if (!cc || cc === 'PKR') return pkr(n);
@@ -128,7 +125,7 @@ export default function Overview() {
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-4xl sm:text-5xl font-light text-[#232323] tracking-tight">Welcome back, {first}</h1>
-          <p className="text-sm text-[#8a8372] mt-2">All amounts in PKR · {period.label}</p>
+          <p className="text-sm text-[#8a8372] mt-2">All amounts in {displayCurrency().code} · {period.label}</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setShowFilters(v => !v)}

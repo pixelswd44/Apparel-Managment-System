@@ -4,6 +4,7 @@ import {
   Truck, Plus, Search, Pencil, Trash2, Phone, Mail, MapPin, User, AlertTriangle, ChevronRight,
 } from 'lucide-react';
 import api from '../lib/api';
+import { pkr } from '../lib/currency';
 import Drawer from '../components/Drawer';
 
 // Shipping agency profiles — picked on a project's Shipping tab.
@@ -16,7 +17,6 @@ const fmtDate = d => {
   return isNaN(dt) ? '—' : dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 const place = a => [a.city, a.country].filter(Boolean).join(', ');
-const pkr = v => `₨${Math.round(parseFloat(v) || 0).toLocaleString('en-US')}`;
 
 // ── Add / edit form ──────────────────────────────────────────────────────────
 function AgentForm({ agent, onClose, onSaved }) {

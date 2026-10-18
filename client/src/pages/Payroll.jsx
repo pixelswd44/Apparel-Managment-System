@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import FilterBtn from '../components/FilterBtn';
 import api from '../lib/api';
+import { pkr } from '../lib/currency';
 import {
   Users, Plus, Search, X, ChevronRight, Edit2, Trash2, Check,
   Phone, Mail, CreditCard, Briefcase, Building2, Calendar, ArrowLeft,
@@ -9,7 +10,6 @@ import {
 import Drawer from '../components/Drawer';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-const pkr = n => `₨${Number(n || 0).toLocaleString()}`;
 const today = () => new Date().toISOString().split('T')[0];
 const monthLabel = m => {
   if (!m) return '';
@@ -569,7 +569,7 @@ function EmployeePanel({ employee, onClose, onEdit, onRefresh, embedded = false 
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Paid from Expenses</p>
-                  <p className="text-sm font-bold text-slate-800 mt-0.5">₨{expPays.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0).toLocaleString('en-US')} total</p>
+                  <p className="text-sm font-bold text-slate-800 mt-0.5">{pkr(expPays.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0))} total</p>
                 </div>
                 <a href="/expenses/new" className="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-xl font-semibold">+ Pay</a>
               </div>
@@ -583,7 +583,7 @@ function EmployeePanel({ employee, onClose, onEdit, onRefresh, embedded = false 
                         <p className="text-sm font-medium text-slate-800 truncate">{e.title}</p>
                         <p className="text-xs text-slate-400">{e.expense_date}{e.payment_method ? ` · ${e.payment_method}` : ''}{e.notes ? ` · ${e.notes}` : ''}</p>
                       </div>
-                      <span className="text-sm font-bold text-slate-800 whitespace-nowrap">₨{(parseFloat(e.amount) || 0).toLocaleString('en-US')}</span>
+                      <span className="text-sm font-bold text-slate-800 whitespace-nowrap">{pkr(e.amount)}</span>
                     </div>
                   ))}
                 </div>

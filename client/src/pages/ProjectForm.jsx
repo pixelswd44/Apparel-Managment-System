@@ -114,7 +114,9 @@ export default function ProjectForm() {
   }, [autoTitle]);
 
   // ── Submit ─────────────────────────────────────────────────────────────────
-  async function handleSubmit() {
+  // asNew (edit page only): create a separate project from these details instead of updating this one.
+  // The invoice link and received amount are not copied, so revenue is never counted twice.
+  async function handleSubmit(asNew = false) {
     if (!form.title.trim()) { setError('Project title is required.'); return; }
     setSaving(true); setError('');
     try {
@@ -127,6 +129,11 @@ export default function ProjectForm() {
         exchange_rate_actual: form.use_invoice ? 0 : (parseFloat(form.exchange_rate_actual) || 0),
         notes:                form.notes,
       };
+      if (isEdit && asNew) {
+        const { data } = await api.post('/projects', { ...payload, invoice_id: null, amount_received: 0, exchange_rate_actual: 0 });
+        navigate(`/projects?open=${data.id}`);
+        return;
+      }
       if (isEdit) {
         await api.put(`/projects/${id}`, payload);
       } else {
@@ -183,7 +190,13 @@ export default function ProjectForm() {
             className="px-4 py-2 text-sm text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-100 transition-colors font-medium">
             Cancel
           </button>
-          <button onClick={handleSubmit} disabled={saving}
+          {isEdit && (
+            <button onClick={() => handleSubmit(true)} disabled={saving} title="Create a new project from these details and leave this one unchanged"
+              className="px-4 py-2 text-sm text-slate-700 border border-slate-200 bg-white rounded-xl hover:bg-slate-50 disabled:opacity-60 transition-colors font-medium">
+              Save as New
+            </button>
+          )}
+          <button onClick={() => handleSubmit(false)} disabled={saving}
             className="flex items-center gap-2 px-5 py-2 text-sm bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-60 transition-all font-semibold shadow-sm shadow-indigo-200">
             {saving
               ? <><Loader2 size={13} className="animate-spin" />Saving…</>
@@ -318,13 +331,21 @@ export default function ProjectForm() {
             className="flex items-center gap-2 px-4 py-2.5 text-sm border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition-colors font-medium">
             <ArrowLeft size={14} /> Back to Projects
           </button>
-          <button onClick={handleSubmit} disabled={saving}
-            className="flex items-center gap-2 px-6 py-2.5 text-sm bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-60 transition-all font-semibold shadow-sm shadow-indigo-200">
-            {saving
-              ? <><Loader2 size={13} className="animate-spin" />Saving…</>
-              : <><Check size={14} />Create Project</>
-            }
-          </button>
+          <div className="flex items-center gap-2.5">
+            {isEdit && (
+              <button onClick={() => handleSubmit(true)} disabled={saving} title="Create a new project from these details and leave this one unchanged"
+                className="px-4 py-2.5 text-sm text-slate-700 border border-slate-200 bg-white rounded-xl hover:bg-slate-50 disabled:opacity-60 transition-colors font-medium">
+                Save as New
+              </button>
+            )}
+            <button onClick={() => handleSubmit(false)} disabled={saving}
+              className="flex items-center gap-2 px-6 py-2.5 text-sm bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-60 transition-all font-semibold shadow-sm shadow-indigo-200">
+              {saving
+                ? <><Loader2 size={13} className="animate-spin" />Saving…</>
+                : <><Check size={14} />{isEdit ? 'Save Changes' : 'Create Project'}</>
+              }
+            </button>
+          </div>
         </div>
       </div>
     </div>

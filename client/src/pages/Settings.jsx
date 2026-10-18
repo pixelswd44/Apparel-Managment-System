@@ -440,6 +440,7 @@ function Currencies() {
       const data = await r.json();
       if (!r.ok) { setFormErr(data.error ?? 'Failed to add.'); return; }
       await reload();
+      window.dispatchEvent(new Event('currencies-updated'));
       setForm(EMPTY_CURRENCY);
       setAdding(false);
     } catch { setFormErr('Network error.'); }
@@ -464,6 +465,7 @@ function Currencies() {
       const data = await r.json();
       if (!r.ok) { setEditErr(data.error ?? 'Failed to save.'); return; }
       await reload();
+      window.dispatchEvent(new Event('currencies-updated'));
       setEditing(null);
     } catch { setEditErr('Network error.'); }
     finally { setEditSaving(false); }
@@ -474,6 +476,7 @@ function Currencies() {
     try {
       await apiFetch(`/api/currencies/${id}/set-default`, { method: 'PUT' });
       await reload();
+      window.dispatchEvent(new Event('currencies-updated'));
     } catch {}
     setSettingDefault(null);
   }
@@ -481,7 +484,7 @@ function Currencies() {
   async function handleDelete(id) {
     try {
       const r = await apiFetch(`/api/currencies/${id}`, { method: 'DELETE' });
-      if (r.ok) await reload();
+      if (r.ok) { await reload(); window.dispatchEvent(new Event('currencies-updated')); }
     } catch {}
     setDelId(null);
   }

@@ -8,8 +8,8 @@ import {
 } from 'lucide-react';
 import api from '../lib/api';
 import PeriodPicker, { currentMonthRange } from '../components/PeriodPicker';
+import { pkr, convert, displayCurrency } from '../lib/currency';
 
-const pkr  = n => `Rs${Number(n || 0).toLocaleString('en-PK', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 const fmtD = d => {
   if (!d) return '—';
   // Handle SQLite "YYYY-MM-DD HH:MM:SS" (space-separated) and ISO "YYYY-MM-DDTHH:MM:SS"
@@ -106,16 +106,16 @@ export default function Ledger() {
   // ── Export Excel ──────────────────────────────────────────────────────────
   function exportExcel() {
     const wsData = [
-      ['Date', 'Section', 'Category', 'Description', 'Paid To', 'Paid By', 'Reference', 'Credit (In)', 'Debit (Out)', 'Balance'],
+      ['Date', 'Section', 'Category', 'Description', 'Paid To', 'Paid By', 'Reference', `Credit (In) ${displayCurrency().code}`, `Debit (Out) ${displayCurrency().code}`, 'Balance'],
       ...rows.map(e => [
         fmtD(e.date), e.section, e.category, e.description, e.paid_to || '', e.paid_by || '', e.reference || '',
-        e.credit > 0 ? e.credit : '', e.debit > 0 ? e.debit : '', e.balance,
+        e.credit > 0 ? convert(e.credit) : '', e.debit > 0 ? convert(e.debit) : '', convert(e.balance),
       ]),
       [],
       ['SUMMARY'],
-      ['Total Income (Credits)', '', '', '', '', '', '', summary.totalCredit || 0],
-      ['Total Expenses (Debits)', '', '', '', '', '', '', '', summary.totalDebit || 0],
-      ['Net Balance', '', '', '', '', '', '', '', '', summary.netBalance || 0],
+      ['Total Income (Credits)', '', '', '', '', '', '', convert(summary.totalCredit)],
+      ['Total Expenses (Debits)', '', '', '', '', '', '', '', convert(summary.totalDebit)],
+      ['Net Balance', '', '', '', '', '', '', '', '', convert(summary.netBalance)],
     ];
 
     // Section breakdown
@@ -123,7 +123,7 @@ export default function Ledger() {
       wsData.push([]);
       wsData.push(['Section Breakdown', '', 'Credits', 'Debits', 'Net']);
       for (const [sec, vals] of Object.entries(summary.bySection)) {
-        wsData.push([sec, '', vals.credit, vals.debit, vals.credit - vals.debit]);
+        wsData.push([sec, '', convert(vals.credit), convert(vals.debit), convert(vals.credit - vals.debit)]);
       }
     }
 
@@ -145,10 +145,10 @@ export default function Ledger() {
       [],
       ['Category', 'Credits (In)', 'Debits (Out)', 'Net'],
       ...(summary.bySection
-        ? Object.entries(summary.bySection).map(([sec, v]) => [sec, v.credit, v.debit, v.credit - v.debit])
+        ? Object.entries(summary.bySection).map(([sec, v]) => [sec, convert(v.credit), convert(v.debit), convert(v.credit - v.debit)])
         : []),
       [],
-      ['TOTAL', summary.totalCredit || 0, summary.totalDebit || 0, summary.netBalance || 0],
+      ['TOTAL', convert(summary.totalCredit), convert(summary.totalDebit), convert(summary.netBalance)],
     ];
     const ws2 = XLSX.utils.aoa_to_sheet(sumData);
     ws2['!cols'] = [{ wch: 22 }, { wch: 18 }, { wch: 18 }, { wch: 18 }];

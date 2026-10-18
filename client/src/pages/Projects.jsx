@@ -6,6 +6,7 @@ import {
   Search, Shirt, Tag, Trash2, TrendingUp, Truck, User, Wand2, X,
 } from 'lucide-react';
 import FilterBtn from '../components/FilterBtn';
+import { pkr } from '../lib/currency';
 import api, { imgUrl } from '../lib/api';
 import { ExpenseModal } from './Expenses';
 
@@ -21,7 +22,6 @@ const STATUS_CONFIG = {
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
-const pkr = v => `₨${(parseFloat(v)||0).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})}`;
 
 // Build a PKR→baseCurrency formatter.
 // If base is PKR (default), returns the standard ₨ formatter.

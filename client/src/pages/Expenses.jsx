@@ -9,10 +9,10 @@ import {
 } from 'lucide-react';
 import PeriodPicker, { currentMonthRange } from '../components/PeriodPicker';
 import Drawer from '../components/Drawer';
+import { pkr } from '../lib/currency';
 import ShippingAgents from './ShippingAgents';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-const pkr = n => `₨${Number(n || 0).toLocaleString()}`;
 const today = () => new Date().toISOString().split('T')[0];
 const curMonth = () => new Date().toISOString().slice(0, 7);
 const fmtDate = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
