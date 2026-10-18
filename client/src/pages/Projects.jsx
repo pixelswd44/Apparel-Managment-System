@@ -2043,9 +2043,9 @@ export default function Projects() {
           { label: 'Active',         value: stats.active,    icon: Flame,        color: 'text-orange-600',  bg: 'bg-orange-50' },
           { label: 'Completed',      value: stats.completed, icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-50' },
         ].map(({ label, value, icon: Icon, color, bg }) => (
-          <div key={label} className="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-3 shadow-sm">
-            <div className={`${bg} ${color} p-2.5 rounded-xl`}><Icon size={18} /></div>
-            <div><p className="text-xl sm:text-2xl font-bold text-slate-900">{value}</p><p className="text-xs text-slate-500">{label}</p></div>
+          <div key={label} className="min-w-0 bg-white border border-slate-200 rounded-xl p-3 sm:p-4 flex items-center gap-3 shadow-sm">
+            <div className={`${bg} ${color} p-2.5 rounded-xl hidden sm:block flex-shrink-0`}><Icon size={18} /></div>
+            <div className="min-w-0"><p className="text-xl sm:text-2xl font-bold text-slate-900">{value}</p><p className="text-xs text-slate-500 truncate">{label}</p></div>
           </div>
         ))}
       </div>

@@ -33,7 +33,7 @@ function Pill({ label, value, pct, tone, grow }) {
     stripe: 'text-[#262626] border border-[#efe6d0]',
   };
   return (
-    <div className="min-w-0" style={{ flex: `${grow} 1 0` }}>
+    <div className={`min-w-0 ${tone === 'stripe' ? 'min-w-full order-last sm:min-w-0 sm:order-none' : 'min-w-[calc(33.333%-7px)] sm:min-w-0'}`} style={{ flex: `${grow} 1 0` }}>
       <p className="text-[11px] text-[#6f6a5d] mb-1.5 truncate">{label}</p>
       <div className={`h-8 rounded-full flex items-center px-3 text-[11px] font-semibold relative overflow-hidden ${tones[tone]}`}
         style={tone === 'stripe' ? { background: 'repeating-linear-gradient(135deg,#fff 0 4px,#f4ead0 4px 8px)' } : undefined}>
@@ -46,13 +46,14 @@ function Pill({ label, value, pct, tone, grow }) {
   );
 }
 
-function Big({ value, label, icon: Icon }) {
+function Big({ value, label, icon: Icon, tint, onClick }) {
   return (
-    <div className="flex items-start gap-2">
-      <Icon size={18} className="text-[#b5ac95] mt-2 hidden sm:block" />
-      <div>
-        <p className="text-4xl sm:text-5xl font-light text-[#232323] leading-none tabular-nums">{value}</p>
-        <p className="text-xs text-[#8a8372] mt-1.5">{label}</p>
+    <div onClick={onClick}
+      className={`${card} px-4 py-3 sm:px-5 sm:py-4 flex flex-col items-start sm:flex-row sm:items-center gap-2 sm:gap-4 cursor-pointer hover:shadow-lg transition-shadow`}>
+      <div className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl grid place-items-center flex-shrink-0 ${tint}`}><Icon size={18} /></div>
+      <div className="min-w-0">
+        <p className="text-2xl sm:text-3xl font-light text-[#232323] leading-none tabular-nums">{value}</p>
+        <p className="text-[11px] sm:text-xs text-[#8a8372] mt-1 leading-tight sm:truncate">{label}</p>
       </div>
     </div>
   );
@@ -150,26 +151,26 @@ export default function Overview() {
           <div className="w-8 h-8 border-2 border-[#efe6d0] border-t-[#262626] rounded-full animate-spin" />
         </div>
       ) : (<>
-        {/* Pills + big numbers */}
-        <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-6 mt-7">
-          <div className="flex gap-2.5 flex-1 xl:max-w-3xl">
-            <Pill label="Margin" value={`${marginPct.toFixed(0)}%`} tone="dark" grow={2} />
-            <Pill label="Collected" value={`${collectedPct.toFixed(0)}%`} tone="yellow" grow={2} />
-            <Pill label="Spent of income" value={`${spendPct.toFixed(0)}%`} tone="stripe" pct={spendPct} grow={5} />
-            <Pill label="Overdue" value={`${overduePct.toFixed(0)}%`} tone="white" grow={2} />
-          </div>
-          <div className="flex gap-8 sm:gap-12">
-            <Big value={activeProjects} label="Active projects" icon={Flame} />
-            <Big value={unpaid.length} label="Unpaid invoices" icon={Receipt} />
-            <Big value={projects.length} label="Projects" icon={Layers} />
-          </div>
+        {/* Pills — full width */}
+        <div className="flex flex-wrap sm:flex-nowrap gap-2.5 mt-6 sm:mt-7 w-full">
+          <Pill label="Margin" value={`${marginPct.toFixed(0)}%`} tone="dark" grow={2} />
+          <Pill label="Collected" value={`${collectedPct.toFixed(0)}%`} tone="yellow" grow={2} />
+          <Pill label="Spent of income" value={`${spendPct.toFixed(0)}%`} tone="stripe" pct={spendPct} grow={5} />
+          <Pill label="Overdue" value={`${overduePct.toFixed(0)}%`} tone="white" grow={2} />
+        </div>
+
+        {/* Small info cards */}
+        <div className="grid grid-cols-3 gap-2.5 sm:gap-4 mt-4">
+          <Big value={activeProjects} label="Active projects" icon={Flame} tint="bg-[#fff1e3] text-orange-500" onClick={() => navigate('/projects')} />
+          <Big value={unpaid.length} label="Unpaid invoices" icon={Receipt} tint="bg-[#fbf0cc] text-[#8a6d12]" onClick={() => navigate('/invoices')} />
+          <Big value={projects.length} label="Projects" icon={Layers} tint="bg-[#eef0f4] text-slate-500" onClick={() => navigate('/projects')} />
         </div>
 
         {/* Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5 mt-6">
 
           {/* Net hero — dark card */}
-          <div className="relative overflow-hidden rounded-[28px] p-6 text-white min-h-[260px] flex flex-col justify-between"
+          <div className="relative overflow-hidden rounded-[28px] p-6 text-white min-h-[260px] flex flex-col justify-between md:order-1 xl:order-none"
             style={{ background: 'radial-gradient(500px 260px at 90% 0%, rgba(249,200,70,.35), transparent 60%), linear-gradient(160deg,#2c2c2c,#171717)' }}>
             <div>
               <p className="text-sm text-white/60">Net · money in − out</p>
@@ -188,10 +189,10 @@ export default function Overview() {
           </div>
 
           {/* P&L chart */}
-          <div className="md:col-span-2"><WarmPL rows={ledger} from={period.from} to={period.to} periodLabel={period.label} /></div>
+          <div className="md:col-span-2 md:order-3 xl:order-none"><WarmPL rows={ledger} from={period.from} to={period.to} periodLabel={period.label} /></div>
 
           {/* Where the money went */}
-          <div className={`${card} p-6 flex flex-col`}>
+          <div className={`${card} p-6 flex flex-col md:order-2 xl:order-none`}>
             <div className="flex items-center justify-between">
               <h2 className="text-xl text-[#232323]">Money out</h2>
               <span className="text-2xl font-light text-[#232323]">{pkr(moneyOut)}</span>
@@ -223,7 +224,7 @@ export default function Overview() {
           </div>
 
           {/* Projects */}
-          <div className={`${card} p-6 md:col-span-2 xl:col-span-3`}>
+          <div className={`${card} p-5 sm:p-6 md:col-span-2 xl:col-span-3 md:order-4 xl:order-none`}>
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-xl text-[#232323]">Projects</h2>
               <button onClick={() => navigate('/projects')}
@@ -235,40 +236,71 @@ export default function Overview() {
               <p className="py-8 text-sm text-[#a39b86] text-center">No projects yet</p>
             ) : (
               <>
-                <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 px-3 pb-2 text-[11px] uppercase tracking-wider text-[#a39b86]">
-                  <span>Project</span><span className="text-right">Cost</span><span className="text-right">Received</span><span className="text-right">Profit</span>
+                {/* Tablet / desktop: table */}
+                <div className="hidden sm:block">
+                  <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 px-3 pb-2 text-[11px] uppercase tracking-wider text-[#a39b86]">
+                    <span>Project</span><span className="text-right">Cost</span><span className="text-right">Received</span><span className="text-right">Profit</span>
+                  </div>
+                  <div className="space-y-1.5">
+                    {recentProjects.map(p => {
+                      const cost = parseFloat(p.fin_total_expense) || 0;
+                      const rec  = parseFloat(p.fin_received) || 0;
+                      const prof = rec - cost;
+                      return (
+                        <div key={p.id} onClick={() => navigate(`/projects?open=${p.id}`)}
+                          className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 items-center px-3 py-2.5 rounded-2xl hover:bg-[#fbf3de] cursor-pointer text-sm transition-colors">
+                          <div className="min-w-0">
+                            <p className="font-medium text-[#232323] truncate">{p.title}</p>
+                            <p className="text-xs text-[#a39b86] truncate">{p.client_name || 'No client'}{p.status === 'completed' ? ' · Completed' : ''}</p>
+                          </div>
+                          <span className="text-right text-[#6f6a5d]">{pkr(cost)}</span>
+                          <span className="text-right text-[#6f6a5d]">{pkr(rec)}</span>
+                          <span className={`text-right font-semibold ${prof >= 0 ? 'text-[#232323]' : 'text-rose-600'}`}>{pkr(prof)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 px-3 pt-3 mt-2 border-t border-[#f1e8d2] text-sm font-semibold">
+                    <span className="text-xs text-[#8a8372] font-normal self-center">All {projects.length} projects</span>
+                    <span className="text-right text-[#232323]">{pkr(projCost)}</span>
+                    <span className="text-right text-[#232323]">{pkr(projRec)}</span>
+                    <span className={`text-right ${projProfit >= 0 ? 'text-[#232323]' : 'text-rose-600'}`}>{pkr(projProfit)}</span>
+                  </div>
                 </div>
-                <div className="space-y-1.5">
+
+                {/* Phone: one card per project */}
+                <div className="sm:hidden space-y-2">
                   {recentProjects.map(p => {
                     const cost = parseFloat(p.fin_total_expense) || 0;
                     const rec  = parseFloat(p.fin_received) || 0;
                     const prof = rec - cost;
                     return (
-                      <div key={p.id} onClick={() => navigate(`/projects?open=${p.id}`)}
-                        className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 items-center px-3 py-2.5 rounded-2xl hover:bg-[#fbf3de] cursor-pointer text-sm transition-colors">
-                        <div className="min-w-0">
-                          <p className="font-medium text-[#232323] truncate">{p.title}</p>
-                          <p className="text-xs text-[#a39b86] truncate">{p.client_name || 'No client'}{p.status === 'completed' ? ' · Completed' : ''}</p>
+                      <div key={p.id} onClick={() => navigate(`/projects?open=${p.id}`)} className="rounded-2xl bg-[#fbf6e8] px-3.5 py-3 cursor-pointer">
+                        <p className="text-sm font-medium text-[#232323] truncate">{p.title}</p>
+                        <p className="text-xs text-[#a39b86] truncate">{p.client_name || 'No client'}{p.status === 'completed' ? ' · Completed' : ''}</p>
+                        <div className="grid grid-cols-3 gap-2 mt-2 text-[11px]">
+                          <div><p className="text-[#a39b86]">Cost</p><p className="text-[#4b4638] font-medium truncate">{pkr(cost)}</p></div>
+                          <div><p className="text-[#a39b86]">Received</p><p className="text-[#4b4638] font-medium truncate">{pkr(rec)}</p></div>
+                          <div><p className="text-[#a39b86]">Profit</p><p className={`font-semibold truncate ${prof >= 0 ? 'text-[#232323]' : 'text-rose-600'}`}>{pkr(prof)}</p></div>
                         </div>
-                        <span className="text-right text-[#6f6a5d]">{pkr(cost)}</span>
-                        <span className="text-right text-[#6f6a5d]">{pkr(rec)}</span>
-                        <span className={`text-right font-semibold ${prof >= 0 ? 'text-[#232323]' : 'text-rose-600'}`}>{pkr(prof)}</span>
                       </div>
                     );
                   })}
-                </div>
-                <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 px-3 pt-3 mt-2 border-t border-[#f1e8d2] text-sm font-semibold">
-                  <span className="text-xs text-[#8a8372] font-normal self-center">All {projects.length} projects</span>
-                  <span className="text-right text-[#232323]">{pkr(projCost)}</span>
-                  <span className="text-right text-[#232323]">{pkr(projRec)}</span>
-                  <span className={`text-right ${projProfit >= 0 ? 'text-[#232323]' : 'text-rose-600'}`}>{pkr(projProfit)}</span>
+                  <div className="rounded-2xl border border-[#f1e8d2] px-3.5 py-3">
+                    <p className="text-xs text-[#8a8372]">All {projects.length} projects</p>
+                    <div className="grid grid-cols-3 gap-2 mt-1.5 text-[11px]">
+                      <p className="font-semibold text-[#232323] truncate">{pkr(projCost)}</p>
+                      <p className="font-semibold text-[#232323] truncate">{pkr(projRec)}</p>
+                      <p className={`font-semibold truncate ${projProfit >= 0 ? 'text-[#232323]' : 'text-rose-600'}`}>{pkr(projProfit)}</p>
+                    </div>
+                  </div>
                 </div>
               </>
             )}
           </div>
 
           {/* Unpaid invoices — dark task-style card */}
-          <div className="md:col-span-2 xl:col-span-1 rounded-[28px] p-6 text-white" style={{ background: 'linear-gradient(160deg,#2c2c2c,#171717)' }}>
+          <div className="md:col-span-2 xl:col-span-1 md:order-5 xl:order-none rounded-[28px] p-6 text-white" style={{ background: 'linear-gradient(160deg,#2c2c2c,#171717)' }}>
             <div className="flex items-center justify-between">
               <h2 className="text-xl">Unpaid invoices</h2>
               <span className="text-2xl font-light text-[#f9c846]">{unpaid.length}</span>

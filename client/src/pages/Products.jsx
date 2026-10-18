@@ -1196,7 +1196,7 @@ export default function Products() {
           <h1 className="text-2xl font-bold text-slate-900">Products</h1>
           <p className="text-slate-500 text-sm mt-0.5">Manage your catalog, categories, and per-currency pricing</p>
         </div>
-        <div className="flex items-center gap-3 flex-shrink-0">
+        <div className="flex items-center gap-3 flex-wrap">
           {/* View tabs */}
           <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
             {[['products', Package, 'Products'], ['categories', Tag, 'Categories']].map(([v, Icon, label]) => (
