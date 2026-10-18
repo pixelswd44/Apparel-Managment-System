@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowDownLeft, ArrowUpRight, ArrowRight, Banknote, Clock, Scale } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, Banknote, FileText, Flame, Layers, Receipt, SlidersHorizontal } from 'lucide-react';
 import api from '../lib/api';
+import { useAuth } from '../lib/authContext';
 import PeriodPicker from '../components/PeriodPicker';
-import PLChart from '../components/PLChart';
+import WarmPL from '../components/WarmPL';
 
-// Minimal dashboard — four numbers and two short lists, all in PKR.
+// Dashboard — warm "Crextio"-style theme. All amounts in PKR.
 //   Money In    = payments received + other income        (in the period)
 //   Money Out   = project costs + business expenses + salaries (in the period)
 //   Net         = Money In − Money Out
@@ -20,34 +21,53 @@ const money = (v, cc) => {
   if (!cc || cc === 'PKR') return pkr(n);
   return `${cc} ${n.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
 };
+const card = 'rounded-[28px] bg-white/85 border border-white shadow-[0_10px_40px_-18px_rgba(120,90,20,.25)]';
+const clamp = (n, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, n));
 
-function StatCard({ label, value, sub, icon: Icon, tone }) {
+// Labelled pill like the top row of the reference: label above, pill with the value inside.
+function Pill({ label, value, pct, tone, grow }) {
   const tones = {
-    green: 'border-t-emerald-500 text-emerald-700',
-    red:   'border-t-rose-500 text-rose-700',
-    slate: 'border-t-slate-400 text-slate-900',
-    amber: 'border-t-amber-500 text-amber-700',
+    dark:   'bg-[#262626] text-white',
+    yellow: 'bg-[#f9c846] text-[#262626]',
+    white:  'bg-white text-[#262626] border border-[#efe6d0]',
+    stripe: 'text-[#262626] border border-[#efe6d0]',
   };
   return (
-    <div className={`bg-white border border-slate-200 border-t-4 rounded-2xl p-5 shadow-sm ${tones[tone].split(' ')[0]}`}>
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{label}</p>
-        <Icon size={15} className="text-slate-300" />
+    <div className="min-w-0" style={{ flex: `${grow} 1 0` }}>
+      <p className="text-[11px] text-[#6f6a5d] mb-1.5 truncate">{label}</p>
+      <div className={`h-8 rounded-full flex items-center px-3 text-[11px] font-semibold relative overflow-hidden ${tones[tone]}`}
+        style={tone === 'stripe' ? { background: 'repeating-linear-gradient(135deg,#fff 0 4px,#f4ead0 4px 8px)' } : undefined}>
+        {tone === 'stripe' && (
+          <span className="absolute inset-y-0 left-0 rounded-full bg-[#f9c846]/70 transition-all duration-700" style={{ width: `${clamp(pct)}%` }} />
+        )}
+        <span className="relative">{value}</span>
       </div>
-      <p className={`text-2xl font-black tracking-tight mt-2 ${tones[tone].split(' ')[1]}`}>{value}</p>
-      {sub && <p className="text-xs text-slate-500 mt-1">{sub}</p>}
+    </div>
+  );
+}
+
+function Big({ value, label, icon: Icon }) {
+  return (
+    <div className="flex items-start gap-2">
+      <Icon size={18} className="text-[#b5ac95] mt-2 hidden sm:block" />
+      <div>
+        <p className="text-4xl sm:text-5xl font-light text-[#232323] leading-none tabular-nums">{value}</p>
+        <p className="text-xs text-[#8a8372] mt-1.5">{label}</p>
+      </div>
     </div>
   );
 }
 
 export default function Overview() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [period, setPeriod]     = useState({ from: null, to: null, label: 'All Time' });
   const [fin, setFin]           = useState(null);
   const [projects, setProjects] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [ledger, setLedger]     = useState([]);
   const [loading, setLoading]   = useState(true);
+  const [showFilters, setShowFilters] = useState(false);
 
   useEffect(() => {
     const params = period.from ? { from: period.from, to: period.to } : {};
@@ -64,14 +84,6 @@ export default function Overview() {
     }).catch(() => {}).finally(() => setLoading(false));
   }, [period.from, period.to]);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-32">
-        <div className="w-8 h-8 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
-      </div>
-    );
-  }
-
   const f        = fin || {};
   const moneyIn  = f.totalRevenue ?? 0;
   const projOut  = f.totalProjectsPaid ?? 0;
@@ -79,125 +91,217 @@ export default function Overview() {
   const salOut   = f.salariesPaid ?? 0;
   const moneyOut = projOut + bizOut + salOut;
   const net      = moneyIn - moneyOut;
+  const today    = new Date().toISOString().split('T')[0];
 
   const unpaid = invoices
     .filter(i => i.status !== 'paid' && (parseFloat(i.total) || 0) > (parseFloat(i.amount_paid) || 0))
     .map(i => ({ ...i, balance: (parseFloat(i.total) || 0) - (parseFloat(i.amount_paid) || 0) }))
     .sort((a, b) => String(a.due_date || a.created_at).localeCompare(String(b.due_date || b.created_at)));
+  const overdue = unpaid.filter(i => i.due_date && i.due_date < today).length;
 
   // Project profit is lifetime (a project's cost isn't "in" one month)
-  const recentProjects = [...projects].sort((a, b) => b.id - a.id).slice(0, 8);
+  const recentProjects = [...projects].sort((a, b) => b.id - a.id).slice(0, 6);
+  const activeProjects = projects.filter(p => p.status !== 'completed').length;
   const projCost   = projects.reduce((s, p) => s + (parseFloat(p.fin_total_expense) || 0), 0);
   const projRec    = projects.reduce((s, p) => s + (parseFloat(p.fin_received) || 0), 0);
   const projProfit = projRec - projCost;
 
+  const outstanding = parseFloat(f.outstanding) || 0;
+  const marginPct    = moneyIn > 0 ? (net / moneyIn) * 100 : 0;
+  const collectedPct = moneyIn + outstanding > 0 ? (moneyIn / (moneyIn + outstanding)) * 100 : 0;
+  const spendPct     = moneyIn > 0 ? (moneyOut / moneyIn) * 100 : 0;
+  const overduePct   = unpaid.length ? (overdue / unpaid.length) * 100 : 0;
+
+  const first = (user?.name || '').split(' ')[0] || 'there';
+  const split = [
+    { label: 'Projects', value: projOut, bg: 'bg-[#f9c846]', fg: 'text-[#262626]' },
+    { label: 'Business', value: bizOut, bg: 'bg-[#262626]', fg: 'text-white' },
+    { label: 'Salaries', value: salOut, bg: 'bg-[#a5abb8]', fg: 'text-white' },
+  ];
+
   return (
-    <div className="space-y-5">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+    <div className="warm-dash -m-4 md:-m-6 lg:-m-8 p-4 md:p-6 lg:p-9 min-h-screen"
+      style={{ background: 'linear-gradient(135deg,#f8edcf 0%,#fcf5e4 38%,#fffdf8 100%)', fontFamily: "'Outfit', 'Inter', system-ui, sans-serif" }}>
+
+      {/* Greeting */}
+      <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
-          <p className="text-slate-500 text-sm mt-0.5">All amounts in PKR · {period.label}</p>
+          <h1 className="text-4xl sm:text-5xl font-light text-[#232323] tracking-tight">Welcome back, {first}</h1>
+          <p className="text-sm text-[#8a8372] mt-2">All amounts in PKR · {period.label}</p>
         </div>
-        <button onClick={() => navigate('/expenses')}
-          className="flex items-center gap-2 px-4 py-2.5 bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-xl text-sm font-semibold shadow-sm transition-colors">
-          <Banknote size={14} /> Record Expense
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowFilters(v => !v)}
+            className={`flex items-center gap-2 px-4 py-3 rounded-full text-sm font-medium border transition-colors ${showFilters ? 'bg-[#fbf0cc] border-[#f1dc9a] text-[#262626]' : 'bg-white border-[#efe6d0] text-[#262626] hover:bg-[#fbf0cc]'}`}>
+            <SlidersHorizontal size={14} /> <span className="hidden sm:inline">Filters</span>
+            {period.from && <span className="w-2 h-2 rounded-full bg-[#f9c846]" />}
+          </button>
+          <button onClick={() => navigate('/expenses/new')}
+            className="flex items-center gap-2 px-5 py-3 bg-[#262626] text-white rounded-full text-sm font-medium shadow-lg shadow-black/10 hover:bg-black transition-colors">
+            <Banknote size={15} /> <span className="hidden sm:inline">Record</span> Expense
+          </button>
+        </div>
       </div>
 
-      <PeriodPicker onChange={range => setPeriod(range)} />
+      {/* Period filters — hidden, not unmounted, so the picker keeps its state */}
+      <div className={showFilters ? 'mt-4' : 'hidden'}><PeriodPicker onChange={range => setPeriod(range)} /></div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Money In" value={pkr(moneyIn)} icon={ArrowDownLeft} tone="green"
-          sub={f.otherIncome > 0 ? `Invoices ${pkr(f.invoiceRevenue)} · Other ${pkr(f.otherIncome)}` : 'Payments received'} />
-        <StatCard label="Money Out" value={pkr(moneyOut)} icon={ArrowUpRight} tone="red"
-          sub={`Projects ${pkr(projOut)} · Business ${pkr(bizOut)} · Salaries ${pkr(salOut)}`} />
-        <StatCard label={net >= 0 ? 'Net (In − Out)' : 'Net loss (In − Out)'} value={pkr(net)} icon={Scale}
-          tone={net >= 0 ? 'green' : 'red'} sub="Money in minus money out" />
-        <StatCard label="To Receive" value={pkr(f.outstanding)} icon={Clock} tone="amber"
-          sub={`${unpaid.length} unpaid invoice${unpaid.length !== 1 ? 's' : ''} · as of today`} />
-      </div>
-
-      <PLChart rows={ledger} from={period.from} to={period.to} periodLabel={period.label} />
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Projects — cost, received, profit */}
-        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-            <h2 className="font-bold text-slate-800 text-sm">Projects</h2>
-            <button onClick={() => navigate('/projects')}
-              className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-semibold">
-              View all <ArrowRight size={12} />
-            </button>
+      {loading ? (
+        <div className="flex items-center justify-center py-32">
+          <div className="w-8 h-8 border-2 border-[#efe6d0] border-t-[#262626] rounded-full animate-spin" />
+        </div>
+      ) : (<>
+        {/* Pills + big numbers */}
+        <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-6 mt-7">
+          <div className="flex gap-2.5 flex-1 xl:max-w-3xl">
+            <Pill label="Margin" value={`${marginPct.toFixed(0)}%`} tone="dark" grow={2} />
+            <Pill label="Collected" value={`${collectedPct.toFixed(0)}%`} tone="yellow" grow={2} />
+            <Pill label="Spent of income" value={`${spendPct.toFixed(0)}%`} tone="stripe" pct={spendPct} grow={5} />
+            <Pill label="Overdue" value={`${overduePct.toFixed(0)}%`} tone="white" grow={2} />
           </div>
-          {recentProjects.length === 0 ? (
-            <p className="px-5 py-8 text-sm text-slate-400 text-center">No projects yet</p>
-          ) : (
-            <>
-              <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 px-5 py-2 text-2xs font-semibold text-slate-400 uppercase tracking-wider">
-                <span>Project</span><span className="text-right">Cost</span><span className="text-right">Received</span><span className="text-right">Profit</span>
+          <div className="flex gap-8 sm:gap-12">
+            <Big value={activeProjects} label="Active projects" icon={Flame} />
+            <Big value={unpaid.length} label="Unpaid invoices" icon={Receipt} />
+            <Big value={projects.length} label="Projects" icon={Layers} />
+          </div>
+        </div>
+
+        {/* Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5 mt-6">
+
+          {/* Net hero — dark card */}
+          <div className="relative overflow-hidden rounded-[28px] p-6 text-white min-h-[260px] flex flex-col justify-between"
+            style={{ background: 'radial-gradient(500px 260px at 90% 0%, rgba(249,200,70,.35), transparent 60%), linear-gradient(160deg,#2c2c2c,#171717)' }}>
+            <div>
+              <p className="text-sm text-white/60">Net · money in − out</p>
+              <p className={`text-4xl sm:text-5xl font-light mt-2 tabular-nums ${net < 0 ? 'text-rose-300' : ''}`}>{pkr(net)}</p>
+            </div>
+            <div className="space-y-3">
+              <div className="flex gap-2 flex-wrap">
+                <span className="px-3 py-1.5 rounded-full bg-white/10 text-xs">▲ In {pkr(moneyIn)}</span>
+                <span className="px-3 py-1.5 rounded-full bg-white/10 text-xs">▼ Out {pkr(moneyOut)}</span>
               </div>
-              <div className="divide-y divide-slate-50">
-                {recentProjects.map(p => {
-                  const cost = parseFloat(p.fin_total_expense) || 0;
-                  const rec  = parseFloat(p.fin_received) || 0;
-                  const prof = rec - cost;
-                  return (
-                    <div key={p.id} onClick={() => navigate(`/projects?open=${p.id}`)}
-                      className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 items-center px-5 py-2.5 hover:bg-slate-50/60 cursor-pointer text-sm">
-                      <div className="min-w-0">
-                        <p className="font-medium text-slate-800 truncate">{p.title}</p>
-                        <p className="text-xs text-slate-400 truncate">{p.client_name || 'No client'}{p.status === 'completed' ? ' · Completed' : ''}</p>
+              <div className="flex items-center justify-between rounded-full bg-[#f9c846] text-[#262626] pl-4 pr-1.5 py-1.5">
+                <span className="text-sm font-medium">To receive</span>
+                <span className="bg-[#262626] text-white text-sm font-medium px-4 py-1.5 rounded-full">{pkr(outstanding)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* P&L chart */}
+          <div className="md:col-span-2"><WarmPL rows={ledger} from={period.from} to={period.to} periodLabel={period.label} /></div>
+
+          {/* Where the money went */}
+          <div className={`${card} p-6 flex flex-col`}>
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl text-[#232323]">Money out</h2>
+              <span className="text-2xl font-light text-[#232323]">{pkr(moneyOut)}</span>
+            </div>
+            {moneyOut > 0 ? (
+              <>
+                <div className="flex gap-1.5 mt-5">
+                  {split.filter(s => s.value > 0).map(s => (
+                    <div key={s.label} style={{ flex: s.value }} className="min-w-0">
+                      <p className="text-[11px] text-[#8a8372] mb-1">{Math.round((s.value / moneyOut) * 100)}%</p>
+                      <div className={`h-12 rounded-2xl px-3 flex items-center text-xs font-medium ${s.bg} ${s.fg} overflow-hidden`}>
+                        <span className="truncate">{s.label}</span>
                       </div>
-                      <span className="text-right text-slate-600">{pkr(cost)}</span>
-                      <span className="text-right text-slate-600">{pkr(rec)}</span>
-                      <span className={`text-right font-semibold ${prof >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{pkr(prof)}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-5 space-y-2.5 text-sm">
+                  {split.map(s => (
+                    <div key={s.label} className="flex items-center justify-between">
+                      <span className="flex items-center gap-2 text-[#6f6a5d]"><span className={`w-2.5 h-2.5 rounded-full ${s.bg}`} />{s.label}</span>
+                      <span className="font-medium text-[#232323] tabular-nums">{pkr(s.value)}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p className="flex-1 grid place-items-center text-sm text-[#a39b86] py-8">No spending in this period</p>
+            )}
+          </div>
+
+          {/* Projects */}
+          <div className={`${card} p-6 md:col-span-2 xl:col-span-3`}>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-xl text-[#232323]">Projects</h2>
+              <button onClick={() => navigate('/projects')}
+                className="w-9 h-9 rounded-full border border-[#efe6d0] bg-white grid place-items-center text-[#262626] hover:bg-[#262626] hover:text-white transition-colors">
+                <ArrowRight size={15} />
+              </button>
+            </div>
+            {recentProjects.length === 0 ? (
+              <p className="py-8 text-sm text-[#a39b86] text-center">No projects yet</p>
+            ) : (
+              <>
+                <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 px-3 pb-2 text-[11px] uppercase tracking-wider text-[#a39b86]">
+                  <span>Project</span><span className="text-right">Cost</span><span className="text-right">Received</span><span className="text-right">Profit</span>
+                </div>
+                <div className="space-y-1.5">
+                  {recentProjects.map(p => {
+                    const cost = parseFloat(p.fin_total_expense) || 0;
+                    const rec  = parseFloat(p.fin_received) || 0;
+                    const prof = rec - cost;
+                    return (
+                      <div key={p.id} onClick={() => navigate(`/projects?open=${p.id}`)}
+                        className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 items-center px-3 py-2.5 rounded-2xl hover:bg-[#fbf3de] cursor-pointer text-sm transition-colors">
+                        <div className="min-w-0">
+                          <p className="font-medium text-[#232323] truncate">{p.title}</p>
+                          <p className="text-xs text-[#a39b86] truncate">{p.client_name || 'No client'}{p.status === 'completed' ? ' · Completed' : ''}</p>
+                        </div>
+                        <span className="text-right text-[#6f6a5d]">{pkr(cost)}</span>
+                        <span className="text-right text-[#6f6a5d]">{pkr(rec)}</span>
+                        <span className={`text-right font-semibold ${prof >= 0 ? 'text-[#232323]' : 'text-rose-600'}`}>{pkr(prof)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 px-3 pt-3 mt-2 border-t border-[#f1e8d2] text-sm font-semibold">
+                  <span className="text-xs text-[#8a8372] font-normal self-center">All {projects.length} projects</span>
+                  <span className="text-right text-[#232323]">{pkr(projCost)}</span>
+                  <span className="text-right text-[#232323]">{pkr(projRec)}</span>
+                  <span className={`text-right ${projProfit >= 0 ? 'text-[#232323]' : 'text-rose-600'}`}>{pkr(projProfit)}</span>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Unpaid invoices — dark task-style card */}
+          <div className="md:col-span-2 xl:col-span-1 rounded-[28px] p-6 text-white" style={{ background: 'linear-gradient(160deg,#2c2c2c,#171717)' }}>
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl">Unpaid invoices</h2>
+              <span className="text-2xl font-light text-[#f9c846]">{unpaid.length}</span>
+            </div>
+            {unpaid.length === 0 ? (
+              <p className="py-10 text-sm text-white/50 text-center">Everything is paid</p>
+            ) : (
+              <div className="mt-4 space-y-2.5">
+                {unpaid.slice(0, 5).map(i => {
+                  const late = i.due_date && i.due_date < today;
+                  return (
+                    <div key={i.id} onClick={() => navigate('/invoices')} className="flex items-center gap-3 cursor-pointer group">
+                      <div className="w-10 h-10 rounded-2xl bg-white/10 grid place-items-center flex-shrink-0 group-hover:bg-white/20 transition-colors">
+                        <FileText size={16} className="text-white/70" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium truncate">{i.client_name || i.number}</p>
+                        <p className={`text-xs truncate ${late ? 'text-rose-300' : 'text-white/45'}`}>{i.number}{late ? ' · overdue' : ''}</p>
+                      </div>
+                      <span className="text-xs font-medium text-[#f9c846] whitespace-nowrap">{money(i.balance, i.currency)}</span>
                     </div>
                   );
                 })}
+                {unpaid.length > 5 && (
+                  <button onClick={() => navigate('/invoices')} className="w-full text-xs text-white/50 hover:text-white pt-1 flex items-center justify-center gap-1">
+                    + {unpaid.length - 5} more <ArrowUpRight size={12} />
+                  </button>
+                )}
               </div>
-              <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 px-5 py-2.5 bg-slate-50 text-sm font-bold">
-                <span className="text-xs text-slate-500 uppercase tracking-wider self-center">All {projects.length} projects</span>
-                <span className="text-right text-slate-700">{pkr(projCost)}</span>
-                <span className="text-right text-slate-700">{pkr(projRec)}</span>
-                <span className={`text-right ${projProfit >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>{pkr(projProfit)}</span>
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Unpaid invoices — who owes money */}
-        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-            <h2 className="font-bold text-slate-800 text-sm">Unpaid Invoices</h2>
-            <button onClick={() => navigate('/invoices')}
-              className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-semibold">
-              View all <ArrowRight size={12} />
-            </button>
+            )}
           </div>
-          {unpaid.length === 0 ? (
-            <p className="px-5 py-8 text-sm text-slate-400 text-center">Everything is paid</p>
-          ) : (
-            <div className="divide-y divide-slate-50">
-              {unpaid.slice(0, 8).map(i => (
-                <div key={i.id} onClick={() => navigate('/invoices')}
-                  className="flex items-center justify-between px-5 py-2.5 hover:bg-slate-50/60 cursor-pointer">
-                  <div className="min-w-0">
-                    <span className="font-mono text-xs font-semibold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">{i.number}</span>
-                    <p className="text-xs text-slate-500 mt-0.5 truncate">{i.client_name || 'No client'}</p>
-                  </div>
-                  <div className="text-right flex-shrink-0 ml-3">
-                    <p className="text-sm font-bold text-slate-800">{money(i.balance, i.currency)}</p>
-                    <p className="text-xs text-slate-400">of {money(i.total, i.currency)}</p>
-                  </div>
-                </div>
-              ))}
-              {unpaid.length > 8 && (
-                <p className="px-5 py-2.5 text-xs text-slate-400 text-center">+ {unpaid.length - 8} more</p>
-              )}
-            </div>
-          )}
         </div>
-      </div>
+      </>)}
     </div>
   );
 }
