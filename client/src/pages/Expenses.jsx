@@ -29,6 +29,8 @@ const EXPENSE_PRESETS = [
   { label: 'Threads',          category: 'Production',      color: '#3b82f6' },
   { label: 'Cleaning',         category: 'Production',      color: '#3b82f6' },
   { label: 'Packaging',        category: 'Packaging',       color: '#0ea5e9' },
+  { label: 'Labels',           category: 'Packaging',       color: '#0ea5e9' },
+  { label: 'Cards Payment',    category: 'Packaging',       color: '#0ea5e9' },
   { label: 'Petty Cash',       category: 'Petty Cash',      color: '#f97316' },
   { label: 'Internet Bill',    category: 'Bills',           color: '#f59e0b' },
   { label: 'Electricity Bill', category: 'Bills',           color: '#f59e0b' },
