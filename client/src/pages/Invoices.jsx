@@ -1290,13 +1290,12 @@ export default function Invoices() {
     setLoading(true);
     try {
       const params = {};
-      if (filterStatus) params.status = filterStatus;
       if (search)       params.search = search;
       const { data } = await api.get('/invoices', { params });
       setInvoices(data);
     } catch {}
     finally { setLoading(false); }
-  }, [filterStatus, search]);
+  }, [search]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -1321,14 +1320,22 @@ export default function Invoices() {
     }
   }
 
+  const todayStr   = new Date().toISOString().split('T')[0];
+  const isOverdue  = i => !!(i.due_date && i.due_date < todayStr && i.status !== 'paid');
+  // "Not paid" = anything that still owes money (no payment, partly paid or overdue)
+  const isNotPaid  = i => i.status !== 'paid' && i.status !== 'cancelled' && (parseFloat(i.total) || 0) > (parseFloat(i.amount_paid) || 0);
   const total   = invoices.length;
   const unpaid  = invoices.filter(i => i.status === 'unpaid').length;
   const partial = invoices.filter(i => i.status === 'partial').length;
   const paid    = invoices.filter(i => i.status === 'paid').length;
-  const overdue = invoices.filter(i => {
-    const today = new Date().toISOString().split('T')[0];
-    return i.due_date && i.due_date < today && i.status !== 'paid';
-  }).length;
+  const overdue = invoices.filter(isOverdue).length;
+  const notPaid = invoices.filter(isNotPaid).length;
+  const visible = invoices.filter(i => {
+    if (!filterStatus) return true;
+    if (filterStatus === 'notpaid') return isNotPaid(i);
+    if (filterStatus === 'overdue') return isOverdue(i);
+    return i.status === filterStatus;
+  });
 
   // Receipt voucher from Payments tab
   if (paymentsReceipt) {
@@ -1444,19 +1451,38 @@ export default function Invoices() {
               </div>
             </div>
 
+            {/* Quick status filter — always visible */}
+            <div className="px-3 py-2 border-b border-slate-100 flex flex-wrap gap-1">
+              {[
+                ['',        'All',      total],
+                ['notpaid', 'Not paid', notPaid],
+                ['unpaid',  'Unpaid',   unpaid],
+                ['partial', 'Partial',  partial],
+                ['overdue', 'Overdue',  overdue],
+                ['paid',    'Paid',     paid],
+              ].map(([v, label, n]) => (
+                <button key={v || 'all'} onClick={() => setFilterStatus(v)}
+                  className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition-all ${
+                    filterStatus === v ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                  }`}>
+                  {label} <span className="opacity-70">{n}</span>
+                </button>
+              ))}
+            </div>
+
             {/* List */}
             <div className="flex-1 min-h-0 overflow-y-auto">
               {loading ? (
                 <div className="flex items-center justify-center py-16">
                   <div className="w-6 h-6 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
                 </div>
-              ) : invoices.length === 0 ? (
+              ) : visible.length === 0 ? (
                 <div className="py-16 text-center px-4">
                   <FileText size={24} className="text-slate-200 mx-auto mb-2" />
                   <p className="text-slate-400 text-sm">{search || filterStatus ? 'No matches' : 'No invoices yet'}</p>
                 </div>
               ) : (
-                invoices.map(inv => {
+                visible.map(inv => {
                   const sym     = getSym(inv.currency);
                   const balance = parseFloat(inv.total) - parseFloat(inv.amount_paid || 0);
                   const isOverdue = inv.due_date && inv.due_date < new Date().toISOString().split('T')[0] && inv.status !== 'paid';
