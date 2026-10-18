@@ -3,7 +3,7 @@
 
 /* ══════════════════════════════════════════════════════════════════════════════
    iOS-style design tokens — override Tailwind v4 defaults
-   Border radius: 2–4 px (tight, sharp — not the "bubble" style)
+   Border radius: 5 px everywhere
    Shadows:       very shallow & translucent (iOS doesn't use hard drop-shadows)
    ══════════════════════════════════════════════════════════════════════════════ */
 @theme {
@@ -16,17 +16,17 @@
   --text-xl:   1.3125rem;   /* 21px  (was 20px) — section titles */
   --text-2xl:  1.5rem;      /* 24px  (unchanged) — page titles */
 
-  /* ── Border radius — iOS tight: 2–5 px, full stays pill ─────────────────── */
-  --radius-xs:   2px;
-  --radius-sm:   2px;
-  --radius:      3px;
-  --radius-md:   3px;
-  --radius-lg:   4px;
+  /* ── Border radius — uniform 5 px on every element (incl. rounded-full) ── */
+  --radius-xs:   5px;
+  --radius-sm:   5px;
+  --radius:      5px;
+  --radius-md:   5px;
+  --radius-lg:   5px;
   --radius-xl:   5px;
-  --radius-2xl:  6px;
-  --radius-3xl:  8px;
-  --radius-4xl:  10px;
-  --radius-full: 9999px;
+  --radius-2xl:  5px;
+  --radius-3xl:  5px;
+  --radius-4xl:  5px;
+  --radius-full: 5px;
 
   /* ── Shadows — iOS style: shallow, very translucent, no hard edges ───────── */
   --shadow-2xs: 0 1px 2px 0 rgb(0 0 0 / 0.04);
@@ -148,6 +148,8 @@ body {
 .animate-modal     { animation: scaleIn      0.22s cubic-bezier(0.22, 1, 0.36, 1) both; }
 .animate-drawer    { animation: slideInRight 0.28s cubic-bezier(0.32, 0.72, 0, 1) both; }
 .animate-spin-slow { animation: spin 0.8s linear infinite; }
+/* Spinners stay circles even though rounded-full is 5px */
+.animate-spin.rounded-full, .animate-spin-slow.rounded-full { border-radius: 9999px; }
 
 /* ══════════════════════════════════════════════════════════════════════════════
    Focus ring — iOS blue, tight offset
@@ -155,7 +157,7 @@ body {
 :focus-visible {
   outline: 2px solid #4f46e5;
   outline-offset: 2px;
-  border-radius: 3px;
+  border-radius: 5px;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
@@ -408,7 +410,7 @@ input, select, textarea {
 [data-layout="bold"] .doc-total-box {
   background: color-mix(in srgb, var(--tp) 8%, #fff) !important;
   border: 2px solid var(--tp) !important;
-  border-radius: 12px !important;
+  border-radius: 5px !important;
   padding: 8px 14px !important;
 }
 [data-layout="bold"] .doc-total-box > div:last-of-type span {
@@ -537,7 +539,6 @@ textarea {
 .warm-theme .ring-indigo-300,
 .warm-theme .focus\:ring-indigo-100:focus,
 .warm-theme .focus\:ring-indigo-500\/20:focus { --tw-ring-color: #f1dc9a !important; }
-.warm-theme button.bg-indigo-600 { border-radius: 9999px; }
 /* surfaces */
 .warm-theme .bg-\[\#f2f2f7\] { background-color: #fbf4df !important; }
 .warm-theme .border-slate-200 { border-color: #efe6d0; }
@@ -545,22 +546,12 @@ textarea {
 .warm-theme .divide-slate-100 > :not(:last-child) { border-color: #f4ecd6; }
 .warm-theme .bg-slate-50 { background-color: #fbf6e8; }
 .warm-theme .bg-slate-100 { background-color: #f6efdc; }
-.warm-theme .rounded-2xl { border-radius: 26px; }
 .warm-theme .shadow-sm { box-shadow: 0 8px 28px -14px rgba(120, 90, 20, .22); }
 /* sidebar: yellow active item */
-.warm-theme aside a.bg-indigo-600 { background-color: #f9c846 !important; border-radius: 9999px; }
+.warm-theme aside a.bg-indigo-600 { background-color: #f9c846 !important; }
 .warm-theme aside a.bg-indigo-600, .warm-theme aside a.bg-indigo-600 * { color: #262626 !important; }
-/* dashboard: pill-shaped period picker */
-.warm-dash .rounded-xl { border-radius: 9999px; }
-
-/* ── Warm theme: same pill rounding on buttons and fields everywhere ── */
+/* ── Warm theme: same 5px rounding on buttons and fields everywhere ── */
 .warm-theme button:not(.text-left):not([role="tab"]),
 .warm-theme input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
-.warm-theme select { border-radius: 9999px; }
-.warm-theme textarea { border-radius: 22px; }
-.warm-theme .p-1.rounded-xl,
-.warm-theme .p-1.rounded-lg { border-radius: 9999px; }
-
-/* Cards and info tiles share the same large radius; their icon squares get a softer one */
-.warm-theme :is(div, section, article, a).rounded-xl.border { border-radius: 26px; }
-.warm-theme div.p-2.rounded-xl, .warm-theme div.p-2\.5.rounded-xl { border-radius: 16px; }
+.warm-theme select,
+.warm-theme textarea { border-radius: 5px; }

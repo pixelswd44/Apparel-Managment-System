@@ -21,7 +21,7 @@ const money = (v, cc) => {
   if (!cc || cc === 'PKR') return pkr(n);
   return `${cc} ${n.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
 };
-const card = 'rounded-[28px] bg-white/85 border border-white shadow-[0_10px_40px_-18px_rgba(120,90,20,.25)]';
+const card = 'rounded-xl bg-white/85 border border-white shadow-[0_10px_40px_-18px_rgba(120,90,20,.25)]';
 const clamp = (n, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, n));
 
 // Labelled pill like the top row of the reference: label above, pill with the value inside.
@@ -170,7 +170,7 @@ export default function Overview() {
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5 mt-6">
 
           {/* Net hero — dark card */}
-          <div className="relative overflow-hidden rounded-[28px] p-6 text-white min-h-[260px] flex flex-col justify-between md:order-1 xl:order-none"
+          <div className="relative overflow-hidden rounded-xl p-6 text-white min-h-[260px] flex flex-col justify-between md:order-1 xl:order-none"
             style={{ background: 'radial-gradient(500px 260px at 90% 0%, rgba(249,200,70,.35), transparent 60%), linear-gradient(160deg,#2c2c2c,#171717)' }}>
             <div>
               <p className="text-sm text-white/60">Net · money in − out</p>
@@ -300,7 +300,7 @@ export default function Overview() {
           </div>
 
           {/* Unpaid invoices — dark task-style card */}
-          <div className="md:col-span-2 xl:col-span-1 md:order-5 xl:order-none rounded-[28px] p-6 text-white" style={{ background: 'linear-gradient(160deg,#2c2c2c,#171717)' }}>
+          <div className="md:col-span-2 xl:col-span-1 md:order-5 xl:order-none rounded-xl p-6 text-white" style={{ background: 'linear-gradient(160deg,#2c2c2c,#171717)' }}>
             <div className="flex items-center justify-between">
               <h2 className="text-xl">Unpaid invoices</h2>
               <span className="text-2xl font-light text-[#f9c846]">{unpaid.length}</span>
