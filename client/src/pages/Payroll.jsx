@@ -332,6 +332,7 @@ function EmployeePanel({ employee, onClose, onEdit, onRefresh, embedded = false 
   const [tab, setTab] = useState('advances');
   const [advances, setAdvances] = useState([]);
   const [payroll, setPayroll] = useState([]);
+  const [expPays, setExpPays] = useState([]);   // salary / advance payments entered from Expenses
   const [advModal, setAdvModal] = useState(null);    // null | 'new' | advance obj
   const [payModal, setPayModal] = useState(null);    // null | 'new' | record obj
   const [delAdvTarget, setDelAdvTarget] = useState(null); // advance id pending delete
@@ -355,6 +356,10 @@ function EmployeePanel({ employee, onClose, onEdit, onRefresh, embedded = false 
   useEffect(() => {
     if (tab === 'payroll') loadPayroll();
   }, [tab, loadPayroll]);
+
+  useEffect(() => {
+    api.get('/expenses', { params: { employee_id: employee.id } }).then(r => setExpPays(Array.isArray(r.data) ? r.data : [])).catch(() => setExpPays([]));
+  }, [employee.id]);
 
   async function confirmDeleteAdvance() {
     await api.delete(`/employees/${employee.id}/advances/${delAdvTarget}`);
@@ -424,11 +429,11 @@ function EmployeePanel({ employee, onClose, onEdit, onRefresh, embedded = false 
 
         {/* Tabs */}
         <div className="flex border-b border-slate-100 px-6">
-          {['advances', 'payroll', 'bank'].map(t => (
+          {['advances', 'payroll', 'payments', 'bank'].map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={`py-3 mr-5 text-sm font-medium border-b-2 transition-colors capitalize
                 ${tab === t ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
-              {t === 'advances' ? 'Advances' : t === 'payroll' ? 'Payroll' : 'Bank / Notes'}
+              {t === 'advances' ? 'Advances' : t === 'payroll' ? 'Payroll' : t === 'payments' ? 'Payments' : 'Bank / Notes'}
             </button>
           ))}
         </div>
@@ -555,6 +560,34 @@ function EmployeePanel({ employee, onClose, onEdit, onRefresh, embedded = false 
                       ))}
                     </div>
               }
+            </div>
+          )}
+
+          {/* ── Payments Tab — salary / advance entered from the Expenses form ── */}
+          {tab === 'payments' && (
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Paid from Expenses</p>
+                  <p className="text-sm font-bold text-slate-800 mt-0.5">₨{expPays.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0).toLocaleString('en-US')} total</p>
+                </div>
+                <a href="/expenses/new" className="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-xl font-semibold">+ Pay</a>
+              </div>
+              {expPays.length === 0 ? (
+                <p className="text-sm text-slate-400 italic">No payments yet. Add a Salary or Advance expense and pick this employee.</p>
+              ) : (
+                <div className="border border-slate-200 rounded-2xl divide-y divide-slate-100 overflow-hidden">
+                  {expPays.map(e => (
+                    <div key={e.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-800 truncate">{e.title}</p>
+                        <p className="text-xs text-slate-400">{e.expense_date}{e.payment_method ? ` · ${e.payment_method}` : ''}{e.notes ? ` · ${e.notes}` : ''}</p>
+                      </div>
+                      <span className="text-sm font-bold text-slate-800 whitespace-nowrap">₨{(parseFloat(e.amount) || 0).toLocaleString('en-US')}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

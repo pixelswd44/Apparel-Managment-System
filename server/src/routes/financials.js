@@ -316,21 +316,22 @@ router.get('/ledger', (req, res) => {
   // All spending is entered on the Expenses screen. Expenses charged to a project
   // show under "Project Costs" (with the project name); the rest are business expenses.
   const expenseRows = db.prepare(`
-    SELECT e.id, e.expense_date as date, e.amount, e.title as description, e.project_id, e.paid_to as paid_to_raw, e.paid_by as paid_by_raw,
+    SELECT e.id, e.expense_date as date, e.amount, e.title as description, e.project_id, e.paid_to as paid_to_raw, e.paid_by as paid_by_raw, e.employee_id, emp.name as employee_name,
            COALESCE(ec.name,'Expense') as category,
            COALESCE(NULLIF(TRIM(e.paid_to),''), e.paid_by) as party,
            p.title as project_title
     FROM expenses e
     LEFT JOIN expense_categories ec ON ec.id = e.expense_category_id
     LEFT JOIN projects p ON p.id = e.project_id
+    LEFT JOIN employees emp ON emp.id = e.employee_id
     WHERE 1=1 ${dateFilter('e.expense_date')}
     ORDER BY e.expense_date ASC
   `).all();
   for (const e of expenseRows) {
     const isProject = !!e.project_id;
-    entries.push({ date: e.date, section: isProject ? 'Project Costs' : 'Business Expenses', category: e.category,
+    entries.push({ date: e.date, section: e.employee_id ? 'Salaries' : isProject ? 'Project Costs' : 'Business Expenses', category: e.category,
       description: `${e.description || e.category}${isProject && e.project_title ? ` (${e.project_title})` : ''}`,
-      party: e.party || '', paid_to: (e.paid_to_raw || '').trim(), paid_by: (e.paid_by_raw || '').trim(),
+      party: e.party || '', paid_to: (e.employee_name || e.paid_to_raw || '').trim(), paid_by: (e.paid_by_raw || '').trim(),
       credit: 0, debit: parseFloat(e.amount) || 0, currency: 'PKR', amount_orig: parseFloat(e.amount) || 0 });
   }
 

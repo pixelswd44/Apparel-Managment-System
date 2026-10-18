@@ -17,6 +17,8 @@ const today = () => new Date().toISOString().split('T')[0];
 const curMonth = () => new Date().toISOString().slice(0, 7);
 const fmtDate = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
 
+// Types that are payments to an employee — they ask which employee
+const EMPLOYEE_TYPES = ['Salary', 'Advance'];
 const PAYMENT_METHODS = ['cash', 'bank transfer', 'cheque', 'online', 'card'];
 const RECURRING_PERIODS = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly'];
 
@@ -35,6 +37,8 @@ const EXPENSE_PRESETS = [
   { label: 'Rent',             category: 'Rent',            color: '#6366f1' },
   { label: 'Office Supplies',  category: 'Office Supplies', color: '#14b8a6' },
   { label: 'Staff Meals',      category: 'Staff Meals',     color: '#ec4899' },
+  { label: 'Salary',           category: 'Salaries',        color: '#06b6d4' },
+  { label: 'Advance',          category: 'Salaries',        color: '#06b6d4' },
   { label: 'Self Use / Personal Use', category: 'Personal Use', color: '#64748b' },
 ];
 
@@ -127,13 +131,14 @@ function ExpenseShell({ page, expense, onClose, children }) {
 export function ExpenseModal({ expense, categories, projects = [], defaultProjectId = '', onClose, onSave, page = false }) {
   const blank = {
     title: '', expense_category_id: '', amount: '', paid_by: '', paid_to: '',
-    project_id: defaultProjectId ? String(defaultProjectId) : '',
+    project_id: defaultProjectId ? String(defaultProjectId) : '', employee_id: '',
     expense_date: today(), payment_method: 'bank transfer', notes: '',
   };
   const [form, setForm] = useState(expense
     ? { ...blank, ...expense,
         expense_category_id: expense.expense_category_id || '',
         project_id: expense.project_id ? String(expense.project_id) : '',
+        employee_id: expense.employee_id ? String(expense.employee_id) : '',
         paid_to: expense.paid_to || '' }
     : blank);
   // Only active projects — except the one this expense is already on, so editing
@@ -143,6 +148,17 @@ export function ExpenseModal({ expense, categories, projects = [], defaultProjec
     .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  // Employees for Salary / Advance payments
+  const [employees, setEmployees] = useState([]);
+  useEffect(() => {
+    api.get('/employees').then(r => setEmployees((Array.isArray(r.data) ? r.data : []).filter(e => e.status !== 'inactive' || String(e.id) === String(expense?.employee_id)))).catch(() => {});
+  }, []);
+  const isEmpType = EMPLOYEE_TYPES.includes(form.title);
+  function pickEmployee(id) {
+    const emp = employees.find(e => String(e.id) === String(id));
+    setForm(f => ({ ...f, employee_id: id, paid_to: emp ? emp.name : f.paid_to }));
+  }
 
   // Picking a type fills the title and category; the category is created on first use.
   const [cats, setCats] = useState(categories);
@@ -169,6 +185,7 @@ export function ExpenseModal({ expense, categories, projects = [], defaultProjec
         amount: parseFloat(form.amount) || 0,
         expense_category_id: form.expense_category_id || null,
         project_id: form.project_id || null,
+        employee_id: isEmpType ? (form.employee_id || null) : null,
         recurring: 0,
       };
       const res = expense
@@ -211,6 +228,19 @@ export function ExpenseModal({ expense, categories, projects = [], defaultProjec
               {EXPENSE_PRESETS.map(p => <option key={p.label} value={p.label}>{p.label}</option>)}
             </select>
           </div>
+
+          {/* ── Employee — for salary and advance payments ── */}
+          {isEmpType && (
+            <div className="rounded-xl p-3 border bg-cyan-50 border-cyan-200">
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 mb-1">Employee *</label>
+              <select value={form.employee_id} onChange={e => pickEmployee(e.target.value)} required
+                className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20">
+                <option value="">Select employee…</option>
+                {employees.map(e => <option key={e.id} value={e.id}>{e.name}{e.designation ? ` · ${e.designation}` : ''}</option>)}
+              </select>
+              <p className="text-2xs text-cyan-700 mt-1.5">Shows on the employee's Payments tab and in the Ledger under Salaries.</p>
+            </div>
+          )}
 
           <div>
             <label className="block text-xs font-semibold text-slate-500 mb-1">
@@ -1019,6 +1049,11 @@ export default function Expenses() {
                       {exp.paid_to && ` · to ${exp.paid_to}`}
                       {exp.payment_method && ` · ${exp.payment_method}`}
                     </p>
+                    {exp.employee_name && (
+                      <span className="inline-flex items-center gap-1 mt-1 mr-1 text-2xs font-semibold bg-cyan-50 text-cyan-700 border border-cyan-100 px-1.5 py-0.5 rounded-full max-w-full">
+                        <span className="truncate">👤 {exp.employee_name}</span>
+                      </span>
+                    )}
                     {exp.project_title && (
                       <span className="inline-flex items-center gap-1 mt-1 text-2xs font-semibold bg-orange-50 text-orange-700 border border-orange-100 px-1.5 py-0.5 rounded-full max-w-full">
                         <Flame size={9} className="flex-shrink-0" /> <span className="truncate">{exp.project_title}</span>

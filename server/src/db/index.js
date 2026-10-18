@@ -648,6 +648,8 @@ const migrations = [
   // One-screen costing: an expense can be charged to a project, and records who was paid
   `ALTER TABLE expenses ADD COLUMN project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL`,
   `ALTER TABLE expenses ADD COLUMN paid_to TEXT DEFAULT ''`,
+  // An expense can be a payment to an employee (salary / advance)
+  `ALTER TABLE expenses ADD COLUMN employee_id INTEGER REFERENCES employees(id) ON DELETE SET NULL`,
   // Where a converted expense came from (old project cost records) — for traceability
   `ALTER TABLE expenses ADD COLUMN source TEXT`,
   // Password reset tokens on users table
