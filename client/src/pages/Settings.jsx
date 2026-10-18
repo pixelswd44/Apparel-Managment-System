@@ -1149,10 +1149,7 @@ function AppBranding() {
   const previewName = appName.trim() || 'Apparel CRM';
 
   return (
-    <div className="max-w-md space-y-7">
-      <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-500">
-        Customize how your application appears in the sidebar. Changes apply instantly after saving.
-      </div>
+    <div className="space-y-6">
 
       {/* ── Logo ── */}
       <div>
@@ -1202,7 +1199,7 @@ function AppBranding() {
           placeholder="e.g. My Fashion CRM"
           maxLength={50}
         />
-        <p className="text-2xs text-slate-400 mt-1.5">Shown in the sidebar header and browser title</p>
+        <p className="text-2xs text-slate-400 mt-1.5">Shown in the top bar and browser title</p>
       </div>
 
       {/* ── Live Preview ── */}
@@ -2029,8 +2026,7 @@ function OpeningBalance() {
 }
 
 const SECTIONS = [
-  { id: 'app-branding',     label: 'App Branding',          icon: Palette,    description: 'Change the application name and logo shown in the sidebar' },
-  { id: 'companies',        label: 'Companies',             icon: Building2,  description: 'Manage your companies — each with its own logo and details for quotations & invoices' },
+  { id: 'general',          label: 'Branding & Companies',  icon: Palette,    description: '' },
   { id: 'currencies',       label: 'Currencies & Rates',    icon: Globe,      description: 'Manage currencies and exchange rates. Set your default currency — used across all quotations, invoices and conversions.' },
   { id: 'backup-restore',   label: 'Backup & Restore',      icon: Save,       description: 'Download a backup of all your data, or restore from a previous backup file' },
 ];
@@ -2038,7 +2034,7 @@ const SECTIONS = [
 // ── Main Settings page ────────────────────────────────────────────────────────
 
 export default function Settings() {
-  const [activeSection, setActiveSection] = useState('app-branding');
+  const [activeSection, setActiveSection] = useState('general');
 
   const active = SECTIONS.find(s => s.id === activeSection);
 
@@ -2063,7 +2059,38 @@ export default function Settings() {
         ))}
       </div>
 
+      {/* Branding + Companies side by side on one screen */}
+      {activeSection === 'general' && (
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(320px,420px)_1fr] gap-5 items-start">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+            <div className="flex items-center gap-3 mb-5 pb-4 border-b border-slate-100">
+              <div className="w-9 h-9 bg-indigo-50 border border-indigo-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                <Palette size={16} className="text-indigo-600" />
+              </div>
+              <div>
+                <h2 className="text-base font-semibold text-slate-900">App Branding</h2>
+                <p className="text-xs text-slate-500">Name and logo shown in the top bar</p>
+              </div>
+            </div>
+            <AppBranding />
+          </div>
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 min-w-0">
+            <div className="flex items-center gap-3 mb-5 pb-4 border-b border-slate-100">
+              <div className="w-9 h-9 bg-indigo-50 border border-indigo-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                <Building2 size={16} className="text-indigo-600" />
+              </div>
+              <div>
+                <h2 className="text-base font-semibold text-slate-900">Companies</h2>
+                <p className="text-xs text-slate-500">Each with its own logo and details for quotations &amp; invoices</p>
+              </div>
+            </div>
+            <Companies />
+          </div>
+        </div>
+      )}
+
       {/* Content area */}
+      {activeSection !== 'general' && (
       <div className="flex-1 min-w-0">
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
           {/* Section header */}
@@ -2079,12 +2106,11 @@ export default function Settings() {
             </div>
           )}
 
-          {activeSection === 'app-branding'   && <AppBranding />}
-          {activeSection === 'companies'      && <Companies />}
           {activeSection === 'currencies'     && <Currencies />}
           {activeSection === 'backup-restore'  && <BackupRestore />}
         </div>
       </div>
+      )}
     </div>
   );
 }

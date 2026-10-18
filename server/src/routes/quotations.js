@@ -207,6 +207,31 @@ router.get('/:id/usage', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Bulk-delete expired quotations: status 'expired', or past their valid-until date
+// and not accepted. Quotations that already have invoices are kept.
+// (Must stay above '/:id'.)
+const EXPIRED_SQL = `(q.status = 'expired'
+  OR (q.status != 'accepted' AND q.valid_until IS NOT NULL AND TRIM(q.valid_until) != '' AND date(q.valid_until) < date('now')))`;
+
+router.get('/expired/preview', (req, res) => {
+  try {
+    const rows = db.prepare(`SELECT q.id, q.number, EXISTS (SELECT 1 FROM invoices i WHERE i.quotation_id = q.id) AS has_invoice
+                             FROM quotations q WHERE ${EXPIRED_SQL}`).all();
+    res.json({ deletable: rows.filter(r => !r.has_invoice).length, kept: rows.filter(r => r.has_invoice).length });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/expired/all', (req, res) => {
+  try {
+    const rows = db.prepare(`SELECT q.id, EXISTS (SELECT 1 FROM invoices i WHERE i.quotation_id = q.id) AS has_invoice
+                             FROM quotations q WHERE ${EXPIRED_SQL}`).all();
+    const del = db.prepare('DELETE FROM quotations WHERE id = ?');
+    let deleted = 0;
+    for (const r of rows) { if (!r.has_invoice) { del.run(r.id); deleted++; } }
+    res.json({ deleted, kept: rows.length - deleted });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.delete('/:id', (req, res) => {
   try {
     const invRefs = db.prepare(

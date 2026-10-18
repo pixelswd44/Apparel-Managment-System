@@ -396,23 +396,23 @@ function QuotationView({ quotationId, onClose, onEdit, onConverted, embedded = f
 
           {/* Line items table */}
           <div className="px-7 py-4">
-            <table className="doc-table w-full text-xs">
+            <table className="doc-table w-full text-xs table-fixed">
               <thead>
                 <tr className="border-b border-slate-200">
                   <th className="text-left pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider w-7">#</th>
-                  <th className="text-left pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider w-40">Product</th>
+                  <th className="text-left pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider">Product</th>
                   <th className="text-left pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider">Description</th>
-                  <th className="text-center pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider w-12">Qty</th>
-                  <th className="text-right pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider w-24">Unit Price</th>
-                  <th className="text-right pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider w-24">Total</th>
+                  <th className="text-center pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider">Qty</th>
+                  <th className="text-right pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider">Unit Price</th>
+                  <th className="text-right pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider">Total</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {items.length > 0 ? items.map((item, i) => (
                   <tr key={i}>
                     <td className="py-2 pr-3 text-slate-400 text-xs align-top">{i + 1}</td>
-                    <td className="py-2 pr-3 font-semibold text-slate-800 align-top leading-snug">{item.name || '—'}</td>
-                    <td className="py-2 pr-3 text-slate-500 align-top leading-snug whitespace-pre-line">{item.description || ''}</td>
+                    <td className="py-2 pr-3 font-semibold text-slate-800 align-top leading-snug break-words">{item.name || '—'}</td>
+                    <td className="py-2 pr-3 text-slate-500 align-top leading-snug whitespace-pre-line break-words">{item.description || ''}</td>
                     <td className="py-2 text-center text-slate-700 tabular-nums font-medium align-top">{parseFloat(item.quantity) || 0}</td>
                     <td className="py-2 text-right text-slate-700 tabular-nums align-top">{sym}{(parseFloat(item.unit_price) || 0).toFixed(2)}</td>
                     <td className="py-2 text-right font-semibold text-slate-900 tabular-nums align-top">{sym}{(parseFloat(item.total) || 0).toFixed(2)}</td>
@@ -536,6 +536,9 @@ export default function Quotations() {
   const [deleting,     setDeleting]     = useState(false);
   const [delError,     setDelError]     = useState('');
   const [viewId,       setViewId]       = useState(null);
+  const [expConfirm,   setExpConfirm]   = useState(false);
+  const [expBusy,      setExpBusy]      = useState(false);
+  const [expMsg,       setExpMsg]       = useState('');
 
   // ── Load ───────────────────────────────────────────────────────────────────
 
@@ -576,6 +579,23 @@ export default function Quotations() {
     } catch (e) {
       setDelError(e?.response?.data?.error ?? 'Failed to delete. Please try again.');
     } finally { setDeleting(false); }
+  }
+
+  // ── Delete all expired ─────────────────────────────────────────────────────
+  // Same rule as the Expired badge in the list: marked expired, or past valid-until and not accepted.
+  const expiredList = quotations.filter(q => q.status === 'expired' || (q.valid_until && new Date(q.valid_until) < new Date() && q.status !== 'accepted'));
+
+  async function deleteExpired() {
+    setExpBusy(true); setExpMsg('');
+    try {
+      const { data } = await api.delete('/quotations/expired/all');
+      setExpMsg(`${data.deleted} deleted${data.kept ? ` · ${data.kept} kept (they have invoices)` : ''}`);
+      setExpConfirm(false);
+      if (viewId) setViewId(null);
+      await load();
+    } catch (e) {
+      setExpMsg(e?.response?.data?.error ?? 'Failed to delete expired quotations.');
+    } finally { setExpBusy(false); }
   }
 
   // ── Stats ──────────────────────────────────────────────────────────────────
@@ -665,8 +685,25 @@ export default function Quotations() {
               </button>
             ))}
           </div>
-
 )}
+          {/* Clean-up: delete every expired quotation (kept if an invoice exists) */}
+          {showF && (
+            <div className="px-3 py-2 border-b border-slate-100">
+              {expConfirm ? (
+                <div className="flex items-center gap-2 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 text-xs">
+                  <span className="flex-1 text-rose-700 font-medium">Delete {expiredList.length} expired quotation{expiredList.length !== 1 ? 's' : ''}? This cannot be undone.</span>
+                  <button onClick={() => setExpConfirm(false)} className="px-2 py-1 border border-rose-200 rounded-lg text-rose-600">Cancel</button>
+                  <button onClick={deleteExpired} disabled={expBusy} className="px-2 py-1 bg-rose-600 text-white rounded-lg disabled:opacity-50">{expBusy ? '…' : 'Delete'}</button>
+                </div>
+              ) : (
+                <button onClick={() => { setExpMsg(''); setExpConfirm(true); }} disabled={expiredList.length === 0}
+                  className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium border border-rose-200 text-rose-600 rounded-xl hover:bg-rose-50 disabled:opacity-40 disabled:hover:bg-transparent">
+                  <Trash2 size={12} /> Delete expired ({expiredList.length})
+                </button>
+              )}
+              {expMsg && <p className="text-2xs text-slate-500 mt-1.5 text-center">{expMsg}</p>}
+            </div>
+          )}
           {/* List */}
           <div className="flex-1 min-h-0 overflow-y-auto">
             {loading ? (

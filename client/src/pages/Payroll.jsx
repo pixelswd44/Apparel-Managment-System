@@ -797,22 +797,23 @@ export default function Payroll() {
                       </div>
                     </div>
                   </div>
-                  {parseFloat(emp.pending_advance) > 0 && (
-                    <span className="text-2xs font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full w-fit flex items-center gap-1">
-                      <TrendingDown size={9} /> {pkr(emp.pending_advance)} advance
-                    </span>
-                  )}
-                  {/* Hover action buttons */}
-                  <div className="absolute right-2 top-2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={e => e.stopPropagation()}>
-                    <button onClick={() => setModal(emp)} title="Edit"
-                      className="p-1 text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors">
-                      <Edit2 size={11} />
-                    </button>
-                    <button onClick={() => setDelTarget(emp.id)} title="Delete"
-                      className="p-1 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded transition-colors">
-                      <Trash2 size={11} />
-                    </button>
+                  {/* Bottom row: advance chip on the left, edit / delete on the right (always visible) */}
+                  <div className="flex items-center justify-between gap-2 min-h-[28px]">
+                    {parseFloat(emp.pending_advance) > 0 ? (
+                      <span className="text-2xs font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full w-fit flex items-center gap-1">
+                        <TrendingDown size={9} /> {pkr(emp.pending_advance)} advance
+                      </span>
+                    ) : <span />}
+                    <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                      <button onClick={() => setModal(emp)} title="Edit"
+                        className="p-1.5 text-slate-400 hover:text-indigo-600 bg-slate-100 hover:bg-indigo-50 rounded-lg transition-colors">
+                        <Edit2 size={12} />
+                      </button>
+                      <button onClick={() => setDelTarget(emp.id)} title="Delete"
+                        className="p-1.5 text-slate-400 hover:text-rose-500 bg-slate-100 hover:bg-rose-50 rounded-lg transition-colors">
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
                   </div>
                 </div>
               );

@@ -125,6 +125,35 @@ function expenseFields(body) {
   };
 }
 
+// An expense of type "Advance" for an employee keeps a matching advance record in
+// Employees (linked by expense_id) so balances and repayments work there. The
+// ledger skips linked advances — the expense itself is already in it.
+function syncAdvance(expenseId, f) {
+  const isAdv = f.employee_id && (f.title || '').trim().toLowerCase() === 'advance';
+  const linked = db.prepare('SELECT id FROM employee_advances WHERE expense_id = ?').get(expenseId);
+  const date = f.expense_date || new Date().toISOString().split('T')[0];
+  if (isAdv) {
+    const reason = (f.notes || '').trim() || 'Advance from Expenses';
+    if (linked) {
+      db.prepare('UPDATE employee_advances SET employee_id=?, amount=?, date=?, reason=? WHERE id=?')
+        .run(f.employee_id, f.amount, date, reason, linked.id);
+    } else {
+      db.prepare(`INSERT INTO employee_advances (employee_id, amount, date, reason, repaid_amount, status, notes, expense_id)
+                  VALUES (?, ?, ?, ?, 0, 'pending', '', ?)`)
+        .run(f.employee_id, f.amount, date, reason, expenseId);
+    }
+  } else if (linked) {
+    db.prepare('DELETE FROM employee_advances WHERE id = ?').run(linked.id);
+  }
+}
+
+// One-off catch-up for Advance expenses saved before this link existed
+try {
+  const pending = db.prepare(`SELECT * FROM expenses e WHERE e.employee_id IS NOT NULL AND LOWER(TRIM(e.title)) = 'advance'
+                              AND NOT EXISTS (SELECT 1 FROM employee_advances a WHERE a.expense_id = e.id)`).all();
+  for (const e of pending) syncAdvance(e.id, e);
+} catch {}
+
 const SELECT_ONE = `
   SELECT e.*, ec.name as category_name, ec.color as category_color, p.title as project_title,
          emp.name as employee_name
@@ -146,6 +175,7 @@ router.post('/', (req, res) => {
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(f.title.trim(), f.category, f.expense_category_id, f.amount, f.paid_by, f.paid_to, f.project_id,
          f.expense_date || today, f.notes, f.payment_method, f.receipt_url, f.recurring, f.recurring_period, f.employee_id);
+  syncAdvance(result.lastInsertRowid, f);
   res.json(db.prepare(SELECT_ONE).get(result.lastInsertRowid));
 });
 
@@ -162,10 +192,12 @@ router.put('/:id', (req, res) => {
          req.params.id);
   const exp = db.prepare(SELECT_ONE).get(req.params.id);
   if (!exp) return res.status(404).json({ error: 'Not found' });
+  syncAdvance(Number(req.params.id), f);
   res.json(exp);
 });
 
 router.delete('/:id', (req, res) => {
+  db.prepare('DELETE FROM employee_advances WHERE expense_id=?').run(req.params.id);
   db.prepare('DELETE FROM expenses WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });

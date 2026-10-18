@@ -373,7 +373,7 @@ router.get('/ledger', (req, res) => {
     SELECT ea.id, ea.date, ea.amount, ea.reason, emp.name as party
     FROM employee_advances ea
     LEFT JOIN employees emp ON emp.id = ea.employee_id
-    WHERE 1=1 ${dateFilter('ea.date')}
+    WHERE ea.expense_id IS NULL ${dateFilter('ea.date')}
     ORDER BY ea.date ASC
   `).all();
   for (const a of advances) {
