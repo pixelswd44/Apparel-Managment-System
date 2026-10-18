@@ -312,7 +312,7 @@ export default function Overview() {
                 {unpaid.slice(0, 5).map(i => {
                   const late = i.due_date && i.due_date < today;
                   return (
-                    <div key={i.id} onClick={() => navigate('/invoices')} className="flex items-center gap-3 cursor-pointer group">
+                    <div key={i.id} onClick={() => navigate(`/invoices?view=${i.id}`)} className="flex items-center gap-3 cursor-pointer group">
                       <div className="w-10 h-10 rounded-2xl bg-white/10 grid place-items-center flex-shrink-0 group-hover:bg-white/20 transition-colors">
                         <FileText size={16} className="text-white/70" />
                       </div>
