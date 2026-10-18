@@ -48,7 +48,7 @@ function showLoader() {
       'position:fixed;inset:0;background:rgba(15,23,42,0.55);' +
       'display:flex;align-items:center;justify-content:center;z-index:99999;backdrop-filter:blur(3px);';
     el.innerHTML = `
-      <div style="background:#fff;border-radius:6px;padding:24px 32px;
+      <div style="background:#fff;border-radius:5px;padding:24px 32px;
                   display:flex;align-items:center;gap:14px;
                   box-shadow:0 8px 32px rgba(0,0,0,0.18);min-width:210px;">
         <div id="__pdf_spinner__"

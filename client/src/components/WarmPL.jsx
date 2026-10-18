@@ -57,7 +57,7 @@ export default function WarmPL({ rows, from, to, periodLabel }) {
   const key = `${data.length}-${Math.round(income)}-${Math.round(expense)}`;
 
   return (
-    <div className="h-full rounded-[28px] bg-white/85 border border-white shadow-[0_10px_40px_-18px_rgba(120,90,20,.25)] p-6 flex flex-col">
+    <div className="h-full rounded-xl bg-white/85 border border-white shadow-[0_10px_40px_-18px_rgba(120,90,20,.25)] p-6 flex flex-col">
       <style>{CSS}</style>
       <div className="flex items-start justify-between gap-3">
         <div>
