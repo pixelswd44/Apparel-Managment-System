@@ -555,3 +555,6 @@ textarea {
 .warm-theme input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
 .warm-theme select,
 .warm-theme textarea { border-radius: 5px; }
+
+/* Document numbers and codes inside tables never break across lines */
+.warm-theme table .font-mono { white-space: nowrap; }

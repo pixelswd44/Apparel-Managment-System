@@ -370,6 +370,7 @@ export default function Ledger() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50">
+                  <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider w-10">#</th>
                   <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">Date</th>
                   <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Entry</th>
                   <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Paid To</th>
@@ -385,6 +386,7 @@ export default function Ledger() {
                   const dot = (SECTION_COLORS[e.section] || 'text-slate-500').split(' ')[0].replace('text-', 'bg-');
                   return (
                     <tr key={i} className={`hover:bg-indigo-50/40 transition-colors `}>
+                      <td className="px-4 py-3 text-xs text-slate-400 tabular-nums">{i + 1}</td>
                       <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap tabular-nums">{fmtD(e.date)}</td>
                       <td className="px-4 py-3 max-w-md">
                         <p className="text-sm text-slate-800 font-medium truncate">{e.description}</p>
@@ -411,7 +413,7 @@ export default function Ledger() {
               </tbody>
               <tfoot>
                 <tr className="bg-white border-t-2 border-slate-300 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
-                  <td colSpan={5} className="px-4 py-3 text-sm font-bold text-slate-700">Period total</td>
+                  <td colSpan={6} className="px-4 py-3 text-sm font-bold text-slate-700">Period total</td>
                   <td className="px-4 py-3 text-right font-black text-emerald-600 tabular-nums">+{pkr(rows.reduce((s,e)=>s+e.credit,0))}</td>
                   <td className="px-4 py-3 text-right font-black text-rose-500 tabular-nums">−{pkr(rows.reduce((s,e)=>s+e.debit,0))}</td>
                   <td className={`px-4 py-3 text-right font-black tabular-nums ${(rows[rows.length-1]?.balance||0) >= 0 ? 'text-indigo-700' : 'text-rose-600'}`}>

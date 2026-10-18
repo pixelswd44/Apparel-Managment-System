@@ -931,6 +931,7 @@ export function ProductDrawer({ product, onClose, onEdit, onDelete, onDuplicate,
                         <table className="w-full text-sm">
                           <thead className="bg-slate-50 border-b border-slate-200">
                             <tr>
+                              <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-400 w-8">#</th>
                               <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-400">Invoice #</th>
                               <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-400">Client</th>
                               <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-400">Date</th>
@@ -940,8 +941,9 @@ export function ProductDrawer({ product, onClose, onEdit, onDelete, onDuplicate,
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
-                            {orders.invoices.map(o => (
+                            {orders.invoices.map((o, idx) => (
                               <tr key={o.id} className="hover:bg-slate-50 transition-colors">
+                                <td className="px-4 py-2.5 text-slate-400 tabular-nums text-xs">{idx + 1}</td>
                                 <td className="px-4 py-2.5 font-mono text-indigo-600 font-semibold text-xs">{o.number}</td>
                                 <td className="px-4 py-2.5 text-slate-700 text-xs truncate max-w-[100px]">{o.client_name || '—'}</td>
                                 <td className="px-4 py-2.5 text-slate-500 text-xs">{fmt(o.created_at)}</td>
@@ -991,6 +993,7 @@ export function ProductDrawer({ product, onClose, onEdit, onDelete, onDuplicate,
                         <table className="w-full text-sm">
                           <thead className="bg-slate-50 border-b border-slate-200">
                             <tr>
+                              <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-400 w-8">#</th>
                               <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-400">Quote #</th>
                               <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-400">Client</th>
                               <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-400">Date</th>
@@ -1000,8 +1003,9 @@ export function ProductDrawer({ product, onClose, onEdit, onDelete, onDuplicate,
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
-                            {orders.quotations.map(o => (
+                            {orders.quotations.map((o, idx) => (
                               <tr key={o.id} className="hover:bg-slate-50 transition-colors">
+                                <td className="px-4 py-2.5 text-slate-400 tabular-nums text-xs">{idx + 1}</td>
                                 <td className="px-4 py-2.5 font-mono text-violet-600 font-semibold text-xs">{o.number}</td>
                                 <td className="px-4 py-2.5 text-slate-700 text-xs truncate max-w-[100px]">{o.client_name || '—'}</td>
                                 <td className="px-4 py-2.5 text-slate-500 text-xs">{fmt(o.created_at)}</td>

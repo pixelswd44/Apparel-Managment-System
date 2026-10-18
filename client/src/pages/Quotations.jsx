@@ -400,11 +400,11 @@ function QuotationView({ quotationId, onClose, onEdit, onConverted, embedded = f
               <thead>
                 <tr className="border-b border-slate-200">
                   <th className="text-left pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider w-7">#</th>
-                  <th className="text-left pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider">Product</th>
+                  <th className="text-left pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider w-[22%]">Product</th>
                   <th className="text-left pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider">Description</th>
-                  <th className="text-center pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider">Qty</th>
-                  <th className="text-right pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider">Unit Price</th>
-                  <th className="text-right pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider">Total</th>
+                  <th className="text-center pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider w-[8%]">Qty</th>
+                  <th className="text-right pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider w-[15%]">Unit Price</th>
+                  <th className="text-right pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider w-[15%]">Total</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">

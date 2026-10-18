@@ -645,6 +645,7 @@ function StatementView({ client, stats, sym }) {
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-slate-100">
+                <th className="text-left px-4 py-2.5 font-semibold text-slate-400 w-8">#</th>
                 <th className="text-left px-4 py-2.5 font-semibold text-slate-400">Invoice #</th>
                 <th className="text-left px-4 py-2.5 font-semibold text-slate-400">Date</th>
                 <th className="text-left px-4 py-2.5 font-semibold text-slate-400">Status</th>
@@ -654,8 +655,9 @@ function StatementView({ client, stats, sym }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {stats.invoices.map(inv => (
+              {stats.invoices.map((inv, idx) => (
                 <tr key={inv.id} className="hover:bg-slate-50">
+                  <td className="px-4 py-2.5 text-slate-400 tabular-nums">{idx + 1}</td>
                   <td className="px-4 py-2.5 font-mono text-indigo-600 font-semibold">{inv.number}</td>
                   <td className="px-4 py-2.5 text-slate-600">{fmt(inv.created_at)}</td>
                   <td className="px-4 py-2.5">
@@ -685,6 +687,7 @@ function StatementView({ client, stats, sym }) {
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-slate-100">
+                <th className="text-left px-4 py-2.5 font-semibold text-slate-400 w-8">#</th>
                 <th className="text-left px-4 py-2.5 font-semibold text-slate-400">Date</th>
                 <th className="text-left px-4 py-2.5 font-semibold text-slate-400">Invoice</th>
                 <th className="text-left px-4 py-2.5 font-semibold text-slate-400">Method</th>
@@ -692,8 +695,9 @@ function StatementView({ client, stats, sym }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {stats.payments.map(p => (
+              {stats.payments.map((p, idx) => (
                 <tr key={p.id} className="hover:bg-slate-50">
+                  <td className="px-4 py-2.5 text-slate-400 tabular-nums">{idx + 1}</td>
                   <td className="px-4 py-2.5 text-slate-600">{fmt(p.paid_at)}</td>
                   <td className="px-4 py-2.5 font-mono text-indigo-600">{p.invoice_number || '—'}</td>
                   <td className="px-4 py-2.5 text-slate-600 capitalize">{p.method || '—'}</td>

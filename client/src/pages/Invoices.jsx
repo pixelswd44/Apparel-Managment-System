@@ -707,11 +707,11 @@ function InvoiceView({ invoiceId, onClose, onConverted, embedded = false }) {
                 <thead>
                   <tr className="border-b border-slate-200">
                     <th className="text-left pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider w-7">#</th>
-                    <th className="text-left pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider">Product</th>
+                    <th className="text-left pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider w-[22%]">Product</th>
                     <th className="text-left pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider">Description</th>
-                    <th className="text-center pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider">Qty</th>
-                    <th className="text-right pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider">Unit Price</th>
-                    <th className="text-right pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider">Total</th>
+                    <th className="text-center pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider w-[8%]">Qty</th>
+                    <th className="text-right pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider w-[15%]">Unit Price</th>
+                    <th className="text-right pb-2 pt-1 text-2xs font-bold text-slate-500 uppercase tracking-wider w-[15%]">Total</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -1049,9 +1049,11 @@ function PaymentsTab({ onPrintReceipt, settings, onPaymentDeleted }) {
             <p className="text-slate-400 text-sm mt-1.5">{search ? 'Try clearing your search' : 'Record a payment on an invoice to see it here'}</p>
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[880px]">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50/70">
+                <th className="text-left px-5 py-3.5 text-xs font-semibold text-slate-400 uppercase tracking-wider w-12">#</th>
                 <th className="text-left px-5 py-3.5 text-xs font-semibold text-slate-400 uppercase tracking-wider">Invoice</th>
                 <th className="text-left px-5 py-3.5 text-xs font-semibold text-slate-400 uppercase tracking-wider">Client</th>
                 <th className="text-left px-5 py-3.5 text-xs font-semibold text-slate-400 uppercase tracking-wider">Method</th>
@@ -1062,13 +1064,14 @@ function PaymentsTab({ onPrintReceipt, settings, onPaymentDeleted }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filtered.map(p => {
+              {filtered.map((p, idx) => {
                 const sym = getSym(p.currency);
                 const I   = PAY_METHODS.find(m => m.value === p.method)?.icon ?? Banknote;
                 return (
                   <tr key={p.id} className="hover:bg-slate-50/60 transition-colors">
+                    <td className="px-5 py-3.5 text-xs text-slate-400 tabular-nums">{idx + 1}</td>
                     <td className="px-5 py-3.5">
-                      <span className="font-mono text-xs font-semibold bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-lg">
+                      <span className="font-mono text-xs font-semibold bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-lg whitespace-nowrap">
                         {p.invoice_number || '—'}
                       </span>
                     </td>
@@ -1083,18 +1086,18 @@ function PaymentsTab({ onPrintReceipt, settings, onPaymentDeleted }) {
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-1.5">
                         <I size={13} className="text-slate-400" />
-                        <span className="text-slate-700">{methodLabel(p.method)}</span>
+                        <span className="text-slate-700 whitespace-nowrap">{methodLabel(p.method)}</span>
                       </div>
                     </td>
                     <td className="px-5 py-3.5 text-slate-500 whitespace-nowrap">{fmt(p.paid_at)}</td>
                     <td className="px-5 py-3.5 text-slate-500 font-mono text-xs">{p.reference || '—'}</td>
                     <td className="px-5 py-3.5 text-right">
-                      <span className="font-bold text-emerald-700">{fmtMoney(p.amount, sym)}</span>
+                      <span className="font-bold text-emerald-700 whitespace-nowrap">{fmtMoney(p.amount, sym)}</span>
                       {p.amount_pkr_actual != null && p.amount_pkr_actual !== '' && (
-                        <p className="text-xs text-indigo-500 font-medium">₨{Number(p.amount_pkr_actual).toLocaleString()} actual</p>
+                        <p className="text-xs text-indigo-500 font-medium whitespace-nowrap">₨{Number(p.amount_pkr_actual).toLocaleString()} actual</p>
                       )}
                     </td>
-                    <td className="px-5 py-3.5 text-right">
+                    <td className="px-5 py-3.5 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1">
                       <button
                         onClick={() => openEdit(p)}
@@ -1133,6 +1136,7 @@ function PaymentsTab({ onPrintReceipt, settings, onPaymentDeleted }) {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

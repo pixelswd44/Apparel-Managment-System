@@ -633,6 +633,7 @@ function ShippingTab() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  <th className="px-4 py-3 w-10">#</th>
                   <th className="px-4 py-3">Date</th>
                   <th className="px-4 py-3">Project</th>
                   <th className="px-4 py-3">Client</th>
@@ -642,8 +643,9 @@ function ShippingTab() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {shown.map(r => (
+                {shown.map((r, idx) => (
                   <tr key={r.id} onClick={() => open(r)} className="hover:bg-slate-50 cursor-pointer">
+                    <td className="px-4 py-3 text-slate-400 tabular-nums">{idx + 1}</td>
                     <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{fmtDate(r.shipping_date)}</td>
                     <td className="px-4 py-3 font-medium text-slate-800">{r.project_title || '—'}</td>
                     <td className="px-4 py-3 text-slate-600">{r.client_name || '—'}</td>
@@ -657,7 +659,7 @@ function ShippingTab() {
               </tbody>
               <tfoot>
                 <tr className="bg-slate-50 border-t border-slate-200">
-                  <td colSpan={5} className="px-4 py-3 text-xs font-semibold text-slate-500">{shown.length} shipments</td>
+                  <td colSpan={6} className="px-4 py-3 text-xs font-semibold text-slate-500">{shown.length} shipments</td>
                   <td className="px-4 py-3 text-right font-bold text-slate-900">{pkr(total)}</td>
                 </tr>
               </tfoot>
