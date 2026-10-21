@@ -268,7 +268,7 @@ function ReceiptVoucher({ invoice, payment, settings, onClose, templates = [], a
       {/* Voucher document — compact, A5-like */}
       <div className="flex-1 min-h-0 overflow-y-auto bg-slate-100 py-6 px-4 print:p-0 print:bg-white print:overflow-visible">
         <div ref={voucherRef}
-          className="max-w-[520px] mx-auto bg-white shadow-xl print:shadow-none print:max-w-none overflow-hidden relative"
+          className="doc-paper max-w-[520px] mx-auto bg-white shadow-xl print:shadow-none print:max-w-none overflow-hidden relative"
           data-layout={tplLayout}
           style={{ fontFamily: 'system-ui, sans-serif', '--tp': tplColor }}
         >
@@ -632,7 +632,7 @@ function InvoiceView({ invoiceId, onClose, onConverted, onPaymentsChanged, embed
             const tplColor  = tplCfg.primaryColor || '#4f46e5';
             return (
           <div ref={printRef}
-            className="max-w-3xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden relative"
+            className="doc-paper max-w-3xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden relative"
             data-layout={tplLayout}
             style={{ '--tp': tplColor }}
           >

@@ -1,10 +1,12 @@
 @import "tailwindcss";
-@import url("https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&display=swap");
 
 /* ══════════════════════════════════════════════════════════════════════════════
-   iOS-style design tokens — override Tailwind v4 defaults
-   Border radius: 5 px everywhere
-   Shadows:       very shallow & translucent (iOS doesn't use hard drop-shadows)
+   Liquid Glass design tokens — override Tailwind v4 defaults
+   Radius:  continuous, generous corners; buttons and nav are pills
+   Shadows: soft, layered, with a bright inner rim (specular edge)
+   Colors:  indigo → Apple system blue; light slates → translucent ink so
+            borders, fills and hovers read as tints over glass
+   Printed documents reset all of this — see `.doc-paper` below.
    ══════════════════════════════════════════════════════════════════════════════ */
 @theme {
   /* ── Font sizes — bumped +1 px from Tailwind defaults for consistent readability ── */
@@ -16,27 +18,103 @@
   --text-xl:   1.3125rem;   /* 21px  (was 20px) — section titles */
   --text-2xl:  1.5rem;      /* 24px  (unchanged) — page titles */
 
-  /* ── Border radius — uniform 5 px on every element (incl. rounded-full) ── */
-  --radius-xs:   5px;
-  --radius-sm:   5px;
-  --radius:      5px;
-  --radius-md:   5px;
-  --radius-lg:   5px;
-  --radius-xl:   5px;
-  --radius-2xl:  5px;
-  --radius-3xl:  5px;
-  --radius-4xl:  5px;
-  --radius-full: 5px;
+  /* ── Border radius — Apple-style continuous corners ── */
+  --radius-xs:   6px;
+  --radius-sm:   8px;
+  --radius:      10px;
+  --radius-md:   10px;
+  --radius-lg:   12px;
+  --radius-xl:   18px;
+  --radius-2xl:  22px;
+  --radius-3xl:  28px;
+  --radius-4xl:  34px;
 
-  /* ── Shadows — iOS style: shallow, very translucent, no hard edges ───────── */
-  --shadow-2xs: 0 1px 2px 0 rgb(0 0 0 / 0.04);
-  --shadow-xs:  0 1px 3px 0 rgb(0 0 0 / 0.05);
-  --shadow-sm:  0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.04);
-  --shadow:     0 2px 6px 0 rgb(0 0 0 / 0.07), 0 1px 3px -1px rgb(0 0 0 / 0.05);
-  --shadow-md:  0 3px 10px -1px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.04);
-  --shadow-lg:  0 6px 20px -2px rgb(0 0 0 / 0.09), 0 3px 6px -3px rgb(0 0 0 / 0.04);
-  --shadow-xl:  0 10px 30px -4px rgb(0 0 0 / 0.10), 0 4px 8px -4px rgb(0 0 0 / 0.05);
+  /* ── Shadows — layered and soft, each with a bright top rim ───────────────── */
+  --shadow-2xs: 0 1px 2px 0 rgb(30 41 82 / 0.05);
+  --shadow-xs:  inset 0 1px 0 rgb(255 255 255 / 0.7), 0 1px 3px 0 rgb(30 41 82 / 0.07);
+  --shadow-sm:  inset 0 1px 0 rgb(255 255 255 / 0.85), inset 0 0 0 1px rgb(255 255 255 / 0.35), 0 8px 24px -12px rgb(30 41 82 / 0.22), 0 2px 6px -2px rgb(30 41 82 / 0.07);
+  --shadow:     inset 0 1px 0 rgb(255 255 255 / 0.85), 0 10px 28px -12px rgb(30 41 82 / 0.24), 0 2px 6px -2px rgb(30 41 82 / 0.08);
+  --shadow-md:  inset 0 1px 0 rgb(255 255 255 / 0.85), 0 12px 32px -12px rgb(30 41 82 / 0.26), 0 3px 8px -3px rgb(30 41 82 / 0.08);
+  --shadow-lg:  inset 0 1px 0 rgb(255 255 255 / 0.85), 0 18px 44px -14px rgb(30 41 82 / 0.30), 0 4px 10px -4px rgb(30 41 82 / 0.08);
+  --shadow-xl:  inset 0 1px 0 rgb(255 255 255 / 0.9), 0 24px 60px -16px rgb(30 41 82 / 0.34), 0 6px 14px -6px rgb(30 41 82 / 0.10);
+  --shadow-2xl: inset 0 1px 0 rgb(255 255 255 / 0.9), 0 32px 80px -20px rgb(30 41 82 / 0.38), 0 8px 18px -8px rgb(30 41 82 / 0.12);
+
+  /* ── Accent: Apple system blue (replaces indigo app-wide) ── */
+  --color-indigo-50:  rgb(0 113 227 / 0.08);
+  --color-indigo-100: rgb(0 113 227 / 0.14);
+  --color-indigo-200: #b6d6fb;
+  --color-indigo-300: #7cb5f5;
+  --color-indigo-400: #3d95ef;
+  --color-indigo-500: #0a84ff;
+  --color-indigo-600: #0071e3;
+  --color-indigo-700: #0058b8;
+  --color-indigo-800: #00479a;
+  --color-indigo-900: #003773;
+  --color-indigo-950: #00244d;
+
+  /* ── Light slates become translucent ink / light so they tint the glass ── */
+  --color-slate-50:  rgb(255 255 255 / 0.5);
+  --color-slate-100: rgb(15 23 42 / 0.055);
+  --color-slate-200: rgb(15 23 42 / 0.11);
+
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', 'Helvetica Neue', system-ui, sans-serif;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Glass tokens
+   ══════════════════════════════════════════════════════════════════════════════ */
+:root {
+  --ink:          #1d1d1f;
+  --ink-2:        #515154;
+  --ink-3:        #86868b;
+  --accent:       #0071e3;
+
+  --glass-fill:        rgb(255 255 255 / 0.56);
+  --glass-fill-strong: rgb(255 255 255 / 0.78);
+  --glass-rim:         rgb(255 255 255 / 0.72);
+  --glass-blur:        blur(24px) saturate(180%);
+  --glass-sheen:       linear-gradient(180deg, rgb(255 255 255 / 0.42) 0%, rgb(255 255 255 / 0) 46%);
+  --glass-shadow:      inset 0 1px 0 rgb(255 255 255 / 0.9), inset 0 0 0 1px rgb(255 255 255 / 0.32),
+                       inset 0 -1px 0 rgb(15 23 42 / 0.03),
+                       0 12px 34px -14px rgb(30 41 82 / 0.26), 0 2px 8px -3px rgb(30 41 82 / 0.08);
+  --glass-shadow-lift: inset 0 1px 0 rgb(255 255 255 / 0.95), inset 0 0 0 1px rgb(255 255 255 / 0.4),
+                       0 22px 50px -16px rgb(30 41 82 / 0.32), 0 6px 14px -6px rgb(30 41 82 / 0.10);
+
+  /* Spring-ish curves: a slight overshoot for movement, a soft settle for fades */
+  --ease-spring: cubic-bezier(0.34, 1.42, 0.64, 1);
+  --ease-out:    cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Printed / previewed documents are paper: restore the stock Tailwind palette,
+   5px corners and flat shadows so invoices, quotations and vouchers render
+   exactly as before (on screen, in the print portal and in PDFs). */
+.doc-paper, #__print_doc__ {
+  --color-indigo-50:  oklch(96.2% 0.018 272.314);
+  --color-indigo-100: oklch(93% 0.034 272.788);
+  --color-indigo-200: oklch(87% 0.065 274.039);
+  --color-indigo-300: oklch(78.5% 0.115 274.713);
+  --color-indigo-400: oklch(67.3% 0.182 276.935);
+  --color-indigo-500: oklch(58.5% 0.233 277.117);
+  --color-indigo-600: oklch(51.1% 0.262 276.966);
+  --color-indigo-700: oklch(45.7% 0.24 277.023);
+  --color-indigo-800: oklch(39.8% 0.195 277.366);
+  --color-indigo-900: oklch(35.9% 0.144 278.697);
+  --color-indigo-950: oklch(25.7% 0.09 281.288);
+  --color-slate-50:   oklch(98.4% 0.003 247.858);
+  --color-slate-100:  oklch(96.8% 0.007 247.896);
+  --color-slate-200:  oklch(92.9% 0.013 255.508);
+  --radius-xs: 5px; --radius-sm: 5px; --radius: 5px; --radius-md: 5px; --radius-lg: 5px;
+  --radius-xl: 5px; --radius-2xl: 5px; --radius-3xl: 5px; --radius-4xl: 5px;
+  --shadow-xs: 0 1px 3px 0 rgb(0 0 0 / 0.05);
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.04);
+  --shadow:    0 2px 6px 0 rgb(0 0 0 / 0.07), 0 1px 3px -1px rgb(0 0 0 / 0.05);
+  --shadow-md: 0 3px 10px -1px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.04);
+  --shadow-lg: 0 6px 20px -2px rgb(0 0 0 / 0.09), 0 3px 6px -3px rgb(0 0 0 / 0.04);
+  --shadow-xl: 0 10px 30px -4px rgb(0 0 0 / 0.10), 0 4px 8px -4px rgb(0 0 0 / 0.05);
   --shadow-2xl: 0 20px 48px -8px rgb(0 0 0 / 0.12), 0 8px 16px -8px rgb(0 0 0 / 0.05);
+  background-color: #fff;
+  color: #0f172a;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
@@ -46,7 +124,6 @@
 
 html {
   scroll-behavior: smooth;
-  /* Retina-quality sub-pixel font rendering — critical for iOS look */
   -webkit-font-smoothing:  antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -54,16 +131,31 @@ html {
 
 body {
   margin: 0;
-  /* Genuine iOS system font stack */
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue',
-               'Inter', system-ui, sans-serif;
-  /* iOS system grouped background */
-  background: #f2f2f7;
-  color: #1c1c1e;
+  font-family: var(--font-sans);
+  background: #eef1f8;
+  color: var(--ink);
   font-size: 16px;
   line-height: 1.5;
-  /* Prevent rubber-band overscroll on macOS Safari */
+  letter-spacing: -0.006em;
   overscroll-behavior: none;
+}
+
+/* Wallpaper behind the glass — soft colour fields give the frosted surfaces
+   something to refract. Fixed so it doesn't scroll with the content. */
+@media screen {
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(42vmax 42vmax at 6% 0%,   rgb(167 139 250 / 0.34), transparent 64%),
+      radial-gradient(40vmax 40vmax at 96% 6%,  rgb(56 189 248 / 0.30), transparent 62%),
+      radial-gradient(46vmax 46vmax at 82% 100%, rgb(251 191 36 / 0.22), transparent 64%),
+      radial-gradient(42vmax 42vmax at 10% 96%, rgb(244 114 182 / 0.20), transparent 64%),
+      linear-gradient(160deg, #f3f5fb 0%, #eef1f8 50%, #f6f3f1 100%);
+  }
 }
 
 #root {
@@ -72,56 +164,97 @@ body {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
-   Sidebar nav — staggered entrance + active glow
+   Glass surfaces — opt-in utilities used by the shell and dashboard
    ══════════════════════════════════════════════════════════════════════════════ */
-@keyframes navItemIn {
-  from { opacity: 0; transform: translateX(-6px); }
-  to   { opacity: 1; }
+.glass, .glass-strong {
+  background-color: var(--glass-fill);
+  background-image: var(--glass-sheen);
+  -webkit-backdrop-filter: var(--glass-blur);
+          backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-rim);
+  box-shadow: var(--glass-shadow);
+}
+.glass-strong { background-color: var(--glass-fill-strong); }
+
+/* Tinted dark glass — for hero cards; white text stays crisp */
+.glass-dark {
+  color: #fff;
+  background-color: rgb(26 26 32 / 0.88);
+  background-image: linear-gradient(180deg, rgb(255 255 255 / 0.14) 0%, rgb(255 255 255 / 0) 42%);
+  -webkit-backdrop-filter: var(--glass-blur);
+          backdrop-filter: var(--glass-blur);
+  border: 1px solid rgb(255 255 255 / 0.14);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.22), 0 20px 46px -18px rgb(15 20 40 / 0.55), 0 4px 12px -4px rgb(15 20 40 / 0.2);
 }
 
-/* Each nav link animates in with a slight stagger */
-.sidebar-nav a {
-  animation: navItemIn 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+/* Hover lift + press — spring settle */
+.glass-lift, .card-hover {
+  transition: transform 0.45s var(--ease-spring), box-shadow 0.3s var(--ease-out), background-color 0.2s ease;
 }
-.sidebar-nav a:nth-child(1) { animation-delay: 0.04s; }
-.sidebar-nav a:nth-child(2) { animation-delay: 0.08s; }
-.sidebar-nav a:nth-child(3) { animation-delay: 0.12s; }
-.sidebar-nav a:nth-child(4) { animation-delay: 0.16s; }
-.sidebar-nav a:nth-child(5) { animation-delay: 0.20s; }
-.sidebar-nav a:nth-child(6) { animation-delay: 0.24s; }
-.sidebar-nav a:nth-child(7) { animation-delay: 0.28s; }
-.sidebar-nav a:nth-child(8) { animation-delay: 0.32s; }
+.glass-lift:hover, .card-hover:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--glass-shadow-lift);
+}
+.glass-lift:active, .card-hover:active {
+  transform: translateY(-1px) scale(0.985);
+  transition-duration: 0.12s;
+}
 
-/* Active item: subtle inner glow on the left edge */
-.sidebar-nav a[aria-current="page"]::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 3px;
-  height: 14px;
-  background: rgba(255,255,255,0.65);
-  border-radius: 0 2px 2px 0;
-  animation: navItemIn 0.18s ease both;
+/* Small glass chip/pill (e.g. stat chips on the dark hero) */
+.glass-chip {
+  background: rgb(255 255 255 / 0.14);
+  border: 1px solid rgb(255 255 255 / 0.16);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.2);
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
-   Scrollbar — thin, iOS-inspired
+   Sidebar nav — staggered entrance, sliding active capsule
    ══════════════════════════════════════════════════════════════════════════════ */
-::-webkit-scrollbar          { width: 4px; height: 4px; }
-::-webkit-scrollbar-track    { background: transparent; }
-::-webkit-scrollbar-thumb    { background: rgb(0 0 0 / 0.15); border-radius: 9999px; }
-::-webkit-scrollbar-thumb:hover { background: rgb(0 0 0 / 0.25); }
+@keyframes navItemIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; }
+}
+.sidebar-nav a {
+  animation: navItemIn 0.5s var(--ease-spring) backwards;
+}
+.sidebar-nav a:nth-of-type(1)  { animation-delay: 0.02s; }
+.sidebar-nav a:nth-of-type(2)  { animation-delay: 0.05s; }
+.sidebar-nav a:nth-of-type(3)  { animation-delay: 0.08s; }
+.sidebar-nav a:nth-of-type(4)  { animation-delay: 0.11s; }
+.sidebar-nav a:nth-of-type(5)  { animation-delay: 0.14s; }
+.sidebar-nav a:nth-of-type(6)  { animation-delay: 0.17s; }
 
-.sidebar-nav::-webkit-scrollbar-thumb       { background: rgb(255 255 255 / 0.12); }
-.sidebar-nav::-webkit-scrollbar-thumb:hover { background: rgb(255 255 255 / 0.22); }
+.nav-item {
+  position: relative;
+  transition: background-color 0.2s ease, color 0.2s ease, transform 0.4s var(--ease-spring), box-shadow 0.25s ease;
+}
+.nav-item:hover  { background-color: rgb(255 255 255 / 0.55); }
+.nav-item:active { transform: scale(0.97); transition-duration: 0.1s; }
+.nav-item[aria-current="page"] {
+  color: var(--accent);
+  background-color: rgb(255 255 255 / 0.82);
+  background-image: var(--glass-sheen);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.95), inset 0 0 0 1px rgb(255 255 255 / 0.5), 0 6px 16px -8px rgb(30 41 82 / 0.28);
+}
+.nav-item[aria-current="page"] .nav-icon {
+  color: #fff;
+  background: linear-gradient(180deg, #2b8cff, #0071e3);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.35), 0 3px 8px -2px rgb(0 113 227 / 0.5);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Scrollbar — thin, overlay-like
+   ══════════════════════════════════════════════════════════════════════════════ */
+::-webkit-scrollbar          { width: 6px; height: 6px; }
+::-webkit-scrollbar-track    { background: transparent; }
+::-webkit-scrollbar-thumb    { background: rgb(0 0 0 / 0.14); border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: rgb(0 0 0 / 0.26); }
 
 /* ══════════════════════════════════════════════════════════════════════════════
    Keyframes
    ══════════════════════════════════════════════════════════════════════════════ */
 @keyframes fadeUp {
-  from { opacity: 0; transform: translateY(8px); }
+  from { opacity: 0; transform: translateY(12px) scale(0.992); }
   to   { opacity: 1; }
 }
 @keyframes fadeIn {
@@ -129,11 +262,19 @@ body {
   to   { opacity: 1; }
 }
 @keyframes slideInRight {
-  from { opacity: 0; transform: translateX(100%); }
+  from { opacity: 0.6; transform: translateX(100%); }
+  to   { opacity: 1; }
+}
+@keyframes slideInLeft {
+  from { opacity: 0.6; transform: translateX(-104%); }
   to   { opacity: 1; }
 }
 @keyframes scaleIn {
-  from { opacity: 0; transform: scale(0.97) translateY(-4px); }
+  from { opacity: 0; transform: scale(0.94) translateY(10px); }
+  to   { opacity: 1; }
+}
+@keyframes popIn {
+  from { opacity: 0; transform: scale(0.96) translateY(-6px); }
   to   { opacity: 1; }
 }
 @keyframes spin {
@@ -143,60 +284,46 @@ body {
 /* ══════════════════════════════════════════════════════════════════════════════
    Animation classes
    ══════════════════════════════════════════════════════════════════════════════ */
-.animate-page      { animation: fadeUp       0.24s cubic-bezier(0.22, 1, 0.36, 1) both; }
-.animate-overlay   { animation: fadeIn       0.18s ease both; }
-.animate-modal     { animation: scaleIn      0.22s cubic-bezier(0.22, 1, 0.36, 1) both; }
-.animate-drawer    { animation: slideInRight 0.28s cubic-bezier(0.32, 0.72, 0, 1) both; }
+/* Entrance animations fill `backwards` only: once finished they leave no
+   transform behind, which would otherwise trap position:fixed modals inside. */
+.animate-page      { animation: fadeUp       0.5s  var(--ease-out) backwards; }
+.animate-overlay   { animation: fadeIn       0.25s ease backwards; }
+.animate-modal     { animation: scaleIn      0.5s  var(--ease-spring) backwards; }
+.animate-drawer    { animation: slideInRight 0.5s  cubic-bezier(0.32, 0.72, 0, 1) backwards; }
+.animate-drawer-left { animation: slideInLeft 0.5s cubic-bezier(0.32, 0.72, 0, 1) backwards; }
+.animate-pop       { animation: popIn        0.38s var(--ease-spring) backwards; }
 .animate-spin-slow { animation: spin 0.8s linear infinite; }
-/* Spinners stay circles even though rounded-full is 5px */
-.animate-spin.rounded-full, .animate-spin-slow.rounded-full { border-radius: 9999px; }
 
 /* ══════════════════════════════════════════════════════════════════════════════
-   Focus ring — iOS blue, tight offset
+   Focus ring — soft system-blue halo
    ══════════════════════════════════════════════════════════════════════════════ */
 :focus-visible {
-  outline: 2px solid #4f46e5;
+  outline: 2px solid rgb(0 113 227 / 0.7);
   outline-offset: 2px;
-  border-radius: 5px;
 }
 
-/* ══════════════════════════════════════════════════════════════════════════════
-   Global input / select refinements
-   iOS inputs: very clean, thin separator-style border
-   ══════════════════════════════════════════════════════════════════════════════ */
 input, select, textarea {
   font-family: inherit;
   font-size: inherit;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
-   Card hover lift — subtle iOS-style lift
-   ══════════════════════════════════════════════════════════════════════════════ */
-.card-hover {
-  transition: box-shadow 0.18s ease, transform 0.18s ease;
-}
-.card-hover:hover {
-  box-shadow: 0 6px 20px -2px rgb(0 0 0 / 0.10), 0 2px 4px rgb(0 0 0 / 0.04);
-  transform: translateY(-1px);
-}
-
-/* ══════════════════════════════════════════════════════════════════════════════
-   Modal / sheet overlay — iOS uses backdrop blur
+   Modal / sheet overlay — light dim + heavy blur, so the page frosts behind
    ══════════════════════════════════════════════════════════════════════════════ */
 .ios-overlay {
-  backdrop-filter: blur(8px) saturate(180%);
-  -webkit-backdrop-filter: blur(8px) saturate(180%);
-  background: rgb(0 0 0 / 0.45);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+          backdrop-filter: blur(14px) saturate(160%);
+  background: rgb(15 20 40 / 0.28);
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
-   Table — iOS grouped list feel
+   Table — grouped list feel
    ══════════════════════════════════════════════════════════════════════════════ */
 .ios-table tbody tr {
-  transition: background-color 0.12s ease;
+  transition: background-color 0.15s ease;
 }
 .ios-table tbody tr:hover {
-  background-color: rgb(0 0 0 / 0.025);
+  background-color: rgb(255 255 255 / 0.5);
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
@@ -514,47 +641,134 @@ textarea {
 .uppercase.tracking-wider  { letter-spacing: 0.06em; }
 
 
-/* ── Warm theme (whole app): cream backgrounds, charcoal + yellow accents, softer cards ── */
-.warm-theme { font-family: 'Outfit', 'Inter', system-ui, sans-serif; }
-.warm-theme .bg-indigo-600 { background-color: #262626 !important; }
-.warm-theme .hover\:bg-indigo-700:hover { background-color: #000 !important; }
-.warm-theme .border-indigo-600 { border-color: #262626 !important; }
-.warm-theme .text-indigo-500,
-.warm-theme .text-indigo-600,
-.warm-theme .text-indigo-700,
-.warm-theme .text-indigo-800,
-.warm-theme .hover\:text-indigo-600:hover,
-.warm-theme .hover\:text-indigo-700:hover { color: #262626 !important; }
-.warm-theme .bg-indigo-50,
-.warm-theme .bg-indigo-100,
-.warm-theme .hover\:bg-indigo-50:hover,
-.warm-theme .hover\:bg-indigo-100:hover { background-color: #fbf0cc !important; }
-.warm-theme .border-indigo-100,
-.warm-theme .border-indigo-200,
-.warm-theme .border-indigo-300,
-.warm-theme .border-indigo-400,
-.warm-theme .hover\:border-indigo-300:hover,
-.warm-theme .focus\:border-indigo-400:focus { border-color: #f1dc9a !important; }
-.warm-theme .ring-indigo-200,
-.warm-theme .ring-indigo-300,
-.warm-theme .focus\:ring-indigo-100:focus,
-.warm-theme .focus\:ring-indigo-500\/20:focus { --tw-ring-color: #f1dc9a !important; }
-/* surfaces */
-.warm-theme .bg-\[\#f2f2f7\] { background-color: #fbf4df !important; }
-.warm-theme .border-slate-200 { border-color: #efe6d0; }
-.warm-theme .border-slate-100 { border-color: #f4ecd6; }
-.warm-theme .divide-slate-100 > :not(:last-child) { border-color: #f4ecd6; }
-.warm-theme .bg-slate-50 { background-color: #fbf6e8; }
-.warm-theme .bg-slate-100 { background-color: #f6efdc; }
-.warm-theme .shadow-sm { box-shadow: 0 8px 28px -14px rgba(120, 90, 20, .22); }
-/* sidebar: yellow active item */
-.warm-theme aside a.bg-indigo-600 { background-color: #f9c846 !important; }
-.warm-theme aside a.bg-indigo-600, .warm-theme aside a.bg-indigo-600 * { color: #262626 !important; }
-/* ── Warm theme: same 5px rounding on buttons and fields everywhere ── */
-.warm-theme button:not(.text-left):not([role="tab"]),
-.warm-theme input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
-.warm-theme select,
-.warm-theme textarea { border-radius: 5px; }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Liquid Glass — app-wide surface mapping
+   `glass-theme` sits on <body>, so pages, portals and modals all pick it up
+   without per-page rewrites. Screen only: print stays untouched, and anything
+   inside `.doc-paper` (invoice / quotation / voucher / packing-list paper)
+   is excluded so documents remain plain white.
+   ══════════════════════════════════════════════════════════════════════════════ */
+@media screen {
+  /* Cards and panels: frosted white with a sheen and a bright rim */
+  .glass-theme .bg-white:not(:where(.doc-paper, .doc-paper *, input, select, textarea)) {
+    background-color: var(--glass-fill);
+  }
+  .glass-theme :is(.rounded-xl, .rounded-2xl, .rounded-3xl).bg-white:not(:where(.doc-paper, .doc-paper *)) {
+    background-image: var(--glass-sheen);
+  }
+  .glass-theme .bg-white.border:not(:where(.doc-paper, .doc-paper *)) {
+    border-color: var(--glass-rim);
+  }
+  .glass-theme button.bg-white:hover:not(:disabled):not(:where(.doc-paper *)),
+  .glass-theme a.bg-white:hover:not(:where(.doc-paper *)) {
+    background-color: rgb(255 255 255 / 0.86);
+  }
+
+  /* Floating layers (popovers, menus, sheets, drawers): denser glass.
+     Sheets get no backdrop-filter of their own: the overlay behind them already
+     frosts the page, and a filter here would trap any nested fixed dialog. */
+  .glass-theme :is(.absolute, .fixed).bg-white:is(.shadow-lg, .shadow-xl, .shadow-2xl):not(:where(.doc-paper, .doc-paper *)),
+  .glass-theme .fixed.inset-0 > .bg-white:not(:where(.doc-paper, .doc-paper *)) {
+    background-color: var(--glass-fill-strong);
+    background-image: var(--glass-sheen);
+    border-color: var(--glass-rim);
+  }
+  .glass-theme .absolute.bg-white:is(.shadow-lg, .shadow-xl, .shadow-2xl):not(:where(.doc-paper *)) {
+    -webkit-backdrop-filter: var(--glass-blur);
+            backdrop-filter: var(--glass-blur);
+    animation: popIn 0.32s var(--ease-spring) backwards;
+    transform-origin: top center;
+  }
+  /* Modal sheets inside a full-screen overlay spring in */
+  .glass-theme .fixed.inset-0.flex > .bg-white:not(:where(.doc-paper, .doc-paper *)) {
+    animation: scaleIn 0.5s var(--ease-spring) backwards;
+  }
+
+  /* Full-screen dimmers: lighter tint, frosted page behind */
+  .glass-theme .fixed.inset-0:is([class*="bg-black/"], [class*="bg-slate-900/"]) {
+    background-color: rgb(15 20 40 / 0.26);
+    -webkit-backdrop-filter: blur(12px) saturate(160%);
+            backdrop-filter: blur(12px) saturate(160%);
+    animation: fadeIn 0.25s ease backwards;
+  }
+
+  /* Old page-background colour used by sticky toolbars → frosted strip */
+  .glass-theme .bg-\[\#f2f2f7\] {
+    background-color: rgb(238 241 248 / 0.6) !important;
+    -webkit-backdrop-filter: var(--glass-blur);
+            backdrop-filter: var(--glass-blur);
+  }
+
+  /* Ink: slightly warmer neutral text, still high contrast on glass */
+  .glass-theme .text-slate-900:not(:where(.doc-paper *)) { color: var(--ink); }
+  .glass-theme .text-slate-800:not(:where(.doc-paper *)) { color: #26262b; }
+  .glass-theme .text-slate-400:not(:where(.doc-paper *)) { color: #7c7c85; }
+
+  /* ── Fields: frosted wells, system-blue focus halo ─────────────────────────
+     :where() keeps specificity at zero so per-field utilities still win. */
+  :where(.glass-theme) :where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]), select, textarea):where(:not(.doc-paper *)) {
+    border-radius: 12px;
+    transition: border-color 0.2s ease, box-shadow 0.25s var(--ease-out), background-color 0.2s ease;
+  }
+  .glass-theme :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]), select, textarea):is(.border, [class*="border-slate"]):not(:where(.doc-paper *, .bg-transparent)) {
+    background-color: rgb(255 255 255 / 0.72);
+    box-shadow: inset 0 1px 2px rgb(15 23 42 / 0.05);
+  }
+  .glass-theme :is(input, select, textarea):is(.border, [class*="border-slate"]):focus:not(:where(.doc-paper *)) {
+    background-color: #fff;
+    border-color: rgb(0 113 227 / 0.55);
+    box-shadow: 0 0 0 4px rgb(0 113 227 / 0.16);
+  }
+  .glass-theme input[type="checkbox"], .glass-theme input[type="radio"], .glass-theme input[type="range"] {
+    accent-color: var(--accent);
+  }
+
+  /* ── Buttons: pills, primary gets a glossy system-blue fill ──────────────── */
+  .glass-theme :is(button, a)[class*="px-"][class*="py-"]:not(.text-left, [role="tab"], [class*="border-b-2"], [class*="rounded-t"], [class*="rounded-l"], [class*="rounded-r"], [class*="rounded-none"]):not(:where(.doc-paper *)) {
+    border-radius: 9999px;
+  }
+  .glass-theme :is(button, a).bg-indigo-600:not(:where(.doc-paper *)) {
+    background-image: linear-gradient(180deg, rgb(255 255 255 / 0.18), rgb(255 255 255 / 0) 55%);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.28), 0 6px 16px -6px rgb(0 113 227 / 0.55);
+  }
+  .glass-theme button:not(:disabled):not(:where(.doc-paper *)) {
+    transition-property: color, background-color, border-color, box-shadow, transform, opacity;
+    transition-duration: 0.2s, 0.2s, 0.2s, 0.25s, 0.4s, 0.2s;
+    transition-timing-function: ease, ease, ease, ease, var(--ease-spring), ease;
+  }
+  .glass-theme button:not(:disabled):active:not(:where(.doc-paper *)) {
+    transform: scale(0.96);
+    transition-duration: 0.08s;
+  }
+
+  /* Tables sitting on glass: header row as a faint frosted band */
+  .glass-theme table thead tr.bg-slate-50:not(:where(.doc-paper *)),
+  .glass-theme table thead.bg-slate-50:not(:where(.doc-paper *)) {
+    background-color: rgb(255 255 255 / 0.42);
+  }
+
+  /* Document preview stage: a calm neutral backdrop behind the paper */
+  .glass-theme .bg-slate-100:has(> .doc-paper) {
+    background-color: rgb(15 23 42 / 0.06);
+  }
+}
 
 /* Document numbers and codes inside tables never break across lines */
-.warm-theme table .font-mono { white-space: nowrap; }
+.glass-theme table .font-mono { white-space: nowrap; }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Reduced motion — keep fades short, drop movement; spinners still spin
+   ══════════════════════════════════════════════════════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *:not(.animate-spin, .animate-spin-slow),
+  *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0s !important;
+    transition-duration: 0.01ms !important;
+  }
+  .glass-lift:hover, .card-hover:hover, .glass-lift:active, .card-hover:active,
+  .glass-theme button:active { transform: none !important; }
+}

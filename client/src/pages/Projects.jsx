@@ -1218,7 +1218,7 @@ function ProjectDetail({ projectId, onBack, catalogProducts, currencies, baseCur
   if (printMode) {
     return (
       <>
-        <div className="fixed inset-0 z-[200] bg-white overflow-auto print:relative print:inset-auto" ref={printRef}>
+        <div className="doc-paper fixed inset-0 z-[200] bg-white overflow-auto print:relative print:inset-auto" ref={printRef}>
           <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-200 print:hidden">
             <button onClick={() => setPrint(null)} className="flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900">
               <X size={16} /> Close Preview

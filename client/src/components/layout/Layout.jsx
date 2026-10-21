@@ -1,6 +1,6 @@
 import { Outlet, useLocation } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import TopNav from './TopNav';
+import Sidebar from './Sidebar';
 import api from '../../lib/api';
 import { setDisplayCurrency } from '../../lib/currency';
 
@@ -22,12 +22,13 @@ export default function Layout() {
   }, []);
 
   return (
-    <div className="warm-theme min-h-screen flex flex-col" style={{ background: 'linear-gradient(135deg,#f8edcf 0%,#fcf5e4 38%,#fffdf8 100%)' }}>
-      <TopNav />
+    <div className="min-h-screen flex flex-col">
+      <Sidebar />
 
-      {/* Page content — remounts when the default currency changes (not on Settings, so its tab is kept) */}
-      <main className="flex-1 flex flex-col overflow-x-clip">
-        <div key={pathname + (pathname === '/settings' ? '' : '#' + version)} className="animate-page p-4 md:p-6 lg:px-8 lg:py-6 flex-1">
+      {/* Page content sits beside the fixed glass rail on desktop.
+          Remounts when the default currency changes (not on Settings, so its tab is kept) */}
+      <main className="flex-1 flex flex-col overflow-x-clip lg:pl-[264px] print:pl-0">
+        <div key={pathname + (pathname === '/settings' ? '' : '#' + version)} className="animate-page p-4 md:p-6 lg:pl-6 lg:pr-8 lg:py-6 flex-1">
           {ready ? <Outlet /> : null}
         </div>
       </main>

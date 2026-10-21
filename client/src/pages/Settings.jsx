@@ -1202,7 +1202,7 @@ function AppBranding() {
           placeholder="e.g. My Fashion CRM"
           maxLength={50}
         />
-        <p className="text-2xs text-slate-400 mt-1.5">Shown in the top bar and browser title</p>
+        <p className="text-2xs text-slate-400 mt-1.5">Shown in the sidebar and browser title</p>
       </div>
 
       {/* ── Live Preview ── */}
@@ -2072,7 +2072,7 @@ export default function Settings() {
               </div>
               <div>
                 <h2 className="text-base font-semibold text-slate-900">App Branding</h2>
-                <p className="text-xs text-slate-500">Name and logo shown in the top bar</p>
+                <p className="text-xs text-slate-500">Name and logo shown in the sidebar</p>
               </div>
             </div>
             <AppBranding />

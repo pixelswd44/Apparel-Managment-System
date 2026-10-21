@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, FileText, Receipt, Users, Layers, Settings, Box, AlertTriangle, Flame,
-  UserCheck, Wallet, LogOut, ChevronDown, KeyRound, Eye, EyeOff, Check, X, Menu, BookMarked,
+  UserCheck, Wallet, LogOut, ChevronUp, KeyRound, Eye, EyeOff, Check, X, Menu, BookMarked,
 } from 'lucide-react';
 import { useDirty } from '../../lib/dirtyContext';
 import { useAuth } from '../../lib/authContext';
@@ -39,12 +39,12 @@ function ChangePasswordModal({ onClose }) {
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 bg-indigo-50 rounded-xl flex items-center justify-center">
+            <div className="w-9 h-9 bg-indigo-50 rounded-full flex items-center justify-center">
               <KeyRound size={16} className="text-indigo-600" />
             </div>
             <h3 className="font-bold text-slate-900">Change Password</h3>
           </div>
-          <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg transition-colors"><X size={16} /></button>
+          <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-full transition-colors"><X size={16} /></button>
         </div>
 
         {success ? (
@@ -100,7 +100,7 @@ function ChangePasswordModal({ onClose }) {
   );
 }
 
-// Top navigation: single links and dropdown groups, like the reference design.
+// Sidebar navigation: single links and labelled groups.
 const NAV = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { label: 'Sales', items: [
@@ -116,21 +116,20 @@ const NAV = [
     { to: '/expenses', icon: Wallet,     label: 'Expenses' },
     { to: '/ledger',   icon: BookMarked, label: 'Ledger' },
   ] },
-  { to: '/payroll',  icon: UserCheck, label: 'Employees' },
-  { to: '/settings', icon: Settings,  label: 'Settings' },
+  { label: '', items: [
+    { to: '/payroll',  icon: UserCheck, label: 'Employees' },
+    { to: '/settings', icon: Settings,  label: 'Settings' },
+  ] },
 ];
 
-const isOn = (pathname, to) => (to === '/' ? pathname === '/' : pathname === to || pathname.startsWith(to + '/'));
-
-export default function TopNav() {
+export default function Sidebar() {
   const { isDirty, setDirty } = useDirty();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [pendingTo, setPendingTo]         = useState(null);
   const [userMenuOpen, setUserMenuOpen]   = useState(false);
-  const [groupOpen, setGroupOpen]         = useState(null); // label of the open dropdown
-  const [menuOpen, setMenuOpen]           = useState(false); // mobile menu
+  const [menuOpen, setMenuOpen]           = useState(false); // mobile drawer
   const [changePwdOpen, setChangePwdOpen] = useState(false);
 
   // ── App Branding ─────────────────────────────────────────────────────────
@@ -153,12 +152,11 @@ export default function TopNav() {
     return () => window.removeEventListener('branding-updated', loadBranding);
   }, []);
 
-  useEffect(() => { setMenuOpen(false); setUserMenuOpen(false); setGroupOpen(null); }, [pathname]);
+  useEffect(() => { setMenuOpen(false); setUserMenuOpen(false); }, [pathname]);
 
   function handleNavClick(e, to) {
     setUserMenuOpen(false);
     setMenuOpen(false);
-    setGroupOpen(null);
     if (isDirty) { e.preventDefault(); setPendingTo(to); }
   }
 
@@ -169,118 +167,116 @@ export default function TopNav() {
     navigate(dest);
   }
 
-  const logo = (
-    <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center bg-[#262626]">
+  const logo = size => (
+    <div className={`${size} rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center bg-gradient-to-b from-[#3a3a40] to-[#1d1d1f] shadow-[inset_0_1px_0_rgba(255,255,255,.25),0_4px_10px_-4px_rgba(0,0,0,.4)]`}>
       {appLogo
-        ? <img src={imgUrl(appLogo)} alt="logo" className="w-full h-full object-contain" />
+        ? <img src={imgUrl(appLogo)} alt="logo" className="w-full h-full object-contain bg-white" />
         : <Layers size={15} className="text-white" />}
     </div>
   );
 
-  const userMenu = (
-    <div className="relative">
-      <button onClick={() => setUserMenuOpen(v => !v)} title={user?.name}
-        className="flex items-center gap-1.5 p-1 pr-2 rounded-full bg-white/85 border border-white shadow-sm hover:bg-white transition-colors">
-        <span className="w-9 h-9 rounded-full bg-[#f9c846] text-[#262626] text-sm font-semibold flex items-center justify-center">
-          {user?.name?.charAt(0)?.toUpperCase() || '?'}
-        </span>
-        <ChevronDown size={13} className={`text-slate-400 transition-transform ${userMenuOpen ? 'rotate-180' : ''}`} />
-      </button>
-      {userMenuOpen && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setUserMenuOpen(false)} />
-          <div className="absolute right-0 mt-2 w-56 bg-white border border-[#efe6d0] rounded-3xl shadow-xl z-50 overflow-hidden">
-            <div className="px-4 py-3 border-b border-[#f4ecd6]">
-              <p className="text-sm font-semibold text-slate-800 truncate">{user?.name}</p>
-              <p className="text-xs text-slate-400 truncate">{user?.email}</p>
-            </div>
-            <button onClick={() => { setUserMenuOpen(false); setChangePwdOpen(true); }}
-              className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-slate-600 hover:bg-[#fbf6e8] transition-colors text-left">
-              <KeyRound size={14} /> Change Password
-            </button>
-            <button onClick={logout}
-              className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-rose-600 hover:bg-rose-50 transition-colors text-left">
-              <LogOut size={14} /> Sign Out
-            </button>
-          </div>
-        </>
-      )}
-    </div>
+  const initial = user?.name?.charAt(0)?.toUpperCase() || '?';
+
+  const link = ({ to, icon: Icon, label }) => (
+    <NavLink key={to} to={to} end={to === '/'} onClick={e => handleNavClick(e, to)}
+      className="nav-item flex items-center gap-3 pl-1.5 pr-3 py-1.5 rounded-full text-sm font-medium text-[#3a3a3f]">
+      <span className="nav-icon w-8 h-8 rounded-full grid place-items-center flex-shrink-0 bg-white/70 text-[#515154] shadow-[inset_0_1px_0_rgba(255,255,255,.95),0_1px_3px_rgba(30,41,82,.08)] transition-colors">
+        <Icon size={15} />
+      </span>
+      <span className="truncate">{label}</span>
+    </NavLink>
   );
 
-  const pill = on => `flex items-center gap-1 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors select-none ${
-    on ? 'bg-[#262626] text-white' : 'text-[#4b4638] hover:bg-[#fbf0cc]'}`;
+  // Shared sidebar body — used by the fixed desktop rail and the mobile drawer
+  const body = (
+    <>
+      <div className="flex items-center gap-3 px-2 pt-1 pb-3">
+        {logo('w-10 h-10')}
+        <div className="min-w-0">
+          <p className="font-semibold text-[#1d1d1f] text-[15px] tracking-tight truncate">{appName}</p>
+          <p className="text-[11px] text-[#86868b] truncate">Business workspace</p>
+        </div>
+      </div>
+
+      <nav className="sidebar-nav flex-1 min-h-0 overflow-y-auto -mx-1 px-1 pb-2">
+        {NAV.map(item => item.items ? (
+          <div key={item.label || item.items[0].to} className="mt-3">
+            {item.label && <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-[#86868b]">{item.label}</p>}
+            <div className="space-y-0.5">{item.items.map(link)}</div>
+          </div>
+        ) : (
+          <div key={item.to} className="space-y-0.5">{link(item)}</div>
+        ))}
+      </nav>
+
+      {/* User card + menu */}
+      <div className="relative pt-2 border-t border-white/60">
+        <button onClick={() => setUserMenuOpen(v => !v)}
+          className="w-full flex items-center gap-2.5 p-1.5 pr-3 rounded-full hover:bg-white/60 transition-colors text-left">
+          <span className="w-9 h-9 rounded-full bg-gradient-to-b from-[#4aa3ff] to-[#0071e3] text-white text-sm font-semibold flex items-center justify-center flex-shrink-0 shadow-[inset_0_1px_0_rgba(255,255,255,.35)]">
+            {initial}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-medium text-[#1d1d1f] truncate">{user?.name}</span>
+            <span className="block text-[11px] text-[#86868b] truncate">{user?.email}</span>
+          </span>
+          <ChevronUp size={14} className={`text-[#86868b] transition-transform duration-300 ${userMenuOpen ? '' : 'rotate-180'}`} />
+        </button>
+        {userMenuOpen && (
+          <>
+            {/* Click-away layer sits under the rail (z-30), portalled so the rail's blur can't confine it */}
+            {createPortal(<div className="fixed inset-0 z-[29]" onClick={() => setUserMenuOpen(false)} />, document.body)}
+            <div className="absolute left-0 right-0 bottom-full mb-2 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 overflow-hidden p-1.5">
+              <button onClick={() => { setUserMenuOpen(false); setChangePwdOpen(true); }}
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm text-slate-700 hover:bg-white/80 transition-colors text-left">
+                <KeyRound size={14} /> Change Password
+              </button>
+              <button onClick={logout}
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm text-rose-600 hover:bg-rose-50 transition-colors text-left">
+                <LogOut size={14} /> Sign Out
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </>
+  );
 
   return (
-    <header className="print:hidden sticky top-0 lg:static z-30">
+    <>
+      {/* ── Desktop: fixed floating glass rail ── */}
+      <aside className="print:hidden hidden lg:flex flex-col fixed top-4 bottom-4 left-4 w-[248px] z-30 glass rounded-[30px] p-3">
+        {body}
+      </aside>
 
-      {/* ── Desktop: logo pill · nav pill · avatar ── */}
-      <div className="hidden lg:flex items-center justify-between gap-4 px-8 pt-5 pb-1">
-        <div className="flex items-center gap-2.5 pl-1.5 pr-5 py-1.5 rounded-full bg-white/85 border border-white shadow-sm flex-shrink-0">
-          {logo}
-          <span className="font-medium text-[#232323] text-base tracking-tight">{appName}</span>
-        </div>
-
-        <nav className="flex items-center gap-0.5 p-1.5 rounded-full bg-white/85 border border-white shadow-sm min-w-0">
-          {NAV.map(item => item.items ? (
-            <div key={item.label} className="relative">
-              <button onClick={() => setGroupOpen(g => (g === item.label ? null : item.label))}
-                className={pill(item.items.some(i => isOn(pathname, i.to)))}>
-                {item.label}
-                <ChevronDown size={13} className={`transition-transform ${groupOpen === item.label ? 'rotate-180' : ''}`} />
-              </button>
-              {groupOpen === item.label && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setGroupOpen(null)} />
-                  <div className="absolute left-1/2 -translate-x-1/2 mt-3 min-w-[190px] bg-white border border-[#efe6d0] rounded-3xl shadow-xl z-50 p-2">
-                    {item.items.map(({ to, icon: Icon, label }) => (
-                      <NavLink key={to} to={to} onClick={e => handleNavClick(e, to)}
-                        className={({ isActive }) =>
-                          `flex items-center gap-2.5 px-4 py-2.5 rounded-full text-sm font-medium transition-colors ${isActive ? 'bg-[#262626] text-white' : 'text-[#4b4638] hover:bg-[#fbf0cc]'}`}>
-                        <Icon size={15} /> {label}
-                      </NavLink>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          ) : (
-            <NavLink key={item.to} to={item.to} end={item.to === '/'} onClick={e => handleNavClick(e, item.to)}
-              className={({ isActive }) => pill(isActive)}>
-              {item.label}
-            </NavLink>
-          ))}
-        </nav>
-
-        {userMenu}
-      </div>
-
-      {/* ── Mobile: dark bar + dropdown menu ── */}
-      <div className="lg:hidden bg-[#1c1c1e] border-b border-white/[0.06] px-4 py-[7px] flex items-center gap-3">
-        <button onClick={() => setMenuOpen(v => !v)} className="p-1.5 text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
-          {menuOpen ? <X size={20} /> : <Menu size={20} />}
+      {/* ── Mobile: frosted top bar ── */}
+      <header className="print:hidden lg:hidden sticky top-0 z-30 glass !border-x-0 !border-t-0 !rounded-none px-3 h-[57px] flex items-center gap-3">
+        <button onClick={() => setMenuOpen(true)} aria-label="Open menu"
+          className="w-10 h-10 grid place-items-center rounded-full text-[#1d1d1f] hover:bg-white/60 transition-colors">
+          <Menu size={20} />
         </button>
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          <div className="w-7 h-7 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center bg-white/10">
-            {appLogo ? <img src={imgUrl(appLogo)} alt="logo" className="w-full h-full object-contain" /> : <Layers size={13} className="text-white" />}
-          </div>
-          <span className="text-white font-semibold text-sm truncate">{appName}</span>
+          {logo('w-8 h-8')}
+          <span className="text-[#1d1d1f] font-semibold text-[15px] truncate">{appName}</span>
         </div>
-        {userMenu}
-      </div>
+        <button onClick={() => setMenuOpen(true)} aria-label="Account"
+          className="w-9 h-9 rounded-full bg-gradient-to-b from-[#4aa3ff] to-[#0071e3] text-white text-sm font-semibold flex items-center justify-center flex-shrink-0">
+          {initial}
+        </button>
+      </header>
+
+      {/* ── Mobile: slide-in drawer (outside the header so the header's blur can't trap it) ── */}
       {menuOpen && (
-        <>
-          <div className="lg:hidden fixed inset-0 top-[57px] bg-black/40 z-30" onClick={() => setMenuOpen(false)} />
-          <nav className="lg:hidden absolute left-0 right-0 top-full z-40 bg-white border-b border-[#efe6d0] shadow-xl rounded-b-3xl p-3 grid grid-cols-2 gap-1.5">
-            {NAV.flatMap(i => i.items || [i]).map(({ to, icon: Icon, label }) => (
-              <NavLink key={to} to={to} end={to === '/'} onClick={e => handleNavClick(e, to)}
-                className={({ isActive }) =>
-                  `flex items-center gap-2.5 px-4 py-3 rounded-full text-sm font-medium ${isActive ? 'bg-[#262626] text-white' : 'text-[#4b4638] hover:bg-[#fbf0cc]'}`}>
-                <Icon size={15} /> {label}
-              </NavLink>
-            ))}
-          </nav>
-        </>
+        <div className="lg:hidden print:hidden">
+          <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setMenuOpen(false)} />
+          <aside className="fixed top-2 bottom-2 left-2 w-[272px] max-w-[85vw] z-50 glass-strong rounded-[28px] p-3 flex flex-col animate-drawer-left">
+            <button onClick={() => setMenuOpen(false)} aria-label="Close menu"
+              className="absolute top-3.5 right-3 w-8 h-8 grid place-items-center rounded-full text-[#515154] hover:bg-white/70 transition-colors z-10">
+              <X size={17} />
+            </button>
+            {body}
+          </aside>
+        </div>
       )}
 
       {changePwdOpen && createPortal(<ChangePasswordModal onClose={() => setChangePwdOpen(false)} />, document.body)}
@@ -314,6 +310,6 @@ export default function TopNav() {
         </div>,
         document.body
       )}
-    </header>
+    </>
   );
 }

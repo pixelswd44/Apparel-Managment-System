@@ -301,7 +301,7 @@ function QuotationView({ quotationId, onClose, onEdit, onConverted, embedded = f
           const tplColor  = tplCfg.primaryColor || '#4f46e5';
           return (
         <div ref={printRef}
-          className="max-w-3xl mx-auto bg-white rounded-2xl shadow-xl print:shadow-none print:rounded-none print:max-w-none overflow-hidden relative"
+          className="doc-paper max-w-3xl mx-auto bg-white rounded-2xl shadow-xl print:shadow-none print:rounded-none print:max-w-none overflow-hidden relative"
           data-layout={tplLayout}
           style={{ '--tp': tplColor }}
         >
