@@ -179,9 +179,9 @@ export default function Sidebar() {
 
   const link = ({ to, icon: Icon, label }) => (
     <NavLink key={to} to={to} end={to === '/'} onClick={e => handleNavClick(e, to)}
-      className="nav-item flex items-center gap-3 pl-1.5 pr-3 py-1.5 rounded-full text-sm font-medium text-[#3a3a3f]">
-      <span className="nav-icon w-8 h-8 rounded-full grid place-items-center flex-shrink-0 bg-white/70 text-[#515154] shadow-[inset_0_1px_0_rgba(255,255,255,.95),0_1px_3px_rgba(30,41,82,.08)] transition-colors">
-        <Icon size={15} />
+      className="nav-item flex items-center gap-3 pl-1.5 pr-3 py-1 rounded-full text-sm font-medium text-[#3a3a3f]">
+      <span className="nav-icon w-7 h-7 rounded-full grid place-items-center flex-shrink-0 bg-white/70 text-[#515154] shadow-[inset_0_1px_0_rgba(255,255,255,.95),0_1px_3px_rgba(30,41,82,.08)] transition-colors">
+        <Icon size={14} />
       </span>
       <span className="truncate">{label}</span>
     </NavLink>
@@ -200,7 +200,7 @@ export default function Sidebar() {
 
       <nav className="sidebar-nav flex-1 min-h-0 overflow-y-auto -mx-1 px-1 pb-2">
         {NAV.map(item => item.items ? (
-          <div key={item.label || item.items[0].to} className="mt-3">
+          <div key={item.label || item.items[0].to} className="mt-2.5">
             {item.label && <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-[#86868b]">{item.label}</p>}
             <div className="space-y-0.5">{item.items.map(link)}</div>
           </div>

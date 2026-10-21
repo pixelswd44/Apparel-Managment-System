@@ -1027,7 +1027,7 @@ export default function QuotationForm() {
       )}
 
       {/* ── Sticky top bar ── */}
-      <div className="-mx-8 -mt-8 px-8 py-4 bg-white border-b border-slate-200 sticky top-0 z-30 flex items-center justify-between gap-4">
+      <div className="glass sticky top-[65px] lg:top-4 z-20 mb-5 rounded-[22px] px-4 sm:px-5 py-3 flex items-center justify-between gap-4">
 
         {/* Left: back + title */}
         <div className="flex items-center gap-4 min-w-0">
@@ -1122,7 +1122,7 @@ export default function QuotationForm() {
 
             {/* ── Selected company preview ── */}
             {selectedCo && (
-              <div className="mt-4 pt-4 border-t border-slate-100 flex items-start gap-5">
+              <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap sm:flex-nowrap items-start gap-4 sm:gap-5">
 
                 {/* Logo */}
                 <div className="w-14 h-14 rounded-xl border border-slate-200 bg-white flex items-center justify-center overflow-hidden flex-shrink-0 shadow-sm">
@@ -1150,9 +1150,9 @@ export default function QuotationForm() {
 
                 {/* Bank details */}
                 {selectedCo.bank_details && (
-                  <div className="border-l border-slate-100 pl-5 min-w-[180px] max-w-xs flex-shrink-0">
+                  <div className="w-full sm:w-auto border-t sm:border-t-0 sm:border-l border-slate-100 pt-3 sm:pt-0 sm:pl-5 sm:min-w-[180px] sm:max-w-xs flex-shrink-0 min-w-0">
                     <p className="text-2xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">Bank Details</p>
-                    <p className="text-xs font-mono text-slate-600 leading-relaxed whitespace-pre-wrap">{selectedCo.bank_details}</p>
+                    <p className="text-xs font-mono text-slate-600 leading-relaxed whitespace-pre-wrap break-words">{selectedCo.bank_details}</p>
                   </div>
                 )}
               </div>

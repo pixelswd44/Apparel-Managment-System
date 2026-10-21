@@ -53,7 +53,7 @@
   --color-indigo-950: #00244d;
 
   /* ── Light slates become translucent ink / light so they tint the glass ── */
-  --color-slate-50:  rgb(255 255 255 / 0.5);
+  --color-slate-50:  rgb(255 255 255 / 0.4);
   --color-slate-100: rgb(15 23 42 / 0.055);
   --color-slate-200: rgb(15 23 42 / 0.11);
 
@@ -69,16 +69,21 @@
   --ink-3:        #86868b;
   --accent:       #0071e3;
 
-  --glass-fill:        rgb(255 255 255 / 0.56);
-  --glass-fill-strong: rgb(255 255 255 / 0.78);
-  --glass-rim:         rgb(255 255 255 / 0.72);
-  --glass-blur:        blur(24px) saturate(180%);
-  --glass-sheen:       linear-gradient(180deg, rgb(255 255 255 / 0.42) 0%, rgb(255 255 255 / 0) 46%);
-  --glass-shadow:      inset 0 1px 0 rgb(255 255 255 / 0.9), inset 0 0 0 1px rgb(255 255 255 / 0.32),
-                       inset 0 -1px 0 rgb(15 23 42 / 0.03),
-                       0 12px 34px -14px rgb(30 41 82 / 0.26), 0 2px 8px -3px rgb(30 41 82 / 0.08);
-  --glass-shadow-lift: inset 0 1px 0 rgb(255 255 255 / 0.95), inset 0 0 0 1px rgb(255 255 255 / 0.4),
-                       0 22px 50px -16px rgb(30 41 82 / 0.32), 0 6px 14px -6px rgb(30 41 82 / 0.10);
+  /* Clear glass: a light veil, so the wallpaper shows through; edges and
+     specular highlights (not opacity) define the surface. */
+  --glass-fill:        rgb(255 255 255 / 0.28);
+  --glass-fill-strong: rgb(255 255 255 / 0.6);
+  --glass-rim:         rgb(255 255 255 / 0.6);
+  --glass-blur:        blur(20px) saturate(190%) brightness(1.04);
+  --glass-sheen:       linear-gradient(140deg, rgb(255 255 255 / 0.5) 0%, rgb(255 255 255 / 0.1) 32%,
+                                       rgb(255 255 255 / 0) 58%, rgb(255 255 255 / 0.14) 100%);
+  --glass-shadow:      inset 0 1.5px 0 rgb(255 255 255 / 0.85), inset 1px 0 0 rgb(255 255 255 / 0.35),
+                       inset 0 -1px 0 rgb(255 255 255 / 0.3), inset -1px 0 0 rgb(255 255 255 / 0.15),
+                       0 0 0 0.5px rgb(30 41 82 / 0.07),
+                       0 12px 34px -14px rgb(30 41 82 / 0.22), 0 2px 8px -3px rgb(30 41 82 / 0.06);
+  --glass-shadow-lift: inset 0 1.5px 0 rgb(255 255 255 / 0.95), inset 1px 0 0 rgb(255 255 255 / 0.45),
+                       inset 0 -1px 0 rgb(255 255 255 / 0.35), 0 0 0 0.5px rgb(30 41 82 / 0.08),
+                       0 22px 50px -16px rgb(30 41 82 / 0.30), 0 6px 14px -6px rgb(30 41 82 / 0.08);
 
   /* Spring-ish curves: a slight overshoot for movement, a soft settle for fades */
   --ease-spring: cubic-bezier(0.34, 1.42, 0.64, 1);
@@ -150,10 +155,11 @@ body {
     z-index: -1;
     pointer-events: none;
     background:
-      radial-gradient(42vmax 42vmax at 6% 0%,   rgb(167 139 250 / 0.34), transparent 64%),
-      radial-gradient(40vmax 40vmax at 96% 6%,  rgb(56 189 248 / 0.30), transparent 62%),
-      radial-gradient(46vmax 46vmax at 82% 100%, rgb(251 191 36 / 0.22), transparent 64%),
-      radial-gradient(42vmax 42vmax at 10% 96%, rgb(244 114 182 / 0.20), transparent 64%),
+      radial-gradient(42vmax 42vmax at 6% 0%,   rgb(167 139 250 / 0.42), transparent 64%),
+      radial-gradient(40vmax 40vmax at 96% 6%,  rgb(56 189 248 / 0.38), transparent 62%),
+      radial-gradient(34vmax 34vmax at 50% 46%, rgb(129 140 248 / 0.12), transparent 70%),
+      radial-gradient(46vmax 46vmax at 82% 100%, rgb(251 191 36 / 0.28), transparent 64%),
+      radial-gradient(42vmax 42vmax at 10% 96%, rgb(244 114 182 / 0.26), transparent 64%),
       linear-gradient(160deg, #f3f5fb 0%, #eef1f8 50%, #f6f3f1 100%);
   }
 }
@@ -171,7 +177,7 @@ body {
   background-image: var(--glass-sheen);
   -webkit-backdrop-filter: var(--glass-blur);
           backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-rim);
+  border: 1px solid rgb(255 255 255 / 0.45);
   box-shadow: var(--glass-shadow);
 }
 .glass-strong { background-color: var(--glass-fill-strong); }
@@ -214,6 +220,8 @@ body {
   from { opacity: 0; transform: translateX(-8px); }
   to   { opacity: 1; }
 }
+.sidebar-nav { scrollbar-width: none; }
+.sidebar-nav::-webkit-scrollbar { display: none; }
 .sidebar-nav a {
   animation: navItemIn 0.5s var(--ease-spring) backwards;
 }
@@ -228,11 +236,11 @@ body {
   position: relative;
   transition: background-color 0.2s ease, color 0.2s ease, transform 0.4s var(--ease-spring), box-shadow 0.25s ease;
 }
-.nav-item:hover  { background-color: rgb(255 255 255 / 0.55); }
+.nav-item:hover  { background-color: rgb(255 255 255 / 0.4); }
 .nav-item:active { transform: scale(0.97); transition-duration: 0.1s; }
 .nav-item[aria-current="page"] {
   color: var(--accent);
-  background-color: rgb(255 255 255 / 0.82);
+  background-color: rgb(255 255 255 / 0.62);
   background-image: var(--glass-sheen);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.95), inset 0 0 0 1px rgb(255 255 255 / 0.5), 0 6px 16px -8px rgb(30 41 82 / 0.28);
 }
@@ -657,6 +665,10 @@ textarea {
   .glass-theme :is(.rounded-xl, .rounded-2xl, .rounded-3xl).bg-white:not(:where(.doc-paper, .doc-paper *)) {
     background-image: var(--glass-sheen);
   }
+  /* Clear cards are defined by their lit edges rather than by opacity */
+  .glass-theme :is(.rounded-xl, .rounded-2xl, .rounded-3xl).bg-white:not(.shadow-lg, .shadow-xl, .shadow-2xl, :where(.doc-paper, .doc-paper *)) {
+    box-shadow: var(--glass-shadow);
+  }
   .glass-theme .bg-white.border:not(:where(.doc-paper, .doc-paper *)) {
     border-color: var(--glass-rim);
   }
@@ -712,8 +724,8 @@ textarea {
     transition: border-color 0.2s ease, box-shadow 0.25s var(--ease-out), background-color 0.2s ease;
   }
   .glass-theme :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]), select, textarea):is(.border, [class*="border-slate"]):not(:where(.doc-paper *, .bg-transparent)) {
-    background-color: rgb(255 255 255 / 0.72);
-    box-shadow: inset 0 1px 2px rgb(15 23 42 / 0.05);
+    background-color: rgb(255 255 255 / 0.5);
+    box-shadow: inset 0 1px 2px rgb(15 23 42 / 0.05), 0 1px 0 rgb(255 255 255 / 0.5);
   }
   .glass-theme :is(input, select, textarea):is(.border, [class*="border-slate"]):focus:not(:where(.doc-paper *)) {
     background-color: #fff;
