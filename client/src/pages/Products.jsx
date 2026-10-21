@@ -1348,7 +1348,7 @@ export default function Products() {
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
+              <div className="flex flex-col gap-3">
                 {filtered.map(p => {
                   let imgs = [];
                   try { imgs = JSON.parse(p.images || '[]'); } catch {}
@@ -1358,22 +1358,33 @@ export default function Products() {
                   const price = priceText(p);
                   return (
                     <div key={p.id} onClick={() => navigate(`/products/${p.id}`)}
-                      className="group bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden cursor-pointer hover:shadow-md hover:border-indigo-200 transition-all">
-                      {/* Image */}
-                      <div className="relative aspect-square bg-slate-100 overflow-hidden">
+                      className="group flex bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden cursor-pointer hover:shadow-md hover:border-indigo-200 transition-all">
+                      {/* Image — left */}
+                      <div className="relative w-28 sm:w-36 flex-shrink-0 self-stretch min-h-[112px] sm:min-h-[136px] bg-slate-100 overflow-hidden">
                         {img ? (
                           <img src={imgUrl(img)} alt={p.name} loading="lazy"
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                            className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                         ) : (
-                          <div className="w-full h-full flex flex-col items-center justify-center text-slate-300 bg-gradient-to-br from-slate-50 to-slate-100">
-                            <Package size={34} />
+                          <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 bg-gradient-to-br from-slate-50 to-slate-100">
+                            <Package size={28} />
                             <span className="text-2xs mt-1">No image</span>
                           </div>
                         )}
-                        <div className="absolute top-2 left-2 flex flex-col gap-1 items-start">
-                          {popularIds.has(p.id) && (
-                            <span className="text-2xs font-bold bg-amber-400 text-amber-950 px-2 py-0.5 rounded-full shadow-sm">🔥 Popular</span>
-                          )}
+                        {popularIds.has(p.id) && (
+                          <span className="absolute top-2 left-2 text-2xs font-bold bg-amber-400 text-amber-950 px-2 py-0.5 rounded-full shadow-sm">🔥 Popular</span>
+                        )}
+                      </div>
+                      {/* Details — right */}
+                      <div className="flex-1 min-w-0 p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-x-6">
+                        <div className="flex-1 min-w-0 flex flex-col">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-sm sm:text-base font-semibold text-slate-900 leading-tight line-clamp-2">{p.name}</p>
+                          <button onClick={e => { e.stopPropagation(); navigate(`/products/${p.id}/edit`); }} title="Edit"
+                            className="sm:hidden p-1.5 -mt-1 -mr-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg flex-shrink-0"><Pencil size={13} /></button>
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                          {p.article_number && <span className="text-2xs font-mono text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">{p.article_number}</span>}
+                          {p.category_name && <span className="text-xs text-slate-400 truncate">{p.category_name}</span>}
                           {p.status !== 'active' && (
                             <span className="text-2xs font-semibold bg-slate-800/80 text-white px-2 py-0.5 rounded-full capitalize">{p.status}</span>
                           )}
@@ -1381,22 +1392,20 @@ export default function Products() {
                             <span className="text-2xs font-semibold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full flex items-center gap-1"><AlertCircle size={9} /> Low stock</span>
                           )}
                         </div>
-                        {/* Quick actions */}
-                        <div className="absolute top-2 right-2 flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-                          <button onClick={() => navigate(`/products/${p.id}/edit`)} title="Edit"
-                            className="p-1.5 bg-white/95 text-slate-600 hover:text-indigo-600 rounded-lg shadow-sm"><Pencil size={13} /></button>
+                        {p.description && <p className="text-xs text-slate-500 mt-2 line-clamp-2 leading-snug max-w-3xl">{p.description}</p>}
                         </div>
-                      </div>
-                      {/* Info */}
-                      <div className="p-3">
-                        <p className="text-sm font-semibold text-slate-900 leading-tight line-clamp-2">{p.name}</p>
-                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                          {p.article_number && <span className="text-2xs font-mono text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">{p.article_number}</span>}
-                          {p.category_name && <span className="text-2xs text-slate-400 truncate">{p.category_name}</span>}
-                        </div>
-                        <div className="flex items-end justify-between gap-2 mt-2.5">
-                          <span className="text-sm font-bold text-slate-900 font-mono">{price || <span className="text-slate-300 font-normal">No price</span>}</span>
-                          {orders > 0 && <span className="text-2xs text-slate-400 whitespace-nowrap">{orders} order{orders !== 1 ? 's' : ''}</span>}
+                        {/* Price + orders — bottom on phones, right-hand columns on wider screens */}
+                        <div className="flex items-end sm:items-center justify-between sm:justify-end gap-2 sm:gap-8 mt-auto sm:mt-0 pt-3 sm:pt-0 flex-shrink-0">
+                          <div className="min-w-0 sm:text-right sm:w-36">
+                            <p className="text-2xs font-semibold text-slate-400 uppercase tracking-wider">Price</p>
+                            <p className="text-base font-bold text-slate-900 font-mono truncate">{price || <span className="text-slate-300 font-normal text-sm">No price</span>}</p>
+                          </div>
+                          <div className="text-right flex-shrink-0 sm:w-16">
+                            <p className="text-2xs font-semibold text-slate-400 uppercase tracking-wider">Orders</p>
+                            <p className="text-base font-bold text-slate-700 tabular-nums">{orders}</p>
+                          </div>
+                          <button onClick={e => { e.stopPropagation(); navigate(`/products/${p.id}/edit`); }} title="Edit"
+                            className="hidden sm:inline-flex p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"><Pencil size={14} /></button>
                         </div>
                       </div>
                     </div>

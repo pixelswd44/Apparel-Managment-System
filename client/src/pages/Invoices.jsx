@@ -401,7 +401,7 @@ function ReceiptVoucher({ invoice, payment, settings, onClose, templates = [], a
 
 // ── Invoice View (detail overlay) ─────────────────────────────────────────────
 
-function InvoiceView({ invoiceId, onClose, onConverted, embedded = false }) {
+function InvoiceView({ invoiceId, onClose, onConverted, onPaymentsChanged, embedded = false }) {
   const navigate = useNavigate();
   const [invoice,     setInvoice]    = useState(null);
   const [settings,    setSettings]   = useState({});
@@ -474,6 +474,7 @@ function InvoiceView({ invoiceId, onClose, onConverted, embedded = false }) {
         status:      data.status,
         payments: (prev.payments || []).filter(p => p.id !== payment.id),
       }));
+      onPaymentsChanged?.(invoice.id, data.amount_paid, data.status);
     } catch (e) {
       alert(e?.response?.data?.error ?? 'Failed to delete payment.');
     }
@@ -488,6 +489,8 @@ function InvoiceView({ invoiceId, onClose, onConverted, embedded = false }) {
         ? (prev.payments || []).map(p => p.id === editedId ? data.payment : p)
         : [data.payment, ...(prev.payments || [])],
     }));
+    // Keep the invoice list (Due / outstanding / status counts) in step with this view
+    onPaymentsChanged?.(invoice.id, data.amount_paid, data.status);
     if (!editedId) setReceipt(data.payment);
   }
 
@@ -567,7 +570,7 @@ function InvoiceView({ invoiceId, onClose, onConverted, embedded = false }) {
             )}
             <span className="font-mono text-sm text-indigo-700 font-semibold truncate">{invoice.number}</span>
             <StatusBadge status={invoice.status} />
-            {invoice.is_sampling && (
+            {!!invoice.is_sampling && (
               <span className="inline-flex items-center text-xs bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full font-bold border border-violet-200 flex-shrink-0">2×</span>
             )}
           </div>
@@ -1568,6 +1571,8 @@ export default function Invoices() {
                 invoiceId={viewId}
                 onClose={() => setViewId(null)}
                 onConverted={load}
+                onPaymentsChanged={(id, amount_paid, status) =>
+                  setInvoices(prev => prev.map(i => i.id === id ? { ...i, amount_paid, status } : i))}
               />
             ) : (
               <div className="flex flex-row lg:flex-1 lg:flex-col items-center justify-center text-center gap-3 lg:gap-0 p-3 lg:p-8 border-b lg:border-b-0 border-slate-100">
