@@ -10,7 +10,8 @@ import { pkr, displayCurrency } from '../lib/currency';
 // Dashboard — warm "Crextio"-style theme. All amounts in PKR.
 //   Money In    = payments received + other income        (in the period)
 //   Money Out   = project costs + business expenses + salaries (in the period)
-//   Net         = Money In − Money Out
+//   Net         = Money In − Money Out (drives margin)
+//   Cash        = Ledger closing balance (opening + overrides + advances)
 //   To Receive  = unpaid invoice balances right now (not filtered by period)
 
 const money = (v, cc) => {
@@ -64,6 +65,7 @@ export default function Overview() {
   const [projects, setProjects] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [ledger, setLedger]     = useState([]);
+  const [ledgerSummary, setLedgerSummary] = useState(null);
   const [loading, setLoading]   = useState(true);
   const [showFilters, setShowFilters] = useState(false);
 
@@ -76,6 +78,7 @@ export default function Overview() {
       api.get('/financials/ledger', { params }),
     ]).then(([fs, pr, inv, lg]) => {
       setLedger(Array.isArray(lg.data?.ledger) ? lg.data.ledger : []);
+      setLedgerSummary(lg.data?.summary || null);
       setFin(fs.data || {});
       setProjects(Array.isArray(pr.data) ? pr.data : []);
       setInvoices(Array.isArray(inv.data) ? inv.data : []);
@@ -89,7 +92,17 @@ export default function Overview() {
   const salOut   = f.salariesPaid ?? 0;
   const moneyOut = projOut + bizOut + salOut;
   const net      = moneyIn - moneyOut;
-  const today    = new Date().toISOString().split('T')[0];
+
+  // Cash balance — the Ledger's closing balance for the same period, so the hero
+  // always matches the Ledger page. It carries in opening balances (and manual
+  // monthly overrides) and counts employee advances, which the P&L figures above
+  // leave out. "Opening" is whatever the balance holds beyond this period's in − out.
+  const sections   = Object.values(ledgerSummary?.bySection || {});
+  const cashIn     = sections.reduce((s, x) => s + (x.credit || 0), 0);
+  const cashOut    = sections.reduce((s, x) => s + (x.debit  || 0), 0);
+  const cash       = ledgerSummary ? (ledgerSummary.netBalance || 0) : net;
+  const cashOpen   = ledgerSummary ? cash - (cashIn - cashOut) : 0;
+  const today   = new Date().toISOString().split('T')[0];
 
   const unpaid = invoices
     .filter(i => i.status !== 'paid' && (parseFloat(i.total) || 0) > (parseFloat(i.amount_paid) || 0))
@@ -170,13 +183,16 @@ export default function Overview() {
           <div className="relative overflow-hidden rounded-xl p-6 text-white min-h-[260px] flex flex-col justify-between md:order-1 xl:order-none"
             style={{ background: 'radial-gradient(500px 260px at 90% 0%, rgba(249,200,70,.35), transparent 60%), linear-gradient(160deg,#2c2c2c,#171717)' }}>
             <div>
-              <p className="text-sm text-white/60">Net · money in − out</p>
-              <p className={`text-4xl sm:text-5xl font-light mt-2 tabular-nums ${net < 0 ? 'text-rose-300' : ''}`}>{pkr(net)}</p>
+              <p className="text-sm text-white/60">Cash balance · as in Ledger</p>
+              <p className={`text-4xl sm:text-5xl font-light mt-2 tabular-nums ${cash < 0 ? 'text-rose-300' : ''}`}>{pkr(cash)}</p>
             </div>
             <div className="space-y-3">
               <div className="flex gap-2 flex-wrap">
-                <span className="px-3 py-1.5 rounded-full bg-white/10 text-xs">▲ In {pkr(moneyIn)}</span>
-                <span className="px-3 py-1.5 rounded-full bg-white/10 text-xs">▼ Out {pkr(moneyOut)}</span>
+                {Math.round(cashOpen) !== 0 && (
+                  <span className="px-3 py-1.5 rounded-full bg-white/10 text-xs">● Opening {pkr(cashOpen)}</span>
+                )}
+                <span className="px-3 py-1.5 rounded-full bg-white/10 text-xs">▲ In {pkr(ledgerSummary ? cashIn : moneyIn)}</span>
+                <span className="px-3 py-1.5 rounded-full bg-white/10 text-xs">▼ Out {pkr(ledgerSummary ? cashOut : moneyOut)}</span>
               </div>
               <div className="flex items-center justify-between rounded-full bg-[#f9c846] text-[#262626] pl-4 pr-1.5 py-1.5">
                 <span className="text-sm font-medium">To receive</span>

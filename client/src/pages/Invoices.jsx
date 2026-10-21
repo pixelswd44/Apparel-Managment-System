@@ -213,9 +213,23 @@ function ReceiptVoucher({ invoice, payment, settings, onClose, templates = [], a
   const receiptCoPhone  = issuingCo?.phone    || settings?.company_phone   || '';
   const receiptCoEmail  = issuingCo?.email    || settings?.company_email   || '';
   const receiptCoLocation = [receiptCoCity, receiptCoCountry].filter(Boolean).join(', ');
-  const balance = parseFloat(invoice.balance_due ?? invoice.total) || 0;
-  const paid    = parseFloat(payment.amount) || 0;
-  const remaining = Math.max(0, balance - paid);
+  // Balance after THIS payment = total − every payment up to and including it.
+  // Later payments are ignored so a reprinted older receipt still shows what was owed then.
+  const total = parseFloat(invoice.total) || 0;
+  const paid  = parseFloat(payment.amount) || 0;
+  const allPays = Array.isArray(invoice.payments) ? invoice.payments : null;
+  const payKey = p => [String(p.paid_at || '').slice(0, 10), Number(p.id) || 0];
+  let paidToDate;
+  if (allPays && payment.id != null && allPays.some(p => p.id === payment.id)) {
+    const [d0, i0] = payKey(payment);
+    paidToDate = allPays
+      .filter(p => { const [d, i] = payKey(p); return d < d0 || (d === d0 && i <= i0); })
+      .reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+  } else {
+    paidToDate = invoice.amount_paid != null ? (parseFloat(invoice.amount_paid) || 0) : paid;
+  }
+  const previouslyPaid = Math.max(0, paidToDate - paid);
+  const remaining = Math.max(0, total - paidToDate);
 
   async function handleDownload() {
     setDownloading(true);
@@ -334,6 +348,12 @@ function ReceiptVoucher({ invoice, payment, settings, onClose, templates = [], a
                   <span className="text-slate-500">Invoice Total</span>
                   <span className="font-medium text-slate-700 tabular-nums">{fmtMoney(invoice.total, sym)}</span>
                 </div>
+                {previouslyPaid > 0 && (
+                  <div className="flex justify-between py-1.5 border-t border-slate-100 text-xs">
+                    <span className="text-slate-500">Previously Paid</span>
+                    <span className="font-medium text-slate-700 tabular-nums">{fmtMoney(previouslyPaid, sym)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between py-1.5 border-t border-slate-100 text-xs">
                   <span className="text-slate-500">This Payment</span>
                   <span className="font-medium text-slate-700 tabular-nums">{fmtMoney(paid, sym)}</span>
@@ -1112,8 +1132,10 @@ function PaymentsTab({ onPrintReceipt, settings, onPaymentDeleted }) {
                             total:         p.invoice_total,
                             client_name:   p.client_name,
                             shipping_phone: p.shipping_phone,
+                            payments:      payments.filter(x => x.invoice_id === p.invoice_id),
                           },
                           payment: {
+                            id:        p.id,
                             amount:    p.amount,
                             method:    p.method,
                             reference: p.reference,
