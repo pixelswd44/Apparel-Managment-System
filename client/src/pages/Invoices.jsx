@@ -41,6 +41,8 @@ const fmtMoney = (v, sym = '$') => `${sym}${(parseFloat(v) || 0).toLocaleString(
 const getSym   = code => ({ PKR: '₨', EUR: '€', GBP: '£', AED: 'AED ', SAR: 'SAR ', QAR: 'QAR ' }[code] ?? '$');
 const methodLabel = m => PAY_METHODS.find(p => p.value === m)?.label ?? m;
 
+// Left padding for an input with a currency prefix inside it — wide enough for "AED", not just "$"
+const prefixPad = sym => ({ paddingLeft: `calc(1.375rem + ${String(sym).trim().length}ch)` });
 const inputCls = 'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-3 focus:ring-indigo-100 transition-all duration-150 bg-white placeholder:text-slate-400';
 
 // ── Shared ────────────────────────────────────────────────────────────────────
@@ -136,7 +138,7 @@ function PaymentModal({ invoice, onClose, onSuccess, editPayment = null }) {
               <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">{sym}</span>
               <input type="number" min="0" step="any" value={form.amount}
                 onChange={e => set('amount', e.target.value)}
-                className={`${inputCls} pl-7`} placeholder="0.00" autoFocus />
+                className={inputCls} style={prefixPad(sym)} placeholder="0.00" autoFocus />
             </div>
           </div>
 
@@ -337,30 +339,30 @@ function ReceiptVoucher({ invoice, payment, settings, onClose, templates = [], a
 
           {/* ── Details: Amount Paid + balance — plain rows, no background card ── */}
           <div className="px-7 py-4">
-            <div className="grid grid-cols-2 gap-8">
+            <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-6">
               <div>
                 <p className="text-2xs font-bold text-slate-400 uppercase tracking-widest mb-1.5">Amount Paid</p>
                 <p className="text-lg sm:text-2xl font-black text-slate-900 tabular-nums leading-none break-all">{fmtMoney(paid, sym)}</p>
-                <p className="text-2xs text-slate-500 mt-1.5">In words — {mLabel}</p>
+                <p className="text-2xs text-slate-500 mt-1.5">Paid by {mLabel}</p>
               </div>
               <div className="text-right">
-                <div className="flex justify-between py-1.5 border-t border-slate-100 text-xs">
-                  <span className="text-slate-500">Invoice Total</span>
-                  <span className="font-medium text-slate-700 tabular-nums">{fmtMoney(invoice.total, sym)}</span>
+                <div className="flex justify-between gap-3 py-1.5 border-t border-slate-100 text-xs">
+                  <span className="text-slate-500 whitespace-nowrap">Invoice Total</span>
+                  <span className="font-medium text-slate-700 tabular-nums whitespace-nowrap">{fmtMoney(invoice.total, sym)}</span>
                 </div>
                 {previouslyPaid > 0 && (
-                  <div className="flex justify-between py-1.5 border-t border-slate-100 text-xs">
-                    <span className="text-slate-500">Previously Paid</span>
-                    <span className="font-medium text-slate-700 tabular-nums">{fmtMoney(previouslyPaid, sym)}</span>
+                  <div className="flex justify-between gap-3 py-1.5 border-t border-slate-100 text-xs">
+                    <span className="text-slate-500 whitespace-nowrap">Previously Paid</span>
+                    <span className="font-medium text-slate-700 tabular-nums whitespace-nowrap">{fmtMoney(previouslyPaid, sym)}</span>
                   </div>
                 )}
-                <div className="flex justify-between py-1.5 border-t border-slate-100 text-xs">
-                  <span className="text-slate-500">This Payment</span>
-                  <span className="font-medium text-slate-700 tabular-nums">{fmtMoney(paid, sym)}</span>
+                <div className="flex justify-between gap-3 py-1.5 border-t border-slate-100 text-xs">
+                  <span className="text-slate-500 whitespace-nowrap">This Payment</span>
+                  <span className="font-medium text-slate-700 tabular-nums whitespace-nowrap">{fmtMoney(paid, sym)}</span>
                 </div>
-                <div className="border-t-2 border-slate-300 mt-1 py-2 flex justify-between items-center">
-                  <span className="font-bold text-slate-900 text-sm">Balance Remaining</span>
-                  <span className={`font-bold text-base tabular-nums ${remaining > 0 ? 'text-slate-900' : 'text-slate-900'}`}>{fmtMoney(remaining, sym)}</span>
+                <div className="border-t-2 border-slate-300 mt-1 py-2 flex justify-between items-center gap-3">
+                  <span className="font-bold text-slate-900 text-xs whitespace-nowrap">Balance Remaining</span>
+                  <span className="font-bold text-slate-900 text-base tabular-nums whitespace-nowrap">{fmtMoney(remaining, sym)}</span>
                 </div>
               </div>
             </div>
@@ -1131,6 +1133,7 @@ function PaymentsTab({ onPrintReceipt, settings, onPaymentDeleted }) {
                         onClick={() => onPrintReceipt({
                           invoice: {
                             number:        p.invoice_number,
+                            company_id:    p.company_id,
                             currency:      p.currency,
                             total:         p.invoice_total,
                             client_name:   p.client_name,
@@ -1214,7 +1217,7 @@ function PaymentsTab({ onPrintReceipt, settings, onPaymentDeleted }) {
                   <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">{getSym(editTarget.currency)}</span>
                   <input type="number" min="0" step="any" value={editForm.amount} autoFocus
                     onChange={e => setEditForm(f => ({ ...f, amount: e.target.value }))}
-                    className={`${inputCls} pl-7`} placeholder="0.00" />
+                    className={inputCls} style={prefixPad(getSym(editTarget.currency))} placeholder="0.00" />
                 </div>
               </div>
 
@@ -1303,7 +1306,10 @@ export default function Invoices() {
   const [activeVoucherTpl, setActiveVoucherTpl] = useState(null);
 
   useEffect(() => {
-    api.get('/settings').then(r => setSettings(r.data)).catch(() => {});
+    // Companies are needed so Payments-tab receipts show the issuing company's logo + details
+    Promise.all([api.get('/settings'), api.get('/companies').catch(() => ({ data: [] }))])
+      .then(([s, co]) => setSettings({ ...s.data, _companies: Array.isArray(co.data) ? co.data : [] }))
+      .catch(() => {});
     api.get('/document-templates', { params: { type: 'voucher' } }).then(r => {
       const tpls = Array.isArray(r.data) ? r.data : [];
       setVoucherTemplates(tpls);
