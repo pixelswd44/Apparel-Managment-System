@@ -161,6 +161,8 @@ function ProductLine({ pp, catalogProducts, invoiceNames = [], onSave, onRemove 
   const [saveState, setSaveState]       = useState('idle'); // idle | saving | saved | error
   const [delConf, setDelConf]           = useState(false);
   const [customSizeName, setCustomSizeName] = useState('');
+  const [sizeNotice, setSizeNotice]     = useState(''); // size that was typed but already exists
+  const sizesRef                        = useRef(null);
   const [nameMode, setNameMode]         = useState(pp.product_id ? 'catalog' : (pp.product_name ? 'custom' : 'catalog'));
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -177,9 +179,17 @@ function ProductLine({ pp, catalogProducts, invoiceNames = [], onSave, onRemove 
   }
   function addSize() {
     const name = customSizeName.trim().toUpperCase();
-    if (!name || form.sizes.find(s => s.size === name)) return;
+    if (!name) return;
+    // Already listed — say so and jump to its box instead of silently doing nothing
+    const existing = form.sizes.findIndex(s => String(s.size).toUpperCase() === name);
+    if (existing !== -1) {
+      setSizeNotice(form.sizes[existing].size);
+      sizesRef.current?.querySelectorAll('input[type="number"]')[existing]?.focus();
+      return;
+    }
     setForm(f => ({ ...f, sizes: [...f.sizes, { size: name, qty: 0 }] }));
     setCustomSizeName('');
+    setSizeNotice('');
   }
   function removeSize(idx) {
     setForm(f => ({ ...f, sizes: f.sizes.filter((_, i) => i !== idx) }));
@@ -344,7 +354,7 @@ function ProductLine({ pp, catalogProducts, invoiceNames = [], onSave, onRemove 
                 {form.sizes.length === 0 ? (
                   <p className="text-xs text-slate-400 italic mb-2">No sizes — use "Add Size" below.</p>
                 ) : (
-                  <div className="grid grid-cols-4 gap-2 mb-2">
+                  <div ref={sizesRef} className="grid grid-cols-4 gap-2 mb-2">
                     {form.sizes.map((sz, idx) => (
                       <div key={idx} className="relative group">
                         <div className="flex items-center justify-between mb-1 px-0.5">
@@ -358,7 +368,7 @@ function ProductLine({ pp, catalogProducts, invoiceNames = [], onSave, onRemove 
                           value={sz.qty === 0 ? '' : sz.qty}
                           onChange={e => updateSize(idx, e.target.value)}
                           placeholder="0"
-                          className="w-full border border-slate-200 rounded-lg px-1.5 py-2 text-sm text-center outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all" />
+                          className={`w-full border rounded-lg px-1.5 py-2 text-sm text-center outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all ${sizeNotice === sz.size ? 'border-amber-400 ring-2 ring-amber-200' : 'border-slate-200'}`} />
                       </div>
                     ))}
                   </div>
@@ -375,7 +385,7 @@ function ProductLine({ pp, catalogProducts, invoiceNames = [], onSave, onRemove 
                   </div>
                 )}
                 <div className="flex gap-2">
-                  <input value={customSizeName} onChange={e => setCustomSizeName(e.target.value)}
+                  <input value={customSizeName} onChange={e => { setCustomSizeName(e.target.value); setSizeNotice(''); }}
                     onKeyDown={e => e.key === 'Enter' && addSize()}
                     placeholder="+ Add size (28, Kids-S, Custom…)"
                     className="flex-1 border border-dashed border-slate-300 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-indigo-400 placeholder:text-slate-400" />
@@ -384,6 +394,9 @@ function ProductLine({ pp, catalogProducts, invoiceNames = [], onSave, onRemove 
                     Add
                   </button>
                 </div>
+                {sizeNotice && (
+                  <p className="text-2xs text-amber-600 mt-1.5">{sizeNotice} is already in the list — enter its quantity in the highlighted box.</p>
+                )}
               </div>
 
           </div>
