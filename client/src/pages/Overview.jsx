@@ -187,11 +187,11 @@ export default function Overview() {
       ) : (<>
         {editing && (
           <p className="mt-4 text-sm text-[#6e6e73] animate-pop">
-            Drag widgets to rearrange them{typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches ? ' using the handle on top' : ''} — tap <strong className="text-[#1d1d1f]">Done</strong> when finished.
+            Drag widgets to rearrange them{typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches ? ' (hold, or use the handle on top)' : ''}, and use <strong className="text-[#1d1d1f]">S · M · L · XL</strong> or the corner handle to resize. Tap <strong className="text-[#1d1d1f]">Done</strong> when finished.
           </p>
         )}
         <DashboardGrid key={layoutKey} storageKey={layoutStore} editing={editing} onEditingChange={setEditing} items={[
-          { id: 'kpis', span: 'md:col-span-2 2xl:col-span-4', node: (
+          { id: 'kpis', size: 4, sizes: [2, 4], node: (
         <div className="flex flex-wrap sm:flex-nowrap gap-2.5 w-full">
           <Pill label="Margin" value={`${marginPct.toFixed(0)}%`} tone="dark" grow={2} />
           <Pill label="Collected" value={`${collectedPct.toFixed(0)}%`} tone="blue" grow={2} />
@@ -199,14 +199,14 @@ export default function Overview() {
           <Pill label="Overdue" value={`${overduePct.toFixed(0)}%`} tone="white" grow={2} />
         </div>
           ) },
-          { id: 'counts', span: 'md:col-span-2 2xl:col-span-4', node: (
+          { id: 'counts', size: 4, sizes: [2, 3, 4], node: (
         <div className="grid grid-cols-3 gap-2.5 sm:gap-4">
           <Big value={activeProjects} label="Active projects" icon={Flame} tint="bg-orange-500/12 text-orange-500" onClick={() => navigate('/projects')} />
           <Big value={unpaid.length} label="Unpaid invoices" icon={Receipt} tint="bg-[#0071e3]/10 text-[#0071e3]" onClick={() => navigate('/invoices')} />
           <Big value={projects.length} label="Projects" icon={Layers} tint="bg-[#5e5ce6]/10 text-[#5e5ce6]" onClick={() => navigate('/projects')} />
         </div>
           ) },
-          { id: 'cash', node: (
+          { id: 'cash', size: 1, sizes: [1, 2], node: (
           <div className="glass-dark glass-lift relative overflow-hidden rounded-3xl p-6 min-h-[260px] h-full flex flex-col justify-between">
             <span aria-hidden className="pointer-events-none absolute -top-24 -right-20 w-72 h-72 rounded-full bg-[radial-gradient(closest-side,rgba(10,132,255,.55),transparent)]" />
             <span aria-hidden className="pointer-events-none absolute -bottom-28 -left-16 w-64 h-64 rounded-full bg-[radial-gradient(closest-side,rgba(191,90,242,.32),transparent)]" />
@@ -229,8 +229,8 @@ export default function Overview() {
             </div>
           </div>
           ) },
-          { id: 'pl', span: 'md:col-span-2', node: <WarmPL rows={ledger} from={period.from} to={period.to} periodLabel={period.label} /> },
-          { id: 'moneyOut', node: (
+          { id: 'pl', size: 2, sizes: [2, 3, 4], node: <WarmPL rows={ledger} from={period.from} to={period.to} periodLabel={period.label} /> },
+          { id: 'moneyOut', size: 1, sizes: [1, 2], node: (
           <div className={`${card} p-6 flex flex-col h-full`}>
             <div className="flex items-center justify-between">
               <h2 className="text-xl text-[#1d1d1f]">Money out</h2>
@@ -262,7 +262,7 @@ export default function Overview() {
             )}
           </div>
           ) },
-          { id: 'projects', span: 'md:col-span-2', node: (
+          { id: 'projects', size: 2, sizes: [2, 3, 4], node: (
           <div className={`${card} p-5 sm:p-6 h-full`}>
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-xl text-[#1d1d1f]">Projects</h2>
@@ -338,8 +338,8 @@ export default function Overview() {
             )}
           </div>
           ) },
-          { id: 'tasks', node: <TasksWidget /> },
-          { id: 'unpaid', node: (
+          { id: 'tasks', size: 1, sizes: [1, 2], node: <TasksWidget /> },
+          { id: 'unpaid', size: 1, sizes: [1, 2], node: (
           <div className="glass-dark rounded-3xl p-6 h-full">
             <div className="flex items-center justify-between">
               <h2 className="text-xl">Unpaid invoices</h2>
