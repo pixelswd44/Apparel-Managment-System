@@ -770,6 +770,8 @@ const migrations = [
     source         TEXT,
     created_at     TEXT    DEFAULT (datetime('now'))
   )`,
+  // Tasks can belong to a project (client_id already links a client)
+  `ALTER TABLE reminders ADD COLUMN project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL`,
   // Web Push: one row per browser/device that turned on reminder notifications.
   // tz is the device's IANA time zone — remind_at is local wall-clock time.
   `CREATE TABLE IF NOT EXISTS push_subscriptions (

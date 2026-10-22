@@ -76,7 +76,8 @@ function whenLabel(r, today) {
 function payloadFor(fresh, today) {
   if (fresh.length === 1) {
     const r = fresh[0];
-    return { title: r.title, body: `Reminder · ${whenLabel(r, today)}`, tag: `crm-reminder-${r.id}`, url: '/' };
+    const body = ['Reminder', whenLabel(r, today), r.link].filter(Boolean).join(' · ');
+    return { title: r.title, body, tag: `crm-reminder-${r.id}`, url: '/' };
   }
   return {
     title: `${fresh.length} tasks are due`,
@@ -85,7 +86,14 @@ function payloadFor(fresh, today) {
   };
 }
 
-const openReminders = () => db.prepare('SELECT id, title, remind_at FROM reminders WHERE done = 0').all();
+const openReminders = () => db.prepare(`
+  SELECT r.id, r.title, r.remind_at,
+         COALESCE(p.title, NULLIF(c.display_name, ''), NULLIF(c.company, ''), c.name) AS link
+  FROM reminders r
+  LEFT JOIN projects p ON p.id = r.project_id
+  LEFT JOIN clients  c ON c.id = r.client_id
+  WHERE r.done = 0
+`).all();
 
 // Mark everything already due as pushed, so a newly subscribed device only gets
 // reminders that fall due from now on (the open app shows the overdue ones).

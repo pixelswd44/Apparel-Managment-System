@@ -1,5 +1,6 @@
 // Shared helpers for tasks / reminders (stored in /api/reminders).
 // remind_at is "YYYY-MM-DD" (all-day) or "YYYY-MM-DDTHH:MM" (with a time).
+import { UserRound, FolderKanban } from 'lucide-react';
 
 export const REMINDERS_CHANGED = 'reminders-changed';
 
@@ -43,6 +44,15 @@ export function dayLabel(day) {
 }
 
 export const whenLabel = r => [dayLabel(dayOf(r)), fmtTime(timeOf(r))].filter(Boolean).join(' · ');
+
+// What a task is for: a project, a client, or nothing (general)
+export const LINK_ICON = { client: UserRound, project: FolderKanban };
+export function linkOf(r) {
+  if (r?.project_id && r.project_title) return { type: 'project', id: r.project_id, name: r.project_title, sub: r.project_client_name || '' };
+  if (r?.client_id && r.client_name)    return { type: 'client',  id: r.client_id,  name: r.client_name };
+  return null;
+}
+export const linkPath = l => (l?.type === 'project' ? `/projects/${l.id}/edit` : l?.type === 'client' ? `/clients/${l.id}/edit` : '');
 
 // Tell every open widget / bell that tasks changed
 export const announceRemindersChanged = () => window.dispatchEvent(new Event(REMINDERS_CHANGED));

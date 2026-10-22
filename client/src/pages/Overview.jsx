@@ -1,18 +1,19 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, ArrowUpRight, Banknote, Check, FileText, Flame, LayoutGrid, Layers, Receipt, RotateCcw, SlidersHorizontal } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, Banknote, Check, FileText, LayoutGrid, RotateCcw, SlidersHorizontal } from 'lucide-react';
 import api from '../lib/api';
 import { useAuth } from '../lib/authContext';
 import PeriodPicker from '../components/PeriodPicker';
 import WarmPL from '../components/WarmPL';
 import TasksWidget from '../components/TasksWidget';
 import DashboardGrid from '../components/DashboardGrid';
+import StatCards from '../components/StatCards';
 import { pkr, displayCurrency } from '../lib/currency';
 
 // Dashboard — Liquid Glass surfaces over the app wallpaper. All amounts in PKR.
 //   Money In    = payments received + other income        (in the period)
 //   Money Out   = project costs + business expenses + salaries (in the period)
-//   Net         = Money In − Money Out (drives margin)
+//   Net         = Money In − Money Out (the Profit card)
 //   Cash        = Ledger closing balance (opening + overrides + advances)
 //   To Receive  = unpaid invoice balances right now (not filtered by period)
 
@@ -22,42 +23,6 @@ const money = (v, cc) => {
   return `${cc} ${n.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
 };
 const card = 'glass rounded-3xl';
-const clamp = (n, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, n));
-
-// Labelled pill like the top row of the reference: label above, pill with the value inside.
-function Pill({ label, value, pct, tone, grow }) {
-  const tones = {
-    dark:   'glass-dark !border-white/10',
-    blue:   'text-white bg-gradient-to-b from-[#2b8cff] to-[#0071e3] shadow-[inset_0_1px_0_rgba(255,255,255,.3),0_6px_16px_-6px_rgba(0,113,227,.55)]',
-    white:  'glass text-[#1d1d1f]',
-    stripe: 'glass text-[#1d1d1f]',
-  };
-  return (
-    <div className={`min-w-0 ${tone === 'stripe' ? 'min-w-full order-last sm:min-w-0 sm:order-none' : 'min-w-[calc(33.333%-7px)] sm:min-w-0'}`} style={{ flex: `${grow} 1 0` }}>
-      <p className="text-[11px] font-medium text-[#515154] mb-1.5 truncate">{label}</p>
-      <div className={`h-9 rounded-full flex items-center px-3.5 text-xs font-semibold relative overflow-hidden ${tones[tone]}`}>
-        {tone === 'stripe' && (
-          <span className="absolute inset-y-[3px] left-[3px] rounded-full bg-gradient-to-b from-[#7cb5f5]/80 to-[#3d95ef]/70 shadow-[inset_0_1px_0_rgba(255,255,255,.5)] transition-[width] duration-1000 ease-[cubic-bezier(.34,1.3,.64,1)]"
-            style={{ width: `calc(${clamp(pct)}% - 6px)` }} />
-        )}
-        <span className="relative">{value}</span>
-      </div>
-    </div>
-  );
-}
-
-function Big({ value, label, icon: Icon, tint, onClick }) {
-  return (
-    <div onClick={onClick}
-      className={`${card} glass-lift px-4 py-3 sm:px-5 sm:py-4 flex flex-col items-start sm:flex-row sm:items-center gap-2 sm:gap-4 cursor-pointer`}>
-      <div className={`w-10 h-10 sm:w-11 sm:h-11 rounded-full grid place-items-center flex-shrink-0 shadow-[inset_0_1px_0_rgba(255,255,255,.6)] ${tint}`}><Icon size={18} /></div>
-      <div className="min-w-0">
-        <p className="text-2xl sm:text-3xl font-light text-[#1d1d1f] leading-none tabular-nums tracking-tight">{value}</p>
-        <p className="text-[11px] sm:text-xs text-[#6e6e73] mt-1 leading-tight sm:truncate">{label}</p>
-      </div>
-    </div>
-  );
-}
 
 export default function Overview() {
   const navigate = useNavigate();
@@ -123,10 +88,6 @@ export default function Overview() {
   const projProfit = projRec - projCost;
 
   const outstanding = parseFloat(f.outstanding) || 0;
-  const marginPct    = moneyIn > 0 ? (net / moneyIn) * 100 : 0;
-  const collectedPct = moneyIn + outstanding > 0 ? (moneyIn / (moneyIn + outstanding)) * 100 : 0;
-  const spendPct     = moneyIn > 0 ? (moneyOut / moneyIn) * 100 : 0;
-  const overduePct   = unpaid.length ? (overdue / unpaid.length) * 100 : 0;
 
   const first = (user?.name || '').split(' ')[0] || 'there';
   const split = [
@@ -191,20 +152,11 @@ export default function Overview() {
           </p>
         )}
         <DashboardGrid key={layoutKey} storageKey={layoutStore} editing={editing} onEditingChange={setEditing} items={[
+          // Keeps the old top-row id so saved layouts leave it in place
           { id: 'kpis', size: 4, sizes: [2, 4], node: (
-        <div className="flex flex-wrap sm:flex-nowrap gap-2.5 w-full">
-          <Pill label="Margin" value={`${marginPct.toFixed(0)}%`} tone="dark" grow={2} />
-          <Pill label="Collected" value={`${collectedPct.toFixed(0)}%`} tone="blue" grow={2} />
-          <Pill label="Spent of income" value={`${spendPct.toFixed(0)}%`} tone="stripe" pct={spendPct} grow={5} />
-          <Pill label="Overdue" value={`${overduePct.toFixed(0)}%`} tone="white" grow={2} />
-        </div>
-          ) },
-          { id: 'counts', size: 4, sizes: [2, 3, 4], node: (
-        <div className="grid grid-cols-3 gap-2.5 sm:gap-4">
-          <Big value={activeProjects} label="Active projects" icon={Flame} tint="bg-orange-500/12 text-orange-500" onClick={() => navigate('/projects')} />
-          <Big value={unpaid.length} label="Unpaid invoices" icon={Receipt} tint="bg-[#0071e3]/10 text-[#0071e3]" onClick={() => navigate('/invoices')} />
-          <Big value={projects.length} label="Projects" icon={Layers} tint="bg-[#5e5ce6]/10 text-[#5e5ce6]" onClick={() => navigate('/projects')} />
-        </div>
+            <StatCards moneyIn={moneyIn} moneyOut={moneyOut} net={net} outstanding={outstanding}
+              unpaidCount={unpaid.length} overdueCount={overdue} activeProjects={activeProjects} totalProjects={projects.length}
+              ledgerRows={ledger} navigate={navigate} />
           ) },
           { id: 'cash', size: 1, sizes: [1, 2], node: (
           <div className="glass-dark glass-lift relative overflow-hidden rounded-3xl p-6 min-h-[260px] h-full flex flex-col justify-between">

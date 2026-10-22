@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { Bell, BellRing, Check, X, Clock, CalendarDays } from 'lucide-react';
 import api from '../../lib/api';
-import { REMINDERS_CHANGED, announceRemindersChanged, dueAt, timeOf, whenLabel, isoDay, dayOf } from '../../lib/reminders';
+import { REMINDERS_CHANGED, announceRemindersChanged, dueAt, timeOf, whenLabel, isoDay, dayOf, linkOf } from '../../lib/reminders';
 import { pushSupported, ensurePushSubscription } from '../../lib/push';
 
 // Reminder notifications while the app is open:
@@ -36,7 +36,7 @@ export function useReminderNotifier() {
   const [permission, setPermission] = useState(() => (canNotify() ? Notification.permission : 'unsupported'));
   const [pushOn, setPushOn]         = useState(false); // this device gets server pushes
   const pushOnRef = useRef(false);
-  pushOnRef.current = pushOn;
+  useEffect(() => { pushOnRef.current = pushOn; }, [pushOn]);
 
   const notify = useCallback(fresh => {
     if (!fresh.length) return;
@@ -44,7 +44,7 @@ export function useReminderNotifier() {
     const items = fresh.length > 2
       ? [{ id: `summary-${Date.now()}`, summary: true, title: `${fresh.length} tasks are due`,
            when: fresh.slice(0, 3).map(r => r.title).join(' · ') + (fresh.length > 3 ? ' …' : ''), at: Date.now() }]
-      : fresh.map(r => ({ id: r.id, title: r.title, when: whenLabel(r), at: Date.now() }));
+      : fresh.map(r => ({ id: r.id, title: r.title, when: [whenLabel(r), linkOf(r)?.name].filter(Boolean).join(' · '), at: Date.now() }));
     setToasts(t => [...t, ...items].slice(-3));
     // Desktop notification — one summary when several fall due together
     // (skipped when the service worker gets these as pushes)
@@ -163,6 +163,7 @@ export function NotificationBell({ due, laterToday, permission, pushOn, requestP
         <p className="text-sm text-[#1d1d1f] leading-snug break-words">{r.title}</p>
         <p className={`text-[11px] mt-0.5 flex items-center gap-1 ${late ? 'text-rose-500' : 'text-[#86868b]'}`}>
           {timeOf(r) ? <Clock size={10} /> : <CalendarDays size={10} />} {whenLabel(r)}
+          {linkOf(r) && <span className="truncate">· {linkOf(r).name}</span>}
         </p>
       </div>
     </li>
