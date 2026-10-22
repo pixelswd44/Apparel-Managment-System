@@ -617,23 +617,24 @@ function PrintSummary({ project, fin = {} }) {
   );
 }
 
-// Shared: full-size reference images, two per row (used by Cutting / Stitching)
+// Shared: reference images, one per printed page (used by Cutting / Stitching).
+// The first image sits under the document header; each later one starts a new page,
+// and the product tables after them start on a fresh page too.
 function PrintRefImages({ images }) {
   if (!images || images.length === 0) return null;
   return (
-    <div className="mb-6" style={{ breakInside: 'avoid' }}>
+    <div className="mb-6" style={{ breakAfter: 'page' }}>
       <p className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-3">Final Designs</p>
-      <div className="flex flex-wrap gap-3">
-        {images.map((img, i) => (
-          <div key={i} className="border border-slate-300 rounded overflow-hidden" style={{ width: 'calc(50% - 6px)', breakInside: 'avoid' }}>
-            <img src={imgUrl(img.url)} alt={img.originalName || `Image ${i+1}`}
-              className="w-full object-contain bg-slate-50" style={{ maxHeight: 360 }} />
-            {img.originalName && (
-              <p className="text-xs text-slate-500 px-2 py-1 truncate">{img.originalName}</p>
-            )}
-          </div>
-        ))}
-      </div>
+      {images.map((img, i) => (
+        <div key={i} className="border border-slate-300 rounded overflow-hidden mb-6"
+          style={{ breakInside: 'avoid', breakBefore: i > 0 ? 'page' : 'auto' }}>
+          <img src={imgUrl(img.url)} alt={img.originalName || `Image ${i+1}`}
+            className="w-full object-contain bg-slate-50" style={{ maxHeight: i === 0 ? '185mm' : '245mm' }} />
+          {img.originalName && (
+            <p className="text-xs text-slate-500 px-2 py-1 truncate">{img.originalName}</p>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
@@ -653,7 +654,8 @@ function PrintCutting({ project }) {
 
       <PrintRefImages images={images} />
       {(project.products||[]).map((pp, i) => (
-        <div key={pp.id} className={`mb-8 ${i < project.products.length - 1 ? 'pb-8 border-b border-slate-300' : ''}`}>
+        // Keep each product's heading + size table + note on one page; if it doesn't fit, it moves to the next
+        <div key={pp.id} className={`mb-8 ${i < project.products.length - 1 ? 'pb-8 border-b border-slate-300' : ''}`} style={{ breakInside: 'avoid' }}>
           <div className="flex items-center gap-3 mb-3">
             <h2 className="text-lg font-bold text-slate-900">{pp.product_name}</h2>
             <span className="text-sm text-slate-500">Total: <strong>{parseFloat(pp.total_quantity)||0} {pp.unit}</strong></span>
@@ -703,7 +705,7 @@ function PrintStitching({ project }) {
       </div>
       <PrintRefImages images={images} />
       {(project.products||[]).map((pp, i) => (
-        <div key={pp.id} className={`mb-8 ${i < project.products.length - 1 ? 'pb-8 border-b border-slate-300' : ''}`}>
+        <div key={pp.id} className={`mb-8 ${i < project.products.length - 1 ? 'pb-8 border-b border-slate-300' : ''}`} style={{ breakInside: 'avoid' }}>
           <div className="flex items-center gap-3 mb-3">
             <h2 className="text-lg font-bold text-slate-900">{pp.product_name}</h2>
             <span className="text-sm text-slate-500">Total: <strong>{parseFloat(pp.total_quantity)||0} {pp.unit}</strong></span>
