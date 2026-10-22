@@ -354,8 +354,15 @@ function ProductNameInput({ value, products, onChange, onPickProduct, onAddNew, 
         onChange={e => { onChange(e.target.value); setOpen(true); }}
         onFocus={() => { if ((value || '').trim()) setOpen(true); }}
         placeholder="Product name…"
-        className={`${smInput} font-semibold text-slate-800`}
+        className={`${smInput} font-semibold text-slate-800 pr-20`}
       />
+      {/* Always-visible shortcut to create a product that isn't in the catalog yet */}
+      <button type="button" title="Create a new product"
+        onMouseDown={e => e.preventDefault()}
+        onClick={() => { onAddNew(trimmed); setOpen(false); }}
+        className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors">
+        <Plus size={12} /> New
+      </button>
       {showDropdown && (
         <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden">
           {matches.length > 0 && (

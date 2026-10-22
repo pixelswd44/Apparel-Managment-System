@@ -467,6 +467,12 @@ export function ProductDrawer({ product, onClose, onEdit, onDelete, onDuplicate,
   const [delCalcId, setDelCalcId]           = useState(null);
   const [applying, setApplying]             = useState(false);
 
+  // ── Images tab: upload / remove straight from the product view ───────────
+  const imageInputRef = useRef();
+  const [imgBusy, setImgBusy]   = useState(false);
+  const [imgError, setImgError] = useState('');
+  const [dragOver, setDragOver] = useState(false);
+
   // Load order history
   useEffect(() => {
     if (!product?.id) return;
@@ -509,6 +515,55 @@ export function ProductDrawer({ product, onClose, onEdit, onDelete, onDuplicate,
   if (!product) return null;
 
   const images = (() => { try { return JSON.parse(product.images ?? '[]'); } catch { return []; } })();
+  const MAX_IMAGES = 5;
+
+  // Saves the new image list on the product, then reloads it
+  async function saveImages(next) {
+    await api.put(`/products/${product.id}`, { ...product, images: JSON.stringify(next) });
+    await onApply?.(product);
+  }
+
+  async function uploadImages(fileList) {
+    const files = [...(fileList || [])].filter(f => f.type.startsWith('image/'));
+    if (!files.length) return;
+    const room = MAX_IMAGES - images.length;
+    if (files.length > room) {
+      setImgError(room > 0 ? `You can add ${room} more (max ${MAX_IMAGES} images).` : `Max ${MAX_IMAGES} images — remove one first.`);
+      return;
+    }
+    setImgBusy(true); setImgError('');
+    try {
+      const uploaded = await Promise.all(files.map(async file => {
+        const fd = new FormData();
+        fd.append('file', file);
+        const { data } = await api.post('/uploads', fd);
+        return data;
+      }));
+      await saveImages([...images, ...uploaded]);
+    } catch (err) {
+      setImgError(err?.response?.data?.error || 'Upload failed. Please try again.');
+    } finally {
+      setImgBusy(false);
+      if (imageInputRef.current) imageInputRef.current.value = '';
+    }
+  }
+
+  async function removeImage(img) {
+    if (!window.confirm('Remove this image from the product?')) return;
+    setImgBusy(true); setImgError('');
+    try {
+      await saveImages(images.filter(i => i.filename !== img.filename));
+      await api.delete(`/uploads/${img.filename}`).catch(() => {});
+    } catch {
+      setImgError('Could not remove the image. Please try again.');
+    } finally { setImgBusy(false); }
+  }
+
+  const dropProps = {
+    onDragOver:  e => { e.preventDefault(); setDragOver(true); },
+    onDragLeave: () => setDragOver(false),
+    onDrop:      e => { e.preventDefault(); setDragOver(false); uploadImages(e.dataTransfer.files); },
+  };
   const isLowStock = parseFloat(product.reorder_level) > 0 && parseFloat(product.stock_quantity) <= parseFloat(product.reorder_level);
 
   // ── Calculator helpers ────────────────────────────────────────────────────
@@ -963,7 +1018,7 @@ export function ProductDrawer({ product, onClose, onEdit, onDelete, onDuplicate,
                           </tbody>
                           <tfoot className="bg-slate-50 border-t border-slate-200">
                             <tr>
-                              <td colSpan={4} className="px-4 py-2 text-xs font-semibold text-slate-500">Total</td>
+                              <td colSpan={5} className="px-4 py-2 text-xs font-semibold text-slate-500">Total</td>
                               <td className="px-4 py-2 text-right text-xs font-bold text-slate-800">
                                 {orders.stats.total_qty_invoiced.toLocaleString()} {product.unit}
                               </td>
@@ -1025,7 +1080,7 @@ export function ProductDrawer({ product, onClose, onEdit, onDelete, onDuplicate,
                           </tbody>
                           <tfoot className="bg-slate-50 border-t border-slate-200">
                             <tr>
-                              <td colSpan={4} className="px-4 py-2 text-xs font-semibold text-slate-500">Total</td>
+                              <td colSpan={5} className="px-4 py-2 text-xs font-semibold text-slate-500">Total</td>
                               <td className="px-4 py-2 text-right text-xs font-bold text-slate-800">
                                 {orders.stats.total_qty_quoted.toLocaleString()} {product.unit}
                               </td>
@@ -1050,25 +1105,51 @@ export function ProductDrawer({ product, onClose, onEdit, onDelete, onDuplicate,
 
           {/* ── Images ── */}
           {tab === 'Images' && (
-            <div className="px-6 py-5">
+            <div className="px-6 py-5" {...dropProps}>
+              <input ref={imageInputRef} type="file" multiple accept="image/*" className="hidden"
+                onChange={e => uploadImages(e.target.files)} />
+
               {images.length === 0 ? (
-                <div className="py-16 text-center">
-                  <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <Image size={20} className="text-slate-300" />
-                  </div>
-                  <p className="text-slate-500 font-medium">No images</p>
-                  <p className="text-slate-400 text-sm mt-1">Edit this product to upload images.</p>
-                </div>
+                <button type="button" onClick={() => imageInputRef.current?.click()} disabled={imgBusy}
+                  className={`w-full py-14 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-2 transition-colors disabled:opacity-60 ${dragOver ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/50'}`}>
+                  <span className="w-12 h-12 bg-indigo-50 rounded-full flex items-center justify-center">
+                    {imgBusy
+                      ? <span className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+                      : <Upload size={20} className="text-indigo-600" />}
+                  </span>
+                  <span className="text-slate-700 font-medium">{imgBusy ? 'Uploading…' : 'Upload images'}</span>
+                  <span className="text-slate-400 text-sm">Click or drop up to {MAX_IMAGES} images here</span>
+                </button>
               ) : (
-                <div className="grid grid-cols-3 gap-3">
-                  {images.map(img => (
-                    <a key={img.filename} href={img.url} target="_blank" rel="noreferrer"
-                      className="aspect-square rounded-xl overflow-hidden border border-slate-200 bg-slate-50 hover:opacity-90 transition-opacity block">
-                      <img src={imgUrl(img.url)} alt={img.originalName} className="w-full h-full object-cover" />
-                    </a>
-                  ))}
-                </div>
+                <>
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <p className="text-xs text-slate-500">{images.length} of {MAX_IMAGES} images · drop files here to add</p>
+                    {images.length < MAX_IMAGES && (
+                      <button type="button" onClick={() => imageInputRef.current?.click()} disabled={imgBusy}
+                        className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-60">
+                        {imgBusy
+                          ? <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                          : <Plus size={13} />}
+                        {imgBusy ? 'Uploading…' : 'Add images'}
+                      </button>
+                    )}
+                  </div>
+                  <div className={`grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 rounded-2xl transition-colors ${dragOver ? 'ring-2 ring-indigo-300 ring-offset-4' : ''}`}>
+                    {images.map(img => (
+                      <div key={img.filename} className="relative group aspect-square rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
+                        <a href={imgUrl(img.url)} target="_blank" rel="noreferrer" className="block w-full h-full">
+                          <img src={imgUrl(img.url)} alt={img.originalName} className="w-full h-full object-cover" />
+                        </a>
+                        <button type="button" onClick={() => removeImage(img)} disabled={imgBusy} title="Remove image"
+                          className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/55 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity hover:bg-rose-600">
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </>
               )}
+              {imgError && <p className="text-xs text-rose-600 mt-3">{imgError}</p>}
             </div>
           )}
 

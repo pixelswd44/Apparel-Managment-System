@@ -194,7 +194,7 @@ function getSmartPrice(p, docCurrency, currencies) {
   return parseFloat(p.selling_price) || 0;
 }
 
-function ProductNameInput({ value, products, onChange, onAddRow, currencies, docCurrency }) {
+function ProductNameInput({ value, products, onChange, onPickProduct, onAddNew, currencies, docCurrency }) {
   const [open, setOpen] = useState(false);
   const ref = useRef();
 
@@ -205,13 +205,14 @@ function ProductNameInput({ value, products, onChange, onAddRow, currencies, doc
     return () => document.removeEventListener('mousedown', fn);
   }, [open]);
 
-  const trimmed = (value || '').trim();
-  const matches = trimmed
+  const trimmed   = (value || '').trim();
+  const matches   = trimmed
     ? products.filter(p =>
         p.name.toLowerCase().includes(trimmed.toLowerCase()) ||
         (p.article_number || '').toLowerCase().includes(trimmed.toLowerCase()))
     : [];
-  const showDropdown = open && trimmed.length > 0 && matches.length > 0;
+  const exactMatch   = matches.some(p => p.name.toLowerCase() === trimmed.toLowerCase());
+  const showDropdown = open && trimmed.length > 0 && (matches.length > 0 || !exactMatch);
 
   return (
     <div ref={ref} className="relative">
@@ -220,38 +221,138 @@ function ProductNameInput({ value, products, onChange, onAddRow, currencies, doc
         onChange={e => { onChange(e.target.value); setOpen(true); }}
         onFocus={() => { if ((value || '').trim()) setOpen(true); }}
         placeholder="Product name…"
-        className={`${smInput} font-semibold text-slate-800`}
+        className={`${smInput} font-semibold text-slate-800 pr-20`}
       />
+      {/* Always-visible shortcut to create a product that isn't in the catalog yet */}
+      <button type="button" title="Create a new product"
+        onMouseDown={e => e.preventDefault()}
+        onClick={() => { onAddNew(trimmed); setOpen(false); }}
+        className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors">
+        <Plus size={12} /> New
+      </button>
       {showDropdown && (
         <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden">
-          <div className="max-h-52 overflow-y-auto divide-y divide-slate-50">
-            {matches.slice(0, 8).map(p => (
-              <button key={p.id} type="button"
-                onMouseDown={e => e.preventDefault()}
-                onClick={() => { onAddRow(p); setOpen(false); }}
-                className="w-full text-left px-4 py-2.5 hover:bg-indigo-50 transition-colors">
-                <div className="font-semibold text-slate-800 text-sm">
-                  {p.name}
-                  {p.article_number && <span className="text-slate-400 font-normal text-xs"> · {p.article_number}</span>}
-                </div>
-                {p.description && <div className="text-xs text-slate-400 truncate mt-0.5">{p.description}</div>}
-                {(() => {
-                  const smartPrice = getSmartPrice(p, docCurrency, currencies);
-                  const sym = currencies.find(c => c.code === docCurrency)?.symbol || docCurrency || '$';
-                  return <div className="text-xs text-indigo-600 font-semibold mt-0.5">{sym}{smartPrice.toFixed(2)}</div>;
-                })()}
-              </button>
-            ))}
-          </div>
+          {matches.length > 0 && (
+            <div className="max-h-52 overflow-y-auto divide-y divide-slate-50">
+              {matches.slice(0, 8).map(p => (
+                <button key={p.id} type="button"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => { onPickProduct(p); setOpen(false); }}
+                  className="w-full text-left px-4 py-2.5 hover:bg-indigo-50 transition-colors">
+                  <div className="font-semibold text-slate-800 text-sm">
+                    {p.name}
+                    {p.article_number && <span className="text-slate-400 font-normal text-xs"> · {p.article_number}</span>}
+                  </div>
+                  {p.description && <div className="text-xs text-slate-400 truncate mt-0.5">{p.description}</div>}
+                  {(() => {
+                    const smartPrice = getSmartPrice(p, docCurrency, currencies);
+                    const sym = currencies.find(c => c.code === docCurrency)?.symbol || docCurrency || '$';
+                    return <div className="text-xs text-indigo-600 font-semibold mt-0.5">{sym}{smartPrice.toFixed(2)}</div>;
+                  })()}
+                </button>
+              ))}
+            </div>
+          )}
+          {!exactMatch && trimmed && (
+            <button type="button"
+              onMouseDown={e => e.preventDefault()}
+              onClick={() => { onAddNew(trimmed); setOpen(false); }}
+              className={`w-full text-left px-4 py-2.5 text-sm text-indigo-600 hover:bg-indigo-50 flex items-center gap-2 font-semibold transition-colors ${matches.length > 0 ? 'border-t border-slate-100' : ''}`}>
+              <Plus size={13} className="flex-shrink-0" />
+              <span>Add "<strong>{trimmed}</strong>" as new product</span>
+            </button>
+          )}
         </div>
       )}
     </div>
   );
 }
 
+// ── Quick Add Product mini-modal ──────────────────────────────────────────────
+
+function QuickAddProduct({ initialName = '', onClose, onCreated }) {
+  const [form, setForm]     = useState({ name: initialName, article_number: '', selling_price: '', description: '' });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr]       = useState('');
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  async function handleSave() {
+    if (!form.name.trim()) { setErr('Product name is required.'); return; }
+    setSaving(true); setErr('');
+    try {
+      const { data } = await api.post('/products', { ...form, status: 'active', unit: 'pcs' });
+      onCreated(data);
+      onClose();
+    } catch (e) {
+      setErr(e?.response?.data?.error ?? 'Failed to create product.');
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] p-4 animate-overlay">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-modal">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h3 className="font-bold text-slate-900">Add New Product</h3>
+            <p className="text-xs text-slate-400 mt-0.5">It will be saved to your products database</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-all">
+            <X size={16} />
+          </button>
+        </div>
+
+        {err && (
+          <div className="mb-4 bg-rose-50 border border-rose-200 text-rose-700 text-sm px-3 py-2.5 rounded-xl flex items-center gap-2">
+            <AlertTriangle size={14} />{err}
+          </div>
+        )}
+
+        <div className="space-y-3.5">
+          <Field label="Product Name" required>
+            <input autoFocus value={form.name} onChange={e => set('name', e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSave()}
+              className={inputCls} placeholder="e.g. BJJ GI Black 450 GSM" />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Article / SKU">
+              <input value={form.article_number} onChange={e => set('article_number', e.target.value)}
+                className={inputCls} placeholder="e.g. A001" />
+            </Field>
+            <Field label="Selling Price ($)">
+              <input type="number" min="0" step="any" value={form.selling_price}
+                onChange={e => set('selling_price', e.target.value)}
+                className={inputCls} placeholder="0.00" />
+            </Field>
+          </div>
+          <Field label="Description">
+            <textarea rows={2} value={form.description} onChange={e => set('description', e.target.value)}
+              className={`${inputCls} resize-none`}
+              placeholder="Rib Stop Pants + Double Eva Collar + Woven Label…" />
+          </Field>
+        </div>
+
+        <div className="flex gap-3 mt-5">
+          <button onClick={handleSave} disabled={saving}
+            className="flex-1 px-4 py-2.5 text-sm bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-60 font-semibold transition-colors flex items-center justify-center gap-2">
+            {saving ? <><Loader2 size={14} className="animate-spin" />Adding…</> : <><Check size={14} />Add Product</>}
+          </button>
+          <button onClick={onClose}
+            className="px-4 py-2.5 text-sm border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-colors">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Line Items ────────────────────────────────────────────────────────────────
 
-function LineItems({ items, onChange, products, sym, currencies, docCurrency }) {
+function LineItems({ items, onChange, products, setProducts, sym, currencies, docCurrency }) {
+  const [quickAdd,     setQuickAdd]     = useState(false);
+  const [quickAddName, setQuickAddName] = useState('');
+  const [quickAddIdx,  setQuickAddIdx]  = useState(null);
+
   function update(idx, field, val) {
     onChange(items.map((it, i) => i === idx ? calcItem({ ...it, [field]: val }) : it));
   }
@@ -268,8 +369,27 @@ function LineItems({ items, onChange, products, sym, currencies, docCurrency }) 
     }) : it));
   }
 
+  function onProductCreated(p) {
+    setProducts(prev => [...prev, p]);
+    if (quickAddIdx !== null) pickProduct(quickAddIdx, p);
+  }
+
+  function openAddNew(name, idx) {
+    setQuickAddName(name);
+    setQuickAddIdx(idx);
+    setQuickAdd(true);
+  }
+
   return (
     <>
+      {quickAdd && (
+        <QuickAddProduct
+          initialName={quickAddName}
+          onClose={() => { setQuickAdd(false); setQuickAddIdx(null); setQuickAddName(''); }}
+          onCreated={onProductCreated}
+        />
+      )}
+
       {items.length > 0 && (
         <div className="hidden lg:grid grid-cols-[1fr_80px_140px_80px_36px] gap-3 px-1 mb-1">
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Product & Description</p>
@@ -297,7 +417,8 @@ function LineItems({ items, onChange, products, sym, currencies, docCurrency }) 
                   value={item.name || ''}
                   products={products}
                   onChange={v => update(idx, 'name', v)}
-                  onAddRow={p => pickProduct(idx, p)}
+                  onPickProduct={p => pickProduct(idx, p)}
+                  onAddNew={name => openAddNew(name, idx)}
                   currencies={currencies}
                   docCurrency={docCurrency}
                 />
@@ -920,6 +1041,7 @@ export default function InvoiceForm() {
             items={items}
             onChange={setItems}
             products={products}
+            setProducts={setProducts}
             sym={sym}
             currencies={currencies}
             docCurrency={form.currency}
