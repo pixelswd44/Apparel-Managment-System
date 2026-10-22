@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, ArrowUpRight, Banknote, FileText, Flame, Layers, Receipt, SlidersHorizontal } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, Banknote, Check, FileText, Flame, LayoutGrid, Layers, Receipt, RotateCcw, SlidersHorizontal } from 'lucide-react';
 import api from '../lib/api';
 import { useAuth } from '../lib/authContext';
 import PeriodPicker from '../components/PeriodPicker';
 import WarmPL from '../components/WarmPL';
 import TasksWidget from '../components/TasksWidget';
+import DashboardGrid from '../components/DashboardGrid';
 import { pkr, displayCurrency } from '../lib/currency';
 
 // Dashboard — Liquid Glass surfaces over the app wallpaper. All amounts in PKR.
@@ -69,6 +70,9 @@ export default function Overview() {
   const [ledgerSummary, setLedgerSummary] = useState(null);
   const [loading, setLoading]   = useState(true);
   const [showFilters, setShowFilters] = useState(false);
+  const [editing, setEditing]         = useState(false); // rearranging widgets
+  const [layoutKey, setLayoutKey]     = useState(0);     // bump to remount the grid after a reset
+  const layoutStore = `crm_dashboard_layout_v1_${user?.id ?? 'me'}`;
 
   useEffect(() => {
     const params = period.from ? { from: period.from, to: period.to } : {};
@@ -141,6 +145,24 @@ export default function Overview() {
           <p className="text-sm text-[#6e6e73] mt-2">All amounts in {displayCurrency().code} · {period.label}</p>
         </div>
         <div className="flex items-center gap-2">
+          {editing ? (
+            <>
+              <button onClick={() => { try { localStorage.removeItem(layoutStore); } catch { /* ignore */ } setLayoutKey(k => k + 1); }}
+                title="Put widgets back in their original places"
+                className="glass flex items-center gap-2 px-4 py-3 rounded-full text-sm font-medium text-[#1d1d1f] hover:!bg-white/80">
+                <RotateCcw size={14} /> <span className="hidden sm:inline">Reset</span>
+              </button>
+              <button onClick={() => setEditing(false)}
+                className="flex items-center gap-2 px-5 py-3 bg-indigo-600 text-white rounded-full text-sm font-semibold hover:bg-indigo-700 animate-pop">
+                <Check size={15} /> Done
+              </button>
+            </>
+          ) : (
+          <>
+          <button onClick={() => setEditing(true)} title="Rearrange widgets (or press and hold any widget)"
+            className="glass flex items-center gap-2 px-4 py-3 rounded-full text-sm font-medium text-[#1d1d1f] hover:!bg-white/80">
+            <LayoutGrid size={14} /> <span className="hidden sm:inline">Edit</span>
+          </button>
           <button onClick={() => setShowFilters(v => !v)}
             className={`glass flex items-center gap-2 px-4 py-3 rounded-full text-sm font-medium ${showFilters ? '!bg-white/90 text-[#0071e3]' : 'text-[#1d1d1f] hover:!bg-white/80'}`}>
             <SlidersHorizontal size={14} /> <span className="hidden sm:inline">Filters</span>
@@ -150,6 +172,8 @@ export default function Overview() {
             className="flex items-center gap-2 px-5 py-3 bg-indigo-600 text-white rounded-full text-sm font-medium hover:bg-indigo-700">
             <Banknote size={15} /> <span className="hidden sm:inline">Record</span> Expense
           </button>
+          </>
+          )}
         </div>
       </div>
 
@@ -161,26 +185,29 @@ export default function Overview() {
           <div className="w-8 h-8 border-2 border-white/70 border-t-[#0071e3] rounded-full animate-spin" />
         </div>
       ) : (<>
-        {/* Pills — full width */}
-        <div className="flex flex-wrap sm:flex-nowrap gap-2.5 mt-6 sm:mt-7 w-full">
+        {editing && (
+          <p className="mt-4 text-sm text-[#6e6e73] animate-pop">
+            Drag widgets to rearrange them{typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches ? ' using the handle on top' : ''} — tap <strong className="text-[#1d1d1f]">Done</strong> when finished.
+          </p>
+        )}
+        <DashboardGrid key={layoutKey} storageKey={layoutStore} editing={editing} onEditingChange={setEditing} items={[
+          { id: 'kpis', span: 'md:col-span-2 2xl:col-span-4', node: (
+        <div className="flex flex-wrap sm:flex-nowrap gap-2.5 w-full">
           <Pill label="Margin" value={`${marginPct.toFixed(0)}%`} tone="dark" grow={2} />
           <Pill label="Collected" value={`${collectedPct.toFixed(0)}%`} tone="blue" grow={2} />
           <Pill label="Spent of income" value={`${spendPct.toFixed(0)}%`} tone="stripe" pct={spendPct} grow={5} />
           <Pill label="Overdue" value={`${overduePct.toFixed(0)}%`} tone="white" grow={2} />
         </div>
-
-        {/* Small info cards */}
-        <div className="grid grid-cols-3 gap-2.5 sm:gap-4 mt-4">
+          ) },
+          { id: 'counts', span: 'md:col-span-2 2xl:col-span-4', node: (
+        <div className="grid grid-cols-3 gap-2.5 sm:gap-4">
           <Big value={activeProjects} label="Active projects" icon={Flame} tint="bg-orange-500/12 text-orange-500" onClick={() => navigate('/projects')} />
           <Big value={unpaid.length} label="Unpaid invoices" icon={Receipt} tint="bg-[#0071e3]/10 text-[#0071e3]" onClick={() => navigate('/invoices')} />
           <Big value={projects.length} label="Projects" icon={Layers} tint="bg-[#5e5ce6]/10 text-[#5e5ce6]" onClick={() => navigate('/projects')} />
         </div>
-
-        {/* Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-4 gap-5 mt-6">
-
-          {/* Net hero — dark card */}
-          <div className="glass-dark glass-lift relative overflow-hidden rounded-3xl p-6 min-h-[260px] flex flex-col justify-between md:order-1 2xl:order-none">
+          ) },
+          { id: 'cash', node: (
+          <div className="glass-dark glass-lift relative overflow-hidden rounded-3xl p-6 min-h-[260px] h-full flex flex-col justify-between">
             <span aria-hidden className="pointer-events-none absolute -top-24 -right-20 w-72 h-72 rounded-full bg-[radial-gradient(closest-side,rgba(10,132,255,.55),transparent)]" />
             <span aria-hidden className="pointer-events-none absolute -bottom-28 -left-16 w-64 h-64 rounded-full bg-[radial-gradient(closest-side,rgba(191,90,242,.32),transparent)]" />
             <div className="relative">
@@ -201,12 +228,10 @@ export default function Overview() {
               </div>
             </div>
           </div>
-
-          {/* P&L chart */}
-          <div className="md:col-span-2 md:order-3 2xl:order-none"><WarmPL rows={ledger} from={period.from} to={period.to} periodLabel={period.label} /></div>
-
-          {/* Where the money went */}
-          <div className={`${card} p-6 flex flex-col md:order-2 2xl:order-none`}>
+          ) },
+          { id: 'pl', span: 'md:col-span-2', node: <WarmPL rows={ledger} from={period.from} to={period.to} periodLabel={period.label} /> },
+          { id: 'moneyOut', node: (
+          <div className={`${card} p-6 flex flex-col h-full`}>
             <div className="flex items-center justify-between">
               <h2 className="text-xl text-[#1d1d1f]">Money out</h2>
               <span className="text-2xl font-light text-[#1d1d1f]">{pkr(moneyOut)}</span>
@@ -236,9 +261,9 @@ export default function Overview() {
               <p className="flex-1 grid place-items-center text-sm text-[#86868b] py-8">No spending in this period</p>
             )}
           </div>
-
-          {/* Projects */}
-          <div className={`${card} p-5 sm:p-6 md:col-span-2 2xl:col-span-2 md:order-4 2xl:order-none`}>
+          ) },
+          { id: 'projects', span: 'md:col-span-2', node: (
+          <div className={`${card} p-5 sm:p-6 h-full`}>
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-xl text-[#1d1d1f]">Projects</h2>
               <button onClick={() => navigate('/projects')}
@@ -312,12 +337,10 @@ export default function Overview() {
               </>
             )}
           </div>
-
-          {/* Tasks & reminders */}
-          <div className="md:order-5 2xl:order-none"><TasksWidget /></div>
-
-          {/* Unpaid invoices — dark task-style card */}
-          <div className="glass-dark md:order-6 2xl:order-none rounded-3xl p-6">
+          ) },
+          { id: 'tasks', node: <TasksWidget /> },
+          { id: 'unpaid', node: (
+          <div className="glass-dark rounded-3xl p-6 h-full">
             <div className="flex items-center justify-between">
               <h2 className="text-xl">Unpaid invoices</h2>
               <span className="text-2xl font-light text-[#64d2ff]">{unpaid.length}</span>
@@ -349,7 +372,8 @@ export default function Overview() {
               </div>
             )}
           </div>
-        </div>
+          ) },
+        ]} />
       </>)}
     </div>
   );
