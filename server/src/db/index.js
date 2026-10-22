@@ -770,6 +770,26 @@ const migrations = [
     source         TEXT,
     created_at     TEXT    DEFAULT (datetime('now'))
   )`,
+  // Web Push: one row per browser/device that turned on reminder notifications.
+  // tz is the device's IANA time zone — remind_at is local wall-clock time.
+  `CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    endpoint   TEXT NOT NULL UNIQUE,
+    p256dh     TEXT NOT NULL,
+    auth       TEXT NOT NULL,
+    tz         TEXT DEFAULT 'UTC',
+    created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  // Reminders already pushed to a subscription, keyed "id@remind_at" so a
+  // rescheduled task is pushed again
+  `CREATE TABLE IF NOT EXISTS push_sent (
+    subscription_id INTEGER NOT NULL REFERENCES push_subscriptions(id) ON DELETE CASCADE,
+    reminder_id     INTEGER NOT NULL,
+    sig             TEXT    NOT NULL,
+    sent_at         TEXT    DEFAULT (datetime('now')),
+    PRIMARY KEY (subscription_id, sig)
+  )`,
 ];
 
 for (const sql of migrations) {

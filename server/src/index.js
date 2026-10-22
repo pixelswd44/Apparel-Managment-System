@@ -31,6 +31,8 @@ import financialsRouter from './routes/financials.js';
 import documentTemplatesRouter from './routes/document-templates.js';
 import backupRouter from './routes/backup.js';
 import shippingAgentsRouter from './routes/shipping-agents.js';
+import pushRouter from './routes/push.js';
+import { startPushJob } from './lib/push.js';
 
 dotenv.config();
 
@@ -79,6 +81,7 @@ app.use('/api/financials',         financialsRouter);
 app.use('/api/document-templates', documentTemplatesRouter);
 app.use('/api/backup',             backupRouter);
 app.use('/api/shipping-agents',    shippingAgentsRouter);
+app.use('/api/push',               pushRouter);
 
 // Unknown API routes (e.g. the removed /api/inventory and /api/loans) get a JSON
 // 404 instead of falling through to the React app's index.html below.
@@ -100,4 +103,5 @@ const server = app.listen(PORT, () => {
   const inst = process.env.NODE_APP_INSTANCE ?? process.env.pm_id ?? process.env.INSTANCE_ID ?? 'n/a';
   console.log(`Server running on port ${PORT} — pid ${process.pid}, instance ${inst}, cwd ${process.cwd()}`);
 });
+startPushJob();
 server.on('error', (e) => console.error(`[server] listen error: ${e.code || ''} ${e.message}`));

@@ -76,6 +76,10 @@ const TABLES_ORDERED = [
 // older backup that still contains them (they no longer exist locally).
 const REMOVED_TABLES = new Set(['inventory', 'inventory_items', 'inventory_transactions', 'capital_loans', 'loan_repayments']);
 
+// Per-device Web Push subscriptions belong to this server's VAPID keys — never
+// exported, and left untouched by a restore.
+const DEVICE_TABLES = new Set(['push_subscriptions', 'push_sent']);
+
 // Any table that exists in the DB but isn't listed above gets appended at the
 // end, so a newly-added table is never silently dropped from backups.
 function allTablesOrdered() {
@@ -83,6 +87,7 @@ function allTablesOrdered() {
   try {
     live = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all().map(r => r.name);
   } catch { /* ignore */ }
+  live = live.filter(t => !DEVICE_TABLES.has(t));
   const known = new Set(TABLES_ORDERED);
   return [...TABLES_ORDERED.filter(t => live.includes(t) || live.length === 0), ...live.filter(t => !known.has(t))];
 }
@@ -130,7 +135,7 @@ function restoreBackup(backup, { restoreFiles = true } = {}) {
   const started = Date.now();
   const order = allTablesOrdered();
   // Also restore any table present in the backup but unknown locally (schema drift)
-  const inBackup = Object.keys(backup.tables).filter(t => !order.includes(t) && !REMOVED_TABLES.has(t));
+  const inBackup = Object.keys(backup.tables).filter(t => !order.includes(t) && !REMOVED_TABLES.has(t) && !DEVICE_TABLES.has(t));
   const wipeOrder = [...order, ...inBackup].reverse();
   const insertOrder = [...order, ...inBackup];
 

@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import api from './api';
+import { removePushSubscription } from './push';
 
 const AuthContext = createContext(null);
 
@@ -37,6 +38,7 @@ export function AuthProvider({ children }) {
   }
 
   function logout() {
+    removePushSubscription(); // stop reminder pushes to this device
     applyToken(null);
     setUser(null);
   }

@@ -4,10 +4,13 @@ import { useNavigate } from 'react-router-dom';
 import { Bell, BellRing, Check, X, Clock, CalendarDays } from 'lucide-react';
 import api from '../../lib/api';
 import { REMINDERS_CHANGED, announceRemindersChanged, dueAt, timeOf, whenLabel, isoDay, dayOf } from '../../lib/reminders';
+import { pushSupported, ensurePushSubscription } from '../../lib/push';
 
 // Reminder notifications while the app is open:
 //   • useReminderNotifier — polls open tasks; when one falls due it shows an
-//     in-app toast and (if allowed) a desktop notification, once per task/due time
+//     in-app toast and (if allowed) a desktop notification, once per task/due time.
+//     With Web Push on (lib/push.js) the server sends the desktop notification
+//     instead — also while the app is closed — so the page only shows the toast.
 //   • NotificationBell    — sidebar bell with the due count and a quick list
 //   • ReminderToasts      — the toast stack (render once)
 
@@ -31,6 +34,9 @@ export function useReminderNotifier() {
   const [now, setNow]               = useState(() => new Date());
   const [toasts, setToasts]         = useState([]);
   const [permission, setPermission] = useState(() => (canNotify() ? Notification.permission : 'unsupported'));
+  const [pushOn, setPushOn]         = useState(false); // this device gets server pushes
+  const pushOnRef = useRef(false);
+  pushOnRef.current = pushOn;
 
   const notify = useCallback(fresh => {
     if (!fresh.length) return;
@@ -41,7 +47,8 @@ export function useReminderNotifier() {
       : fresh.map(r => ({ id: r.id, title: r.title, when: whenLabel(r), at: Date.now() }));
     setToasts(t => [...t, ...items].slice(-3));
     // Desktop notification — one summary when several fall due together
-    if (canNotify() && Notification.permission === 'granted') {
+    // (skipped when the service worker gets these as pushes)
+    if (canNotify() && Notification.permission === 'granted' && !pushOnRef.current) {
       try {
         const n = fresh.length === 1
           ? new Notification(fresh[0].title, { body: `Reminder · ${whenLabel(fresh[0])}`, tag: `crm-reminder-${fresh[0].id}`, icon: '/favicon.svg' })
@@ -81,6 +88,24 @@ export function useReminderNotifier() {
     };
   }, [check]);
 
+  // Web Push: subscribe this device once notifications are allowed; listen to
+  // the service worker (a push arrived while on screen / a notification was clicked)
+  const subscribePush = useCallback(() => {
+    if (!pushSupported() || Notification.permission !== 'granted') return;
+    ensurePushSubscription().then(setPushOn).catch(e => { console.warn('[push] subscribe failed:', e); setPushOn(false); });
+  }, []);
+
+  useEffect(() => {
+    subscribePush();
+    if (!pushSupported()) return;
+    const onMessage = e => {
+      if (e.data?.type === 'reminder-push') check();
+      if (e.data?.type === 'open') { window.focus(); navigate(e.data.url || '/'); }
+    };
+    navigator.serviceWorker.addEventListener('message', onMessage);
+    return () => navigator.serviceWorker.removeEventListener('message', onMessage);
+  }, [subscribePush, check, navigate]);
+
   // Auto-dismiss toasts
   useEffect(() => {
     if (!toasts.length) return;
@@ -90,7 +115,11 @@ export function useReminderNotifier() {
 
   async function requestPermission() {
     if (!canNotify()) return;
-    try { setPermission(await Notification.requestPermission()); } catch { /* ignored */ }
+    try {
+      const result = await Notification.requestPermission();
+      setPermission(result);
+      if (result === 'granted') subscribePush();
+    } catch { /* ignored */ }
   }
 
   async function markDone(id) {
@@ -105,13 +134,13 @@ export function useReminderNotifier() {
   const laterToday = open.filter(r => dayOf(r) === today && !due.includes(r));
 
   return {
-    due, laterToday, toasts, permission, requestPermission, markDone,
+    due, laterToday, toasts, permission, pushOn, requestPermission, markDone,
     dismissToast: id => setToasts(list => list.filter(t => t.id !== id)),
   };
 }
 
 // ── Bell + popover ────────────────────────────────────────────────────────────
-export function NotificationBell({ due, laterToday, permission, requestPermission, markDone, align = 'left' }) {
+export function NotificationBell({ due, laterToday, permission, pushOn, requestPermission, markDone, align = 'left' }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const ref = useRef();
@@ -179,7 +208,9 @@ export function NotificationBell({ due, laterToday, permission, requestPermissio
           {permission !== 'unsupported' && (
             <div className="mt-1 pt-2 px-2 pb-1 border-t border-slate-100">
               {permission === 'granted' ? (
-                <p className="text-[11px] text-[#34a853] flex items-center gap-1"><Check size={11} /> Desktop notifications are on</p>
+                <p className="text-[11px] text-[#34a853] flex items-center gap-1">
+                  <Check size={11} /> {pushOn ? 'Notifications are on — even when the app is closed' : 'Desktop notifications are on'}
+                </p>
               ) : permission === 'denied' ? (
                 <p className="text-[11px] text-[#86868b]">Desktop notifications are blocked — allow them for this site in your browser settings.</p>
               ) : (

@@ -130,6 +130,25 @@ PORT=3001
 JWT_SECRET=your-secret-key-here
 ```
 
+### Reminder push notifications (optional)
+
+Task reminders can arrive as system notifications even when the app is closed
+(desktop browsers, and phones with the app added to the home screen). Generate
+VAPID keys once and add them to `server/.env`, then restart:
+
+```bash
+cd server && npx web-push generate-vapid-keys
+```
+
+```env
+VAPID_PUBLIC_KEY=...
+VAPID_PRIVATE_KEY=...
+VAPID_SUBJECT=mailto:you@example.com
+```
+
+Each user then turns notifications on from the bell in the sidebar. Without the
+keys, reminders only notify while a tab is open. Push requires HTTPS.
+
 ---
 
 ## Project Structure
