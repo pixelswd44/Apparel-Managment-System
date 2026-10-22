@@ -254,7 +254,7 @@ export default function Ledger() {
   return (
     <div className="animate-page">
       {/* Header — stays on top while scrolling */}
-      <div className="sticky top-[57px] lg:top-0 z-10 bg-[#f2f2f7] flex items-center justify-between gap-3 mb-3 py-2 -mt-2">
+      <div className="glass-bar sticky top-[65px] lg:top-4 z-20 flex items-center justify-between gap-3 mb-4 px-4 sm:px-5 py-3">
         <div className="min-w-0">
           <h1 className="text-2xl font-bold text-slate-900">Ledger</h1>
           <p className="text-sm text-slate-500 mt-0.5 truncate">{periodRange.label || 'All time'}</p>

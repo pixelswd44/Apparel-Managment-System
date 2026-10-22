@@ -182,6 +182,28 @@ body {
 }
 .glass-strong { background-color: var(--glass-fill-strong); }
 
+/* Floating sticky toolbar. The glass is painted on ::before so the bar itself
+   carries no backdrop-filter: fixed click-catchers or menus inside it still
+   cover the whole viewport instead of being trapped in the bar. */
+.glass-bar {
+  isolation: isolate;
+  border-radius: 22px;
+}
+.glass-bar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: inherit;
+  background-color: rgb(255 255 255 / 0.6);
+  background-image: var(--glass-sheen);
+  -webkit-backdrop-filter: blur(30px) saturate(190%);
+          backdrop-filter: blur(30px) saturate(190%);
+  border: 1px solid rgb(255 255 255 / 0.55);
+  box-shadow: var(--glass-shadow);
+}
+
 /* Tinted dark glass — for hero cards; white text stays crisp */
 .glass-dark {
   color: #fff;
@@ -705,13 +727,6 @@ textarea {
     animation: fadeIn 0.25s ease backwards;
   }
 
-  /* Old page-background colour used by sticky toolbars → frosted strip */
-  .glass-theme .bg-\[\#f2f2f7\] {
-    background-color: rgb(238 241 248 / 0.6) !important;
-    -webkit-backdrop-filter: var(--glass-blur);
-            backdrop-filter: var(--glass-blur);
-  }
-
   /* Ink: slightly warmer neutral text, still high contrast on glass */
   .glass-theme .text-slate-900:not(:where(.doc-paper *)) { color: var(--ink); }
   .glass-theme .text-slate-800:not(:where(.doc-paper *)) { color: #26262b; }
@@ -723,12 +738,15 @@ textarea {
     border-radius: 12px;
     transition: border-color 0.2s ease, box-shadow 0.25s var(--ease-out), background-color 0.2s ease;
   }
-  .glass-theme :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]), select, textarea):is(.border, [class*="border-slate"]):not(:where(.doc-paper *, .bg-transparent)) {
+  /* Only fields without their own background (dark screens such as Login set one) */
+  .glass-theme :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]), select, textarea):is(.border, [class*="border-slate"]):not([class*="bg-"]):not(:where(.doc-paper *)) {
     background-color: rgb(255 255 255 / 0.5);
     box-shadow: inset 0 1px 2px rgb(15 23 42 / 0.05), 0 1px 0 rgb(255 255 255 / 0.5);
   }
-  .glass-theme :is(input, select, textarea):is(.border, [class*="border-slate"]):focus:not(:where(.doc-paper *)) {
+  .glass-theme :is(input, select, textarea):is(.border, [class*="border-slate"]):focus:not([class*="bg-"]):not(:where(.doc-paper *)) {
     background-color: #fff;
+  }
+  .glass-theme :is(input, select, textarea):is(.border, [class*="border-slate"]):focus:not([class*="bg-white/"], [class*="bg-black"]):not(:where(.doc-paper *)) {
     border-color: rgb(0 113 227 / 0.55);
     box-shadow: 0 0 0 4px rgb(0 113 227 / 0.16);
   }

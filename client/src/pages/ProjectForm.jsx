@@ -162,7 +162,7 @@ export default function ProjectForm() {
   return (
     <div>
       {/* ── Sticky top bar ── */}
-      <div className="glass sticky top-[65px] lg:top-4 z-20 mb-5 rounded-[22px] px-4 sm:px-5 py-3 flex items-center justify-between gap-4">
+      <div className="glass-bar sticky top-[65px] lg:top-4 z-20 mb-5 px-4 sm:px-5 py-3 flex items-center justify-between gap-4">
         <div className="flex items-center gap-4 min-w-0">
           <button onClick={handleCancel}
             className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 transition-colors flex-shrink-0 font-medium">
