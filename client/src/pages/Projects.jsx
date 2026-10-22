@@ -1332,8 +1332,11 @@ function ProjectDetail({ projectId, onBack, catalogProducts, currencies, baseCur
             cls: projProfit ? 'text-amber-600' : 'text-rose-600' },
           costPcAfter > 0 && { label: 'Cost/pc', val: fmt(costPcAfter), dot: 'bg-indigo-400', cls: 'text-slate-800' },
         ].filter(Boolean);
+        const isDone   = project.status === 'completed' && project.completed_at;
+        const daysOpen = Math.max(0, Math.floor((Date.now() - new Date(String(project.created_at).replace(' ', 'T'))) / 86400000));
         return (
-          <div className="bg-white border border-slate-200 rounded-xl px-4 py-2.5 mb-3 shadow-sm">
+          <div className="bg-white border border-slate-200 rounded-xl px-4 py-2.5 mb-3 shadow-sm flex flex-col sm:flex-row sm:items-center gap-x-5 gap-y-2">
+            <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
               {items.map(it => (
                 <div key={it.label} className="flex items-center gap-1.5 min-w-0">
@@ -1381,6 +1384,23 @@ function ProjectDetail({ projectId, onBack, catalogProducts, currencies, baseCur
                 )}
               </div>
             )}
+            </div>
+
+            {/* Production at a glance — pieces, products, timeline */}
+            <div className="flex sm:flex-col items-baseline sm:items-end gap-x-3 gap-y-0.5 pt-2 sm:pt-0 sm:pl-5 border-t sm:border-t-0 sm:border-l border-slate-100 flex-shrink-0">
+              <span className="flex items-baseline gap-1.5 whitespace-nowrap">
+                <Layers size={12} className="text-slate-400 self-center" />
+                <span className="text-base sm:text-lg font-bold text-slate-900 leading-none">{totalQtyAll.toLocaleString()}</span>
+                <span className="text-2xs text-slate-400 font-medium uppercase tracking-wide">pcs</span>
+                <span className="text-xs text-slate-500">· {prods.length} product{prods.length !== 1 ? 's' : ''}</span>
+              </span>
+              <span className="flex items-center gap-1.5 text-xs text-slate-500 whitespace-nowrap">
+                <Calendar size={11} className="text-slate-400" />
+                {isDone
+                  ? <>Completed <span className="font-semibold text-emerald-600">{fmtDate(project.completed_at)}</span></>
+                  : <>Started <span className="font-semibold text-slate-700">{fmtDate(project.created_at)}</span> · {daysOpen}d</>}
+              </span>
+            </div>
           </div>
         );
       })()}
