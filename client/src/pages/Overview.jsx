@@ -5,6 +5,7 @@ import api from '../lib/api';
 import { useAuth } from '../lib/authContext';
 import PeriodPicker from '../components/PeriodPicker';
 import WarmPL from '../components/WarmPL';
+import TasksWidget from '../components/TasksWidget';
 import { pkr, displayCurrency } from '../lib/currency';
 
 // Dashboard — Liquid Glass surfaces over the app wallpaper. All amounts in PKR.
@@ -237,7 +238,7 @@ export default function Overview() {
           </div>
 
           {/* Projects */}
-          <div className={`${card} p-5 sm:p-6 md:col-span-2 2xl:col-span-3 md:order-4 2xl:order-none`}>
+          <div className={`${card} p-5 sm:p-6 md:col-span-2 2xl:col-span-2 md:order-4 2xl:order-none`}>
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-xl text-[#1d1d1f]">Projects</h2>
               <button onClick={() => navigate('/projects')}
@@ -312,8 +313,11 @@ export default function Overview() {
             )}
           </div>
 
+          {/* Tasks & reminders */}
+          <div className="md:order-5 2xl:order-none"><TasksWidget /></div>
+
           {/* Unpaid invoices — dark task-style card */}
-          <div className="glass-dark md:col-span-2 2xl:col-span-1 md:order-5 2xl:order-none rounded-3xl p-6">
+          <div className="glass-dark md:order-6 2xl:order-none rounded-3xl p-6">
             <div className="flex items-center justify-between">
               <h2 className="text-xl">Unpaid invoices</h2>
               <span className="text-2xl font-light text-[#64d2ff]">{unpaid.length}</span>

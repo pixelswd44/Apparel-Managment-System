@@ -8,6 +8,7 @@ import {
 import { useDirty } from '../../lib/dirtyContext';
 import { useAuth } from '../../lib/authContext';
 import api, { apiFetch, imgUrl } from '../../lib/api';
+import { useReminderNotifier, NotificationBell, ReminderToasts } from './Notifications';
 
 // ── Change Password Modal ─────────────────────────────────────────────────────
 function ChangePasswordModal({ onClose }) {
@@ -131,6 +132,7 @@ export default function Sidebar() {
   const [userMenuOpen, setUserMenuOpen]   = useState(false);
   const [menuOpen, setMenuOpen]           = useState(false); // mobile drawer
   const [changePwdOpen, setChangePwdOpen] = useState(false);
+  const reminders = useReminderNotifier(); // single notifier for the whole app
 
   // ── App Branding ─────────────────────────────────────────────────────────
   const [appName, setAppName] = useState('Apparel CRM');
@@ -188,14 +190,16 @@ export default function Sidebar() {
   );
 
   // Shared sidebar body — used by the fixed desktop rail and the mobile drawer
-  const body = (
+  // Shared by the desktop rail and the mobile drawer (the drawer has its own close button where the bell sits)
+  const body = inDrawer => (
     <>
       <div className="flex items-center gap-3 px-2 pt-1 pb-3">
         {logo('w-10 h-10')}
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="font-semibold text-[#1d1d1f] text-[15px] tracking-tight truncate">{appName}</p>
           <p className="text-[11px] text-[#86868b] truncate">Business workspace</p>
         </div>
+        {!inDrawer && <NotificationBell {...reminders} align="left" />}
       </div>
 
       <nav className="sidebar-nav flex-1 min-h-0 overflow-y-auto -mx-1 px-1 pb-2">
@@ -246,7 +250,7 @@ export default function Sidebar() {
     <>
       {/* ── Desktop: fixed floating glass rail ── */}
       <aside className="print:hidden hidden lg:flex flex-col fixed top-4 bottom-4 left-4 w-[248px] z-30 glass rounded-[30px] p-3">
-        {body}
+        {body(false)}
       </aside>
 
       {/* ── Mobile: frosted top bar ── */}
@@ -259,6 +263,7 @@ export default function Sidebar() {
           {logo('w-8 h-8')}
           <span className="text-[#1d1d1f] font-semibold text-[15px] truncate">{appName}</span>
         </div>
+        <NotificationBell {...reminders} align="right" />
         <button onClick={() => setMenuOpen(true)} aria-label="Account"
           className="w-9 h-9 rounded-full bg-gradient-to-b from-[#4aa3ff] to-[#0071e3] text-white text-sm font-semibold flex items-center justify-center flex-shrink-0">
           {initial}
@@ -274,10 +279,12 @@ export default function Sidebar() {
               className="absolute top-3.5 right-3 w-8 h-8 grid place-items-center rounded-full text-[#515154] hover:bg-white/70 transition-colors z-10">
               <X size={17} />
             </button>
-            {body}
+            {body(true)}
           </aside>
         </div>
       )}
+
+      <ReminderToasts {...reminders} />
 
       {changePwdOpen && createPortal(<ChangePasswordModal onClose={() => setChangePwdOpen(false)} />, document.body)}
 
