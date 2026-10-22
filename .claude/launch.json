@@ -4,8 +4,22 @@
     {
       "name": "apparel-crm",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["app.js"],
+      "runtimeArgs": [
+        "app.js"
+      ],
       "port": 3001
+    },
+    {
+      "name": "apparel-scratch",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "app.js"
+      ],
+      "env": {
+        "PORT": "3002",
+        "DB_PATH": "C:/Users/ayub4/AppData/Local/Temp/claude/D--Apparel-Managment-System/1d019a11-b2e4-400f-9a96-f6a0a51cc618/scratchpad/glass.db"
+      },
+      "port": 3002
     }
   ]
 }
