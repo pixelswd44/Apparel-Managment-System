@@ -4,13 +4,14 @@ import api from '../lib/api';
 import { ExpenseModal } from './Expenses';
 
 // Full-page Add / Edit expense form (/expenses/new, /expenses/:id/edit).
-// ?project=ID pre-selects a project and returns to it after saving.
+// ?project=ID pre-selects a project and returns to it after saving; ?type= pre-picks a Type.
 export default function ExpenseForm() {
   const navigate = useNavigate();
   const { id } = useParams();
   const [params] = useSearchParams();
   const { state } = useLocation();
   const project = params.get('project') || '';
+  const type = params.get('type') || '';
   const [categories, setCategories] = useState([]);
   const [projects, setProjects] = useState([]);
   const [expense, setExpense] = useState(state?.expense || null);
@@ -24,10 +25,11 @@ export default function ExpenseForm() {
     }
   }, [id]);
 
-  const back = () => navigate(project ? `/projects?open=${project}` : '/expenses');
+  // A shipping payment lands on Expenses → Shipping (it isn't an expense row)
+  const back = (_, opts) => navigate(project ? `/projects?open=${project}` : opts?.shipping ? '/expenses?tab=shipping' : '/expenses');
   if (!ready) return <div className="py-24 text-center"><div className="w-8 h-8 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mx-auto" /></div>;
   return (
     <ExpenseModal page expense={expense} categories={categories} projects={projects}
-      defaultProjectId={project} onClose={() => navigate(-1)} onSave={back} />
+      defaultProjectId={project} defaultType={type} onClose={() => navigate(-1)} onSave={back} />
   );
 }

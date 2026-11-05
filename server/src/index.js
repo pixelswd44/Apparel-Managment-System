@@ -31,6 +31,7 @@ import financialsRouter from './routes/financials.js';
 import documentTemplatesRouter from './routes/document-templates.js';
 import backupRouter from './routes/backup.js';
 import shippingAgentsRouter from './routes/shipping-agents.js';
+import productionAgentsRouter from './routes/production-agents.js';
 import pushRouter from './routes/push.js';
 import { startPushJob } from './lib/push.js';
 
@@ -81,6 +82,7 @@ app.use('/api/financials',         financialsRouter);
 app.use('/api/document-templates', documentTemplatesRouter);
 app.use('/api/backup',             backupRouter);
 app.use('/api/shipping-agents',    shippingAgentsRouter);
+app.use('/api/production-agents',  productionAgentsRouter);
 app.use('/api/push',               pushRouter);
 
 // Unknown API routes (e.g. the removed /api/inventory and /api/loans) get a JSON

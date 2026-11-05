@@ -41,6 +41,7 @@ const TABLES_ORDERED = [
   'clients',
   'vendors',
   'shipping_agents',
+  'production_agents',
   // ── Products ─────────────────────────────────────────────────────────────
   'products',
   'product_prices',

@@ -5,12 +5,14 @@ import {
   Receipt, Plus, Search, X, Edit2, Trash2, RefreshCw, ArrowLeft,
   Tag, Calendar, Repeat, ChevronDown, Check, SlidersHorizontal,
   Home, Zap, Droplets, Truck, Coffee, Package, MoreHorizontal,
-  BarChart2, AlertTriangle, TrendingUp, TrendingDown, Banknote, Flame,
+  BarChart2, AlertTriangle, TrendingUp, TrendingDown, Banknote, Flame, Scissors,
 } from 'lucide-react';
 import PeriodPicker, { currentMonthRange } from '../components/PeriodPicker';
 import Drawer from '../components/Drawer';
 import { pkr } from '../lib/currency';
+import { PRODUCTION_KINDS } from '../lib/production';
 import ShippingAgents from './ShippingAgents';
+import ProductionTab from './ProductionPayments';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 const today = () => new Date().toISOString().split('T')[0];
@@ -28,6 +30,8 @@ const EXPENSE_PRESETS = [
   { label: 'Production',       category: 'Production',      color: '#3b82f6' },
   { label: 'Embroidery',       category: 'Production',      color: '#3b82f6' },
   { label: 'Sublimation',      category: 'Production',      color: '#3b82f6' },
+  { label: 'Cutting & Threads', category: 'Production',     color: '#3b82f6' },
+  { label: 'Belts',            category: 'Production',      color: '#3b82f6' },
   { label: 'Threads, Cleaning & Packaging', category: 'Packaging', color: '#0ea5e9' },
   { label: 'Labels & Cards',   category: 'Packaging',       color: '#0ea5e9' },
   { label: 'Petty Cash',       category: 'Petty Cash',      color: '#f97316' },
@@ -39,8 +43,13 @@ const EXPENSE_PRESETS = [
   { label: 'Staff Meals',      category: 'Staff Meals',     color: '#ec4899' },
   { label: 'Salary',           category: 'Salaries',        color: '#06b6d4' },
   { label: 'Advance',          category: 'Salaries',        color: '#06b6d4' },
+  { label: 'Charity',          category: 'Charity',         color: '#10b981' },
   { label: 'Self Use / Personal Use', category: 'Personal Use', color: '#64748b' },
 ];
+
+// Shipping picked on a project's expense is saved as a shipping cost on its shipment
+const SHIPPING = 'Shipping';
+const NEW = '__new__';
 
 const DEFAULT_CATEGORIES = [
   { name: 'Rent', color: '#6366f1' },
@@ -128,17 +137,21 @@ function ExpenseShell({ page, expense, onClose, children }) {
 }
 
 // ── ExpenseModal ───────────────────────────────────────────────────────────
-export function ExpenseModal({ expense, categories, projects = [], defaultProjectId = '', onClose, onSave, page = false }) {
+// defaultType pre-picks a Type (e.g. from Expenses → Production → Add payment).
+export function ExpenseModal({ expense, categories, projects = [], defaultProjectId = '', defaultType = '', onClose, onSave, page = false }) {
   const blank = {
     title: '', expense_category_id: '', amount: '', paid_by: '', paid_to: '',
-    project_id: defaultProjectId ? String(defaultProjectId) : '', employee_id: '',
+    project_id: defaultProjectId ? String(defaultProjectId) : '', employee_id: '', agent_id: '',
     expense_date: today(), payment_method: 'bank transfer', notes: '',
+    // Shipping only — saved on the project's shipment, not as an expense
+    ship_agent_id: '', shipment_id: '', tracking_number: '', new_name: '',
   };
   const [form, setForm] = useState(expense
     ? { ...blank, ...expense,
         expense_category_id: expense.expense_category_id || '',
         project_id: expense.project_id ? String(expense.project_id) : '',
         employee_id: expense.employee_id ? String(expense.employee_id) : '',
+        agent_id: expense.agent_id ? String(expense.agent_id) : '',
         paid_to: expense.paid_to || '' }
     : blank);
   // Only active projects — except the one this expense is already on, so editing
@@ -147,6 +160,7 @@ export function ExpenseModal({ expense, categories, projects = [], defaultProjec
     .filter(p => p.status !== 'completed' || String(p.id) === String(expense?.project_id))
     .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   // Employees for Salary / Advance payments
@@ -160,13 +174,43 @@ export function ExpenseModal({ expense, categories, projects = [], defaultProjec
     setForm(f => ({ ...f, employee_id: id, paid_to: emp ? emp.name : f.paid_to }));
   }
 
+  // Production payments (embroidery, belts…) go to a person on that job's list
+  const prodKind = PRODUCTION_KINDS.find(k => k.label === form.title);
+  const [prodAgents, setProdAgents] = useState([]);
+  useEffect(() => {
+    if (!prodKind) return;
+    api.get('/production-agents', { params: { kind: prodKind.kind } })
+      .then(r => setProdAgents(Array.isArray(r.data) ? r.data : [])).catch(() => setProdAgents([]));
+  }, [prodKind?.kind]);
+
+  // Shipping (new entries on a project only) is saved as a payment on the
+  // project's shipment for the chosen agent, so it shows on its Shipping tab.
+  const isShipping = !expense && !!form.project_id && form.title === SHIPPING;
+  const [shipAgents, setShipAgents] = useState([]);
+  const [shipments, setShipments] = useState([]);
+  useEffect(() => {
+    if (!isShipping) return;
+    api.get('/shipping-agents').then(r => setShipAgents(Array.isArray(r.data) ? r.data : [])).catch(() => setShipAgents([]));
+    api.get(`/projects/${form.project_id}`).then(r => setShipments(r.data?.shipping || [])).catch(() => setShipments([]));
+  }, [isShipping, form.project_id]);
+  const agentShipments = shipments.filter(s => form.ship_agent_id && String(s.agent_id) === String(form.ship_agent_id));
+  function pickShipAgent(id) {
+    const latest = shipments.find(s => id && String(s.agent_id) === String(id)); // newest first
+    setForm(f => ({ ...f, ship_agent_id: id, shipment_id: latest ? String(latest.id) : NEW, new_name: '' }));
+  }
+
+  function pickProject(id) {
+    // Shipping needs a project — without one the type is cleared
+    setForm(f => ({ ...f, project_id: id, ...(!id && f.title === SHIPPING ? { title: '' } : {}), shipment_id: '', ship_agent_id: '' }));
+  }
+
   // Picking a type fills the title and category; the category is created on first use.
   const [cats, setCats] = useState(categories);
   useEffect(() => { setCats(categories); }, [categories]);
 
   async function applyPreset(preset) {
     let cat = cats.find(c => c.name.toLowerCase() === preset.category.toLowerCase());
-    setForm(f => ({ ...f, title: preset.label, ...(cat ? { expense_category_id: String(cat.id) } : {}) }));
+    setForm(f => ({ ...f, title: preset.label, agent_id: '', new_name: '', ...(cat ? { expense_category_id: String(cat.id) } : {}) }));
     if (!cat) {
       try {
         const { data } = await api.post('/expenses/categories', { name: preset.category, color: preset.color });
@@ -176,24 +220,70 @@ export function ExpenseModal({ expense, categories, projects = [], defaultProjec
     }
   }
 
+  function pickType(label) {
+    if (label === SHIPPING) { setForm(f => ({ ...f, title: SHIPPING, agent_id: '', new_name: '' })); return; }
+    const p = EXPENSE_PRESETS.find(x => x.label === label);
+    if (p) applyPreset(p);
+  }
+
+  // A link like ?type=Belts opens the form with that type picked (once categories are in)
+  const [typeApplied, setTypeApplied] = useState(false);
+  useEffect(() => {
+    if (expense || !defaultType || typeApplied || !categories.length) return;
+    setTypeApplied(true);
+    pickType(defaultType);
+  }, [categories]);
+
+  // A typed new name reuses a saved person/agent with that name, else creates one
+  async function resolveAgent(list, url, extra) {
+    const name = form.new_name.trim();
+    const found = list.find(a => a.name.trim().toLowerCase() === name.toLowerCase());
+    if (found) return found.id;
+    const { data } = await api.post(url, { name, ...extra });
+    return data.id;
+  }
+
+  async function saveShipping() {
+    const agentId = form.ship_agent_id === NEW ? await resolveAgent(shipAgents, '/shipping-agents') : form.ship_agent_id;
+    const cost = { amount: parseFloat(form.amount) || 0, cost_date: form.expense_date, payment_method: form.payment_method, notes: form.notes };
+    if (form.shipment_id && form.shipment_id !== NEW) {
+      await api.post(`/projects/${form.project_id}/shipping/${form.shipment_id}/costs`, cost);
+    } else {
+      await api.post(`/projects/${form.project_id}/shipping`, {
+        agent_id: agentId, shipping_date: form.expense_date, tracking_number: form.tracking_number, cost,
+      });
+    }
+    onSave(null, { shipping: true });
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
-    setSaving(true);
+    setSaving(true); setError('');
     try {
+      if (isShipping) { await saveShipping(); return; }
+      const agentId = !prodKind ? null
+        : form.agent_id === NEW ? await resolveAgent(prodAgents, '/production-agents', { kind: prodKind.kind })
+        : (form.agent_id || null);
       const payload = {
         ...form,
         amount: parseFloat(form.amount) || 0,
         expense_category_id: form.expense_category_id || null,
         project_id: form.project_id || null,
         employee_id: isEmpType ? (form.employee_id || null) : null,
+        agent_id: agentId,
         recurring: 0,
       };
       const res = expense
         ? await api.put(`/expenses/${expense.id}`, payload)
         : await api.post('/expenses', payload);
       onSave(res.data); // the page closes the form (and may return to the project)
+    } catch (err) {
+      setError(err?.response?.data?.error || 'Could not save — please try again.');
     } finally { setSaving(false); }
   }
+
+  const inputCls = 'w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20';
+  const typeValue = isShipping ? SHIPPING : EXPENSE_PRESETS.some(p => p.label === form.title) ? form.title : '';
 
   return (
     <ExpenseShell page={page} expense={expense} onClose={onClose}>
@@ -202,9 +292,10 @@ export function ExpenseModal({ expense, categories, projects = [], defaultProjec
           {/* ── Project — charging an expense to a project adds it to that project's cost ── */}
           <div className={`rounded-xl p-3 border ${form.project_id ? 'bg-orange-50 border-orange-200' : 'bg-slate-50 border-slate-200'}`}>
             <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 mb-1">
-              <Flame size={12} className="text-orange-500" /> Project <span className="font-normal text-slate-400">(optional)</span>
+              <Flame size={12} className="text-orange-500" /> Project
+              <span className="font-normal text-slate-400">{prodKind ? '*' : '(optional)'}</span>
             </label>
-            <select value={form.project_id} onChange={e => set('project_id', e.target.value)}
+            <select value={form.project_id} onChange={e => pickProject(e.target.value)} required={!!prodKind}
               className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20">
               <option value="">No project — business expense / petty cash</option>
               {projectOptions.map(p => (
@@ -213,21 +304,79 @@ export function ExpenseModal({ expense, categories, projects = [], defaultProjec
                 </option>
               ))}
             </select>
-            {form.project_id && (
+            {form.project_id ? (
               <p className="text-2xs text-orange-700 mt-1.5">This amount is added to the project's cost automatically.</p>
-            )}
+            ) : prodKind ? (
+              <p className="text-2xs text-slate-500 mt-1.5">{prodKind.label} is paid per project — pick the project.</p>
+            ) : null}
           </div>
 
           {/* ── Type — fills the title and category ── */}
           <div>
             <label className="block text-xs font-semibold text-slate-500 mb-1">Type</label>
-            <select value={EXPENSE_PRESETS.some(p => p.label === form.title) ? form.title : ''}
-              onChange={e => { const p = EXPENSE_PRESETS.find(x => x.label === e.target.value); if (p) applyPreset(p); }}
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20">
+            <select value={typeValue} onChange={e => pickType(e.target.value)} className={inputCls}>
               <option value="">Select type…</option>
+              {form.project_id && !expense && <option value={SHIPPING}>Shipping</option>}
               {EXPENSE_PRESETS.map(p => <option key={p.label} value={p.label}>{p.label}</option>)}
             </select>
           </div>
+
+          {/* ── Shipping — agent and shipment on this project ── */}
+          {isShipping && (
+            <div className="rounded-xl p-3 border bg-sky-50 border-sky-200 space-y-2.5">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Shipping Agent *</label>
+                <select value={form.ship_agent_id} onChange={e => pickShipAgent(e.target.value)} required
+                  className={`${inputCls} bg-white`}>
+                  <option value="">Select agent…</option>
+                  {shipAgents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  <option value={NEW}>+ New agent…</option>
+                </select>
+              </div>
+              {form.ship_agent_id === NEW && (
+                <input value={form.new_name} onChange={e => set('new_name', e.target.value)} required autoFocus
+                  placeholder="Agency name" className={`${inputCls} bg-white`} />
+              )}
+              {agentShipments.length > 0 && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Shipment</label>
+                  <select value={form.shipment_id} onChange={e => set('shipment_id', e.target.value)} className={`${inputCls} bg-white`}>
+                    {agentShipments.map(s => (
+                      <option key={s.id} value={s.id}>
+                        {s.shipping_date ? fmtDate(s.shipping_date) : 'No date'}{s.tracking_number ? ` · #${s.tracking_number}` : ''}{s.cost_total > 0 ? ` · ${pkr(s.cost_total)} paid` : ''}
+                      </option>
+                    ))}
+                    <option value={NEW}>+ New shipment</option>
+                  </select>
+                </div>
+              )}
+              {form.ship_agent_id && form.shipment_id === NEW && (
+                <input value={form.tracking_number} onChange={e => set('tracking_number', e.target.value)}
+                  placeholder="Tracking number (optional)" className={`${inputCls} bg-white`} />
+              )}
+              <p className="text-2xs text-sky-700">Saved on the project's Shipping tab as a payment to this agent.</p>
+            </div>
+          )}
+
+          {/* ── Production person — embroidery, sublimation, cutting & threads, belts ── */}
+          {prodKind && (
+            <div className="rounded-xl p-3 border bg-violet-50 border-violet-200 space-y-2.5">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">{prodKind.person} *</label>
+                <select value={form.agent_id} onChange={e => setForm(f => ({ ...f, agent_id: e.target.value, new_name: '' }))} required
+                  className={`${inputCls} bg-white`}>
+                  <option value="">Select…</option>
+                  {prodAgents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  <option value={NEW}>+ Add new…</option>
+                </select>
+              </div>
+              {form.agent_id === NEW && (
+                <input value={form.new_name} onChange={e => set('new_name', e.target.value)} required autoFocus
+                  placeholder="Name" className={`${inputCls} bg-white`} />
+              )}
+              <p className="text-2xs text-violet-700">Shows under Expenses → Production → {prodKind.label}.</p>
+            </div>
+          )}
 
           {/* ── Employee — for salary and advance payments ── */}
           {isEmpType && (
@@ -242,73 +391,67 @@ export function ExpenseModal({ expense, categories, projects = [], defaultProjec
             </div>
           )}
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 mb-1">
-              Title * <span className="font-normal text-slate-400 ml-1">or type your own</span>
-            </label>
-            <input type="text" value={form.title} onChange={e => set('title', e.target.value)} required
-              placeholder="e.g. October Rent, Electricity Bill"
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
-          </div>
+          {!isShipping && (
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 mb-1">
+                Title * <span className="font-normal text-slate-400 ml-1">or type your own</span>
+              </label>
+              <input type="text" value={form.title} onChange={e => set('title', e.target.value)} required
+                placeholder="e.g. October Rent, Electricity Bill" className={inputCls} />
+            </div>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-slate-500 mb-1">Amount (PKR) *</label>
-              <input type="number" value={form.amount} onChange={e => set('amount', e.target.value)} required
-                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+              <input type="number" value={form.amount} onChange={e => set('amount', e.target.value)} required className={inputCls} />
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-500 mb-1">Date</label>
-              <input type="date" value={form.expense_date} onChange={e => set('expense_date', e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+              <input type="date" value={form.expense_date} onChange={e => set('expense_date', e.target.value)} className={inputCls} />
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 mb-1">Category</label>
-              <select value={form.expense_category_id} onChange={e => set('expense_category_id', e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20">
-                <option value="">Uncategorized</option>
-                {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </div>
+            {!isShipping && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Category</label>
+                <select value={form.expense_category_id} onChange={e => set('expense_category_id', e.target.value)} className={inputCls}>
+                  <option value="">Uncategorized</option>
+                  {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+            )}
             <div>
               <label className="block text-xs font-semibold text-slate-500 mb-1">Payment Method</label>
-              <select value={form.payment_method} onChange={e => set('payment_method', e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20">
+              <select value={form.payment_method} onChange={e => set('payment_method', e.target.value)} className={inputCls}>
                 {PAYMENT_METHODS.map(m => <option key={m} value={m} className="capitalize">{m}</option>)}
               </select>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* The production person / shipping agent is the payee for those types */}
+          {!isShipping && !prodKind && (
             <div>
               <label className="block text-xs font-semibold text-slate-500 mb-1">Paid To</label>
               <input type="text" value={form.paid_to} onChange={e => set('paid_to', e.target.value)}
-                placeholder="e.g. fabric supplier, stitcher"
-                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+                placeholder="e.g. fabric supplier, stitcher" className={inputCls} />
             </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 mb-1">Paid By</label>
-              <input type="text" value={form.paid_by} onChange={e => set('paid_by', e.target.value)}
-                placeholder="Person or account"
-                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
-            </div>
-          </div>
+          )}
 
           <div>
             <label className="block text-xs font-semibold text-slate-500 mb-1">Notes</label>
-            <textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={2}
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 resize-none" />
+            <textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={2} className={`${inputCls} resize-none`} />
           </div>
+
+          {error && <p className="text-xs text-rose-600">{error}</p>}
 
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose}
               className="flex-1 px-4 py-2.5 text-sm border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 font-medium">Cancel</button>
             <button type="submit" disabled={saving || !form.title}
               className="flex-1 px-4 py-2.5 text-sm bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 font-medium disabled:opacity-50">
-              {saving ? 'Saving…' : expense ? 'Save Changes' : 'Add Expense'}
+              {saving ? 'Saving…' : expense ? 'Save Changes' : isShipping ? 'Add Shipping Payment' : 'Add Expense'}
             </button>
           </div>
         </form>
@@ -534,7 +677,6 @@ function DetailReport({ expenses }) {
                         · {e.category_name}
                       </span>
                     )}
-                    {e.paid_by && <span className="ml-1.5">· {e.paid_by}</span>}
                   </p>
                 </div>
                 <span className="text-sm font-bold text-slate-900 flex-shrink-0">{pkr(e.amount)}</span>
@@ -719,7 +861,7 @@ export default function Expenses() {
   const [periodRange, setPeriodRange] = useState(currentMonthRange());
 
   // ── Income tab ──────────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState(() => (searchParams.get('tab') === 'shipping' ? 'shipping' : 'expenses')); // 'expenses' | 'income' | 'shipping'
+  const [activeTab, setActiveTab] = useState(() => (['shipping', 'production'].includes(searchParams.get('tab')) ? searchParams.get('tab') : 'expenses')); // 'expenses' | 'income' | 'shipping' | 'production'
   const [income, setIncome] = useState([]);
   const [incomeSummary, setIncomeSummary] = useState({ thisMonth: 0, bySource: [] });
   const [incomeLoading, setIncomeLoading] = useState(true);
@@ -826,11 +968,12 @@ export default function Expenses() {
       <div className="glass-bar sticky top-[65px] lg:top-4 z-20 flex items-start justify-between gap-3 mb-4 px-4 sm:px-5 py-3">
         <div className="min-w-0">
           <h1 className="text-2xl font-bold text-slate-900">
-            {activeTab === 'income' ? 'Other Income' : activeTab === 'shipping' ? 'Shipping' : 'Expenses'}
+            {activeTab === 'income' ? 'Other Income' : activeTab === 'shipping' ? 'Shipping' : activeTab === 'production' ? 'Production' : 'Expenses'}
           </h1>
           <p className="text-sm text-slate-500 mt-0.5">
             {activeTab === 'income' ? 'Miscellaneous income outside the invoice flow'
               : activeTab === 'shipping' ? 'What you paid to ship each project'
+              : activeTab === 'production' ? 'Embroidery, sublimation, cutting & threads and belts — paid per project'
               : 'Track business spending'}
           </p>
         </div>
@@ -864,6 +1007,7 @@ export default function Expenses() {
           { key: 'expenses', label: 'Expenses', icon: TrendingDown },
           { key: 'income',   label: 'Income',   icon: TrendingUp },
           { key: 'shipping', label: 'Shipping', icon: Truck },
+          { key: 'production', label: 'Production', icon: Scissors },
         ].map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => setActiveTab(key)}
             className={`flex items-center gap-1.5 px-4 py-1.5 text-sm rounded-lg font-semibold transition-all whitespace-nowrap ${
@@ -1178,6 +1322,7 @@ export default function Expenses() {
 
       {/* ════════════ SHIPPING TAB ════════════ */}
       {activeTab === 'shipping' && <ShippingTab />}
+      {activeTab === 'production' && <ProductionTab />}
 
       {/* ── Expense detail (drawer — works the same on phone and desktop) ── */}
       {selected && (
@@ -1206,7 +1351,6 @@ export default function Expenses() {
                 { label: 'Project',        value: selected.project_title || 'None (business expense)' },
                 { label: 'Paid To',        value: selected.paid_to || '—' },
                 { label: 'Payment Method', value: selected.payment_method || '—' },
-                { label: 'Paid By',        value: selected.paid_by || '—' },
                 { label: 'Category',       value: selected.category_name || 'Uncategorized' },
               ].map(({ label, value }) => (
                 <div key={label} className="flex items-center justify-between px-5 py-3 gap-4">

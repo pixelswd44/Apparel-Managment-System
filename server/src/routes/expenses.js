@@ -35,11 +35,12 @@ router.get('/', (req, res) => {
   const { month, from, to, category_id, project_id, employee_id } = req.query;
   let sql = `
     SELECT e.*, ec.name as category_name, ec.color as category_color, p.title as project_title,
-           emp.name as employee_name
+           emp.name as employee_name, pa.kind as agent_kind
     FROM expenses e
     LEFT JOIN expense_categories ec ON ec.id = e.expense_category_id
     LEFT JOIN projects p ON p.id = e.project_id
     LEFT JOIN employees emp ON emp.id = e.employee_id
+    LEFT JOIN production_agents pa ON pa.id = e.agent_id
     WHERE 1=1
   `;
   const params = [];
@@ -113,14 +114,17 @@ function expenseFields(body) {
     title, category = '', expense_category_id = null, amount = 0,
     paid_by = '', paid_to = '', project_id = null, expense_date = null, notes = '',
     payment_method = 'cash', receipt_url = '', recurring = 0, recurring_period = 'monthly',
-    employee_id = null,
+    employee_id = null, agent_id = null,
   } = body;
   const pid = project_id ? parseInt(project_id) : null;
   const eid = employee_id ? parseInt(employee_id) : null;
+  const agent = agent_id ? db.prepare('SELECT id, name FROM production_agents WHERE id = ?').get(parseInt(agent_id)) : null;
   return {
     employee_id: eid && db.prepare('SELECT 1 FROM employees WHERE id = ?').get(eid) ? eid : null,
+    // A production agent (embroidery, belts…) is the payee — keep their name in paid_to
+    agent_id: agent ? agent.id : null,
     title, category, expense_category_id: expense_category_id || null, amount: parseFloat(amount) || 0,
-    paid_by, paid_to: (paid_to || '').trim(), project_id: pid && db.prepare('SELECT 1 FROM projects WHERE id = ?').get(pid) ? pid : null,
+    paid_by, paid_to: agent ? agent.name : (paid_to || '').trim(), project_id: pid && db.prepare('SELECT 1 FROM projects WHERE id = ?').get(pid) ? pid : null,
     expense_date, notes, payment_method, receipt_url, recurring: recurring ? 1 : 0, recurring_period,
   };
 }
@@ -156,25 +160,31 @@ try {
 
 const SELECT_ONE = `
   SELECT e.*, ec.name as category_name, ec.color as category_color, p.title as project_title,
-         emp.name as employee_name
+         emp.name as employee_name, pa.kind as agent_kind
   FROM expenses e
   LEFT JOIN expense_categories ec ON ec.id = e.expense_category_id
   LEFT JOIN projects p ON p.id = e.project_id
   LEFT JOIN employees emp ON emp.id = e.employee_id
+  LEFT JOIN production_agents pa ON pa.id = e.agent_id
   WHERE e.id = ?
 `;
+
+// Production payments (embroidery, belts…) are paid per project
+const needsProject = f => f.agent_id && !f.project_id;
+const NEEDS_PROJECT = 'Pick the project this payment is for.';
 
 router.post('/', (req, res) => {
   const f = expenseFields(req.body);
   if (!f.title?.trim()) return res.status(400).json({ error: 'Title is required.' });
+  if (needsProject(f)) return res.status(400).json({ error: NEEDS_PROJECT });
   const today = new Date().toISOString().split('T')[0];
   const result = db.prepare(`
     INSERT INTO expenses
       (title, category, expense_category_id, amount, paid_by, paid_to, project_id, expense_date, notes,
-       payment_method, receipt_url, recurring, recurring_period, employee_id)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       payment_method, receipt_url, recurring, recurring_period, employee_id, agent_id)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(f.title.trim(), f.category, f.expense_category_id, f.amount, f.paid_by, f.paid_to, f.project_id,
-         f.expense_date || today, f.notes, f.payment_method, f.receipt_url, f.recurring, f.recurring_period, f.employee_id);
+         f.expense_date || today, f.notes, f.payment_method, f.receipt_url, f.recurring, f.recurring_period, f.employee_id, f.agent_id);
   syncAdvance(result.lastInsertRowid, f);
   res.json(db.prepare(SELECT_ONE).get(result.lastInsertRowid));
 });
@@ -182,13 +192,14 @@ router.post('/', (req, res) => {
 router.put('/:id', (req, res) => {
   const f = expenseFields(req.body);
   if (!f.title?.trim()) return res.status(400).json({ error: 'Title is required.' });
+  if (needsProject(f)) return res.status(400).json({ error: NEEDS_PROJECT });
   db.prepare(`
     UPDATE expenses SET
       title=?, category=?, expense_category_id=?, amount=?, paid_by=?, paid_to=?, project_id=?, expense_date=?, notes=?,
-      payment_method=?, receipt_url=?, recurring=?, recurring_period=?, employee_id=?
+      payment_method=?, receipt_url=?, recurring=?, recurring_period=?, employee_id=?, agent_id=?
     WHERE id=?
   `).run(f.title.trim(), f.category, f.expense_category_id, f.amount, f.paid_by, f.paid_to, f.project_id,
-         f.expense_date, f.notes, f.payment_method, f.receipt_url, f.recurring, f.recurring_period, f.employee_id,
+         f.expense_date, f.notes, f.payment_method, f.receipt_url, f.recurring, f.recurring_period, f.employee_id, f.agent_id,
          req.params.id);
   const exp = db.prepare(SELECT_ONE).get(req.params.id);
   if (!exp) return res.status(404).json({ error: 'Not found' });

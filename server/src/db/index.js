@@ -770,6 +770,19 @@ const migrations = [
     source         TEXT,
     created_at     TEXT    DEFAULT (datetime('now'))
   )`,
+  // People paid per project for one production job (kind: embroidery |
+  // sublimation | cutting | belts). Payments to them are expenses with agent_id.
+  `CREATE TABLE IF NOT EXISTS production_agents (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind       TEXT NOT NULL,
+    name       TEXT NOT NULL,
+    phone      TEXT DEFAULT '',
+    city       TEXT DEFAULT '',
+    notes      TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `ALTER TABLE expenses ADD COLUMN agent_id INTEGER REFERENCES production_agents(id) ON DELETE SET NULL`,
   // Tasks can belong to a project (client_id already links a client)
   `ALTER TABLE reminders ADD COLUMN project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL`,
   // Web Push: one row per browser/device that turned on reminder notifications.
