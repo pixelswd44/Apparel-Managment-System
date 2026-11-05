@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import api from '../lib/api';
+import api, { imgUrl } from '../lib/api';
 import {
   Receipt, Plus, Search, X, Edit2, Trash2, RefreshCw, ArrowLeft,
   Tag, Calendar, Repeat, ChevronDown, Check, SlidersHorizontal,
   Home, Zap, Droplets, Truck, Coffee, Package, MoreHorizontal,
   BarChart2, AlertTriangle, TrendingUp, TrendingDown, Banknote, Flame, Scissors,
+  Paperclip, FileText, ExternalLink,
 } from 'lucide-react';
 import PeriodPicker, { currentMonthRange } from '../components/PeriodPicker';
 import Drawer from '../components/Drawer';
@@ -122,6 +123,51 @@ function CategoryModal({ category, onClose, onSave }) {
   );
 }
 
+// ── Bill / invoice attachment (one photo or PDF, kept in receipt_url) ─────────
+const isPdf = url => /\.pdf($|\?)/i.test(url || '');
+
+function ReceiptAttach({ url, onChange }) {
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState('');
+  async function pick(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) { setError('That file is over 10 MB.'); return; }
+    setUploading(true); setError('');
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const { data } = await api.post('/uploads', fd);
+      onChange(data.url);
+    } catch { setError('Upload failed — please try again.'); }
+    finally { setUploading(false); }
+  }
+  return (
+    <div>
+      <label className="block text-xs font-semibold text-slate-500 mb-1">Bill / Invoice</label>
+      {url ? (
+        <div className="flex items-center gap-3 p-2 border border-slate-200 rounded-xl">
+          <a href={imgUrl(url)} target="_blank" rel="noreferrer" className="flex items-center gap-3 flex-1 min-w-0 group">
+            {isPdf(url)
+              ? <span className="w-12 h-12 rounded-lg bg-rose-50 text-rose-500 flex items-center justify-center flex-shrink-0"><FileText size={20} /></span>
+              : <img src={imgUrl(url)} alt="Bill" className="w-12 h-12 rounded-lg object-cover bg-slate-50 flex-shrink-0" />}
+            <span className="text-sm text-slate-700 group-hover:text-indigo-600 truncate">{isPdf(url) ? 'PDF attached' : 'Photo attached'} — view</span>
+          </a>
+          <button type="button" onClick={() => onChange('')} title="Remove"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex-shrink-0"><X size={14} /></button>
+        </div>
+      ) : (
+        <label className={`flex items-center justify-center gap-2 px-3 py-2.5 text-sm border border-dashed border-slate-300 rounded-xl text-slate-500 hover:border-indigo-400 hover:text-indigo-600 cursor-pointer transition-colors ${uploading ? 'opacity-60 pointer-events-none' : ''}`}>
+          <Paperclip size={14} /> {uploading ? 'Uploading…' : 'Attach bill or invoice (photo or PDF)'}
+          <input type="file" accept="image/*,application/pdf" onChange={pick} className="hidden" />
+        </label>
+      )}
+      {error && <p className="text-2xs text-rose-600 mt-1">{error}</p>}
+    </div>
+  );
+}
+
 // Defined at module level so the form isn't remounted (losing focus) on every keystroke.
 function ExpenseShell({ page, expense, onClose, children }) {
   if (!page) return <Drawer open={true} onClose={onClose} title={expense ? 'Edit Expense' : 'New Expense'} width="max-w-md">{children}</Drawer>;
@@ -142,7 +188,7 @@ export function ExpenseModal({ expense, categories, projects = [], defaultProjec
   const blank = {
     title: '', expense_category_id: '', amount: '', paid_by: '', paid_to: '',
     project_id: defaultProjectId ? String(defaultProjectId) : '', employee_id: '', agent_id: '',
-    expense_date: today(), payment_method: 'bank transfer', notes: '',
+    expense_date: today(), payment_method: 'bank transfer', notes: '', receipt_url: '',
     // Shipping only — saved on the project's shipment, not as an expense
     ship_agent_id: '', shipment_id: '', tracking_number: '', new_name: '',
   };
@@ -443,6 +489,8 @@ export function ExpenseModal({ expense, categories, projects = [], defaultProjec
             <label className="block text-xs font-semibold text-slate-500 mb-1">Notes</label>
             <textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={2} className={`${inputCls} resize-none`} />
           </div>
+
+          {!isShipping && <ReceiptAttach url={form.receipt_url} onChange={u => set('receipt_url', u)} />}
 
           {error && <p className="text-xs text-rose-600">{error}</p>}
 
@@ -1188,6 +1236,7 @@ export default function Expenses() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <p className="text-sm font-semibold text-slate-800">{exp.title}</p>
+                      {exp.receipt_url && <Paperclip size={12} className="text-slate-400" aria-label="Bill attached" />}
                     </div>
                     <p className="text-xs text-slate-400 mt-0.5">
                       {fmtDate(exp.expense_date)}
@@ -1359,6 +1408,17 @@ export default function Expenses() {
                 </div>
               ))}
             </div>
+            {selected.receipt_url && (
+              <a href={imgUrl(selected.receipt_url)} target="_blank" rel="noreferrer"
+                className="block bg-white border border-slate-200 rounded-2xl overflow-hidden hover:border-indigo-300 transition-colors">
+                <p className="flex items-center gap-1.5 px-4 pt-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  <Paperclip size={12} /> Bill / Invoice <ExternalLink size={11} className="ml-auto text-slate-400" />
+                </p>
+                {isPdf(selected.receipt_url)
+                  ? <p className="flex items-center gap-2 px-4 py-3 text-sm text-slate-700"><FileText size={18} className="text-rose-500" /> Open PDF</p>
+                  : <img src={imgUrl(selected.receipt_url)} alt="Bill" className="w-full max-h-80 object-contain bg-slate-50 mt-2" />}
+              </a>
+            )}
             {selected.notes && (
               <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4">
                 <p className="text-xs font-semibold text-amber-600 uppercase tracking-wider mb-2">Notes / Description</p>

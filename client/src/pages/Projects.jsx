@@ -1548,6 +1548,26 @@ function ProjectMoney({ project }) {
   );
 }
 
+// The products in an order with their quantities — tells apart a client's orders
+// without opening them. Long lists wrap; a total follows when there's more than one.
+function ProjectProducts({ products }) {
+  if (!products?.length) return null;
+  const total = products.reduce((s, p) => s + p.qty, 0);
+  return (
+    <div className="flex flex-wrap items-center gap-1 mt-1.5">
+      {products.map((p, i) => (
+        <span key={i} className="inline-flex items-baseline gap-1 px-1.5 py-0.5 rounded-md bg-slate-100 text-2xs text-slate-600 max-w-full">
+          <span className="truncate">{p.name}</span>
+          {p.qty > 0 && <span className="font-semibold text-slate-800 whitespace-nowrap">{p.qty.toLocaleString()}</span>}
+        </span>
+      ))}
+      {products.length > 1 && total > 0 && (
+        <span className="text-2xs text-slate-400 whitespace-nowrap ml-0.5">= {total.toLocaleString()} pcs</span>
+      )}
+    </div>
+  );
+}
+
 function ProjectRow({ project, onClick }) {
   return (
     <div onClick={onClick}
@@ -1561,6 +1581,7 @@ function ProjectRow({ project, onClick }) {
             {' · '}{fmtDate(project.created_at)}
             {project.invoice_number ? ` · ${project.invoice_number}` : ''}
           </p>
+          <ProjectProducts products={project.products} />
         </div>
       </div>
       <ProjectMoney project={project} />
@@ -1587,6 +1608,7 @@ function CompletedProjectRow({ project, onClick }) {
             {project.client_name ?? 'No client'}{project.client_company ? ` · ${project.client_company}` : ''}
             {' · '}Completed {fmtCompletedDate(project.completed_at)}
           </p>
+          <ProjectProducts products={project.products} />
         </div>
       </div>
       <ProjectMoney project={project} />
@@ -2033,7 +2055,8 @@ export default function Projects() {
     if (statusFilter === 'active' && p.status === 'completed') return false;
     if (search) {
       const q = search.toLowerCase();
-      return [p.title, p.client_name, p.client_company, p.invoice_number].some(f => f?.toLowerCase().includes(q));
+      return [p.title, p.client_name, p.client_company, p.invoice_number, ...(p.products || []).map(x => x.name)]
+        .some(f => f?.toLowerCase().includes(q));
     }
     return true;
   });

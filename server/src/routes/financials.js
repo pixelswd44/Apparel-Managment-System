@@ -169,6 +169,82 @@ router.get('/monthly', (req, res) => {
   res.json(result);
 });
 
+// ── Monthly report (Ledger → Monthly Report export) ────────────────────────
+// One month's P&L — same figures as /monthly — plus every line behind it:
+// client payments, other income, and all spending (expenses, shipping costs
+// and paid payroll). All amounts PKR. ?month=YYYY-MM (default: this month).
+router.get('/monthly-report', (req, res) => {
+  try {
+    const month = /^\d{4}-\d{2}$/.test(req.query.month || '') ? req.query.month : new Date().toISOString().slice(0, 7);
+    const rates = getRates();
+
+    const payments = db.prepare(`
+      SELECT date(p.paid_at) as date, p.amount, COALESCE(p.currency, 'PKR') as currency, p.amount_pkr_actual,
+             p.method, i.number as invoice_number, c.name as client_name
+      FROM payments p
+      LEFT JOIN invoices i ON i.id = p.invoice_id
+      LEFT JOIN clients  c ON c.id = COALESCE(p.client_id, i.client_id)
+      WHERE strftime('%Y-%m', p.paid_at) = ?
+      ORDER BY p.paid_at ASC, p.id ASC
+    `).all(month).map(p => ({ ...p, pkr: paymentToPKR(p, rates) }));
+
+    const otherIncome = db.prepare(`
+      SELECT income_date as date, title, category, amount, payment_method
+      FROM other_income WHERE strftime('%Y-%m', income_date) = ? ORDER BY income_date ASC, id ASC
+    `).all(month);
+
+    const expenses = db.prepare(`
+      SELECT e.expense_date as date, e.title, COALESCE(ec.name, 'Uncategorized') as category, e.paid_to,
+             p.title as project, e.payment_method as method, e.amount, e.project_id, e.receipt_url
+      FROM expenses e
+      LEFT JOIN expense_categories ec ON ec.id = e.expense_category_id
+      LEFT JOIN projects p ON p.id = e.project_id
+      WHERE strftime('%Y-%m', e.expense_date) = ?
+    `).all(month);
+    const shipping = db.prepare(`
+      SELECT sc.cost_date as date, 'Shipping' as title, 'Shipping' as category,
+             COALESCE(sa.name, ps.carrier) as paid_to, p.title as project, sc.payment_method as method,
+             sc.amount, sc.project_id, '' as receipt_url
+      FROM shipping_costs sc
+      JOIN project_shipping ps ON ps.id = sc.shipment_id
+      LEFT JOIN shipping_agents sa ON sa.id = ps.agent_id
+      LEFT JOIN projects p ON p.id = sc.project_id
+      WHERE strftime('%Y-%m', sc.cost_date) = ?
+    `).all(month);
+    const payroll = db.prepare(`
+      SELECT date(pr.paid_at) as date, 'Salary' || CASE WHEN pr.period IS NOT NULL AND pr.period != '' THEN ' (' || pr.period || ')' ELSE '' END as title,
+             'Payroll' as category, emp.name as paid_to, NULL as project, 'payroll' as method,
+             pr.net_pay as amount, NULL as project_id, '' as receipt_url
+      FROM payroll_records pr LEFT JOIN employees emp ON emp.id = pr.employee_id
+      WHERE pr.status = 'paid' AND strftime('%Y-%m', pr.paid_at) = ?
+    `).all(month);
+
+    const spending = [...expenses, ...shipping, ...payroll]
+      .map(r => ({ ...r, amount: parseFloat(r.amount) || 0 }))
+      .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+
+    const sum = rows => rows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+    const invoiceRevenue = payments.reduce((s, p) => s + p.pkr, 0);
+    const otherIncomeTotal = sum(otherIncome);
+    const businessExpenses = sum(expenses.filter(e => !e.project_id));
+    const projectCosts = sum(expenses.filter(e => e.project_id)) + sum(shipping);
+    const salaries = sum(payroll);
+
+    const byCategory = {};
+    for (const r of spending) byCategory[r.category] = (byCategory[r.category] || 0) + r.amount;
+
+    const company = db.prepare('SELECT name FROM companies ORDER BY id LIMIT 1').get();
+    const totalIncome = invoiceRevenue + otherIncomeTotal;
+    const totalSpending = businessExpenses + projectCosts + salaries;
+    res.json({
+      month, company_name: company?.name || '',
+      summary: { invoiceRevenue, otherIncome: otherIncomeTotal, totalIncome, businessExpenses, projectCosts, salaries, totalSpending, net: totalIncome - totalSpending },
+      byCategory: Object.entries(byCategory).map(([category, total]) => ({ category, total })).sort((a, b) => b.total - a.total),
+      payments, otherIncome, spending,
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── Expense breakdown by category ──────────────────────────────────────────
 router.get('/expenses-by-category', (req, res) => {
   const { from, to } = req.query;

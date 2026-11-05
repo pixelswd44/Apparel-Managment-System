@@ -117,6 +117,12 @@ router.get('/', (req, res) => {
     } catch {}
     const getRateToPKR = code => (!code || code === 'PKR') ? 1 : (currencyRates[code] || 1);
 
+    // Each project's products (name + quantity) so the list shows what's in an order
+    const productsByProject = {};
+    for (const pp of db.prepare('SELECT project_id, product_name, total_quantity, unit FROM project_products ORDER BY sort_order ASC, id ASC').all()) {
+      (productsByProject[pp.project_id] ||= []).push({ name: pp.product_name, qty: parseFloat(pp.total_quantity) || 0, unit: pp.unit || 'pcs' });
+    }
+
     // Received mirrors calcProject() on the client: exchange_rate_actual override
     // if set, else the invoice payments' actual PKR (same as Financials).
     res.json(rows.map(row => {
@@ -128,7 +134,7 @@ router.get('/', (req, res) => {
         ? invoiceReceivedPKR(row.invoice_id, row.invoice_amount_paid, receivedCurrency, getRateToPKR)
         : receivedRaw * exchangeRate;
       const fin_outstanding  = Math.max(0, ((parseFloat(row.invoice_total) || 0) - receivedRaw) * exchangeRate);
-      return { ...row, status: normStatus(row.status), fin_received, fin_outstanding, fin_net: fin_received - row.fin_total_expense };
+      return { ...row, status: normStatus(row.status), products: productsByProject[row.id] || [], fin_received, fin_outstanding, fin_net: fin_received - row.fin_total_expense };
     }));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

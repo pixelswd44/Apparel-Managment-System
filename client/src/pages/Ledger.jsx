@@ -4,9 +4,10 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import {
   Download, FileSpreadsheet, FileText, SlidersHorizontal,
-  Filter, Pencil, Check, X,
+  Filter, Pencil, Check, X, CalendarRange,
 } from 'lucide-react';
 import api from '../lib/api';
+import { exportMonthlyPDF, exportMonthlyExcel } from '../lib/monthlyReport';
 import PeriodPicker, { currentMonthRange } from '../components/PeriodPicker';
 import { pkr, convert, displayCurrency } from '../lib/currency';
 
@@ -36,6 +37,59 @@ function monthKeyOf({ from, to }) {
   const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
   const expectedTo = `${from.slice(0, 7)}-${String(lastDay).padStart(2, '0')}`;
   return (from.slice(8) === '01' && to === expectedTo) ? from.slice(0, 7) : null;
+}
+
+// Monthly report — pick a month, download its P&L and every expense as PDF or Excel
+function MonthlyReportButton({ defaultMonth }) {
+  const [open, setOpen]       = useState(false);
+  const [month, setMonth]     = useState(defaultMonth || new Date().toISOString().slice(0, 7));
+  const [busy, setBusy]       = useState('');   // '' | 'pdf' | 'xlsx'
+  const [error, setError]     = useState('');
+  useEffect(() => { if (defaultMonth) setMonth(defaultMonth); }, [defaultMonth]);
+
+  async function run(kind) {
+    setBusy(kind); setError('');
+    try {
+      const { data } = await api.get('/financials/monthly-report', { params: { month } });
+      if (kind === 'pdf') exportMonthlyPDF(data); else exportMonthlyExcel(data);
+      setOpen(false);
+    } catch { setError('Could not build the report — please try again.'); }
+    finally { setBusy(''); }
+  }
+
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen(v => !v)} title="Monthly Report"
+        className={`flex items-center gap-1.5 px-3.5 py-2.5 text-sm border rounded-xl font-medium transition-colors ${
+          open ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-300'}`}>
+        <CalendarRange size={14} /> <span className="hidden sm:inline">Monthly Report</span>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 mt-1.5 w-64 bg-white border border-slate-200 rounded-xl shadow-lg z-30 p-3 space-y-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 mb-1">Month</label>
+              <input type="month" value={month} onChange={e => setMonth(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+            </div>
+            <p className="text-2xs text-slate-400">Profit &amp; loss summary and every expense for the month, in PKR.</p>
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={() => run('pdf')} disabled={!month || !!busy}
+                className="flex items-center justify-center gap-1.5 px-3 py-2 text-sm border border-slate-200 rounded-xl text-slate-700 hover:bg-slate-50 font-medium disabled:opacity-50">
+                <FileText size={14} className="text-rose-600" /> {busy === 'pdf' ? '…' : 'PDF'}
+              </button>
+              <button onClick={() => run('xlsx')} disabled={!month || !!busy}
+                className="flex items-center justify-center gap-1.5 px-3 py-2 text-sm border border-slate-200 rounded-xl text-slate-700 hover:bg-slate-50 font-medium disabled:opacity-50">
+                <FileSpreadsheet size={14} className="text-emerald-600" /> {busy === 'xlsx' ? '…' : 'Excel'}
+              </button>
+            </div>
+            {error && <p className="text-2xs text-rose-600">{error}</p>}
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 export default function Ledger() {
@@ -266,6 +320,7 @@ export default function Ledger() {
             <SlidersHorizontal size={14} /> <span className="hidden sm:inline">Filters</span>
             {activeFilters > 0 && <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-600 text-white text-2xs font-bold flex items-center justify-center">{activeFilters}</span>}
           </button>
+          <MonthlyReportButton defaultMonth={monthKey} />
           <div className="relative">
             <button onClick={() => setShowExport(v => !v)} disabled={!data} title="Export"
               className="flex items-center gap-1.5 px-3.5 py-2.5 text-sm bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold disabled:opacity-50 transition-colors">
