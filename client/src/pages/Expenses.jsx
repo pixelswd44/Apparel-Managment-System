@@ -339,8 +339,9 @@ export function ExpenseModal({ expense, categories, projects = [], defaultProjec
   function pickGroup(g) {
     if (g === group) return;
     setPickedGroup(g);
-    // A type from another group is cleared; a hand-typed title stays
-    if (typeValue) setForm(f => ({ ...f, title: '', agent_id: '', new_name: '' }));
+    // A type from another group is cleared with its category (no longer shown to
+    // fix by hand); a hand-typed title stays
+    if (typeValue) setForm(f => ({ ...f, title: '', expense_category_id: '', agent_id: '', new_name: '' }));
   }
 
   return (
@@ -481,23 +482,8 @@ export function ExpenseModal({ expense, categories, projects = [], defaultProjec
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {!isShipping && (
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1">Category</label>
-                <select value={form.expense_category_id} onChange={e => set('expense_category_id', e.target.value)} className={inputCls}>
-                  <option value="">Uncategorized</option>
-                  {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </div>
-            )}
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 mb-1">Payment Method</label>
-              <select value={form.payment_method} onChange={e => set('payment_method', e.target.value)} className={inputCls}>
-                {PAYMENT_METHODS.map(m => <option key={m} value={m} className="capitalize">{m}</option>)}
-              </select>
-            </div>
-          </div>
+          {/* No Category or Payment Method fields: the Type sets the category, and the
+              payment method keeps its default (or, when editing, what was saved). */}
 
           {/* The production person / shipping agent is the payee for those types */}
           {!isShipping && !prodKind && (
