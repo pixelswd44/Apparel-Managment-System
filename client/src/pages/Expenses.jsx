@@ -25,28 +25,29 @@ const EMPLOYEE_TYPES = ['Salary', 'Advance'];
 const PAYMENT_METHODS = ['cash', 'bank transfer', 'cheque', 'online', 'card'];
 const RECURRING_PERIODS = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly'];
 
-// Quick-pick presets — label shown on chip, category is matched to existing categories
+// Expense types — picking one fills the title and category (created on first use).
+// Kept to a few broad types; the title can still say exactly what it was.
+// aliases are older type names, so expenses saved under them still show their type.
+// Embroidery … Belts must match PRODUCTION_KINDS, Salary / Advance EMPLOYEE_TYPES.
 const EXPENSE_PRESETS = [
-  { label: 'Fabric Purchased', category: 'Fabric Expanses', color: '#8b5cf6' },
-  { label: 'Production',       category: 'Production',      color: '#3b82f6' },
-  { label: 'Embroidery',       category: 'Production',      color: '#3b82f6' },
-  { label: 'Sublimation',      category: 'Production',      color: '#3b82f6' },
-  { label: 'Cutting & Threads', category: 'Production',     color: '#3b82f6' },
-  { label: 'Belts',            category: 'Production',      color: '#3b82f6' },
-  { label: 'Threads, Cleaning & Packaging', category: 'Packaging', color: '#0ea5e9' },
-  { label: 'Labels & Cards',   category: 'Packaging',       color: '#0ea5e9' },
-  { label: 'Petty Cash',       category: 'Petty Cash',      color: '#f97316' },
-  { label: 'Subscription',     category: 'Subscriptions',   color: '#a855f7' },
-  { label: 'Internet Bill',    category: 'Bills',           color: '#f59e0b' },
-  { label: 'Electricity Bill', category: 'Bills',           color: '#f59e0b' },
-  { label: 'Rent',             category: 'Rent',            color: '#6366f1' },
-  { label: 'Office Supplies',  category: 'Office Supplies', color: '#14b8a6' },
-  { label: 'Staff Meals',      category: 'Staff Meals',     color: '#ec4899' },
-  { label: 'Salary',           category: 'Salaries',        color: '#06b6d4' },
-  { label: 'Advance',          category: 'Salaries',        color: '#06b6d4' },
-  { label: 'Charity',          category: 'Charity',         color: '#10b981' },
-  { label: 'Self Use / Personal Use', category: 'Personal Use', color: '#64748b' },
+  { group: 'Production', label: 'Fabric',             category: 'Fabric Expanses', color: '#8b5cf6', aliases: ['Fabric Purchased'] },
+  { group: 'Production', label: 'Production',         category: 'Production',      color: '#3b82f6' },
+  { group: 'Production', label: 'Embroidery',         category: 'Production',      color: '#3b82f6' },
+  { group: 'Production', label: 'Sublimation',        category: 'Production',      color: '#3b82f6' },
+  { group: 'Production', label: 'Cutting & Threads',  category: 'Production',      color: '#3b82f6' },
+  { group: 'Production', label: 'Belts',              category: 'Production',      color: '#3b82f6' },
+  { group: 'Production', label: 'Packaging & Labels', category: 'Packaging',       color: '#0ea5e9', aliases: ['Threads, Cleaning & Packaging', 'Labels & Cards'] },
+  { group: 'Running costs', label: 'Rent & Bills',    category: 'Bills',           color: '#f59e0b', aliases: ['Rent', 'Internet Bill', 'Electricity Bill', 'Subscription'] },
+  { group: 'Running costs', label: 'Office & Petty Cash', category: 'Petty Cash',  color: '#f97316', aliases: ['Petty Cash', 'Office Supplies', 'Staff Meals'] },
+  { group: 'Running costs', label: 'Taxes',           category: 'Taxes',           color: '#ef4444' },
+  { group: 'Staff', label: 'Salary',                  category: 'Salaries',        color: '#06b6d4' },
+  { group: 'Staff', label: 'Advance',                 category: 'Salaries',        color: '#06b6d4' },
+  { group: 'Other', label: 'Charity',                 category: 'Charity',         color: '#10b981' },
+  { group: 'Other', label: 'Personal',                category: 'Personal Use',    color: '#64748b', aliases: ['Self Use / Personal Use'] },
 ];
+const PRESET_GROUPS = [...new Set(EXPENSE_PRESETS.map(p => p.group))];
+// The type an expense title belongs to (its own label or an older alias)
+const presetFor = title => EXPENSE_PRESETS.find(p => p.label === title || p.aliases?.includes(title));
 
 // Shipping picked on a project's expense is saved as a shipping cost on its shipment
 const SHIPPING = 'Shipping';
@@ -329,7 +330,18 @@ export function ExpenseModal({ expense, categories, projects = [], defaultProjec
   }
 
   const inputCls = 'w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20';
-  const typeValue = isShipping ? SHIPPING : EXPENSE_PRESETS.some(p => p.label === form.title) ? form.title : '';
+  const typeValue = isShipping ? SHIPPING : (presetFor(form.title)?.label || '');
+
+  // Type is picked in two steps: a group (radio buttons), then a type in that group.
+  // The group follows the type when one is already set (editing, ?type= links).
+  const [pickedGroup, setPickedGroup] = useState('');
+  const group = (isShipping ? 'Production' : presetFor(form.title)?.group) || pickedGroup;
+  function pickGroup(g) {
+    if (g === group) return;
+    setPickedGroup(g);
+    // A type from another group is cleared; a hand-typed title stays
+    if (typeValue) setForm(f => ({ ...f, title: '', agent_id: '', new_name: '' }));
+  }
 
   return (
     <ExpenseShell page={page} expense={expense} onClose={onClose}>
@@ -357,14 +369,25 @@ export function ExpenseModal({ expense, categories, projects = [], defaultProjec
             ) : null}
           </div>
 
-          {/* ── Type — fills the title and category ── */}
+          {/* ── Type — group, then type; fills the title and category ── */}
           <div>
-            <label className="block text-xs font-semibold text-slate-500 mb-1">Type</label>
-            <select value={typeValue} onChange={e => pickType(e.target.value)} className={inputCls}>
-              <option value="">Select type…</option>
-              {form.project_id && !expense && <option value={SHIPPING}>Shipping</option>}
-              {EXPENSE_PRESETS.map(p => <option key={p.label} value={p.label}>{p.label}</option>)}
-            </select>
+            <label className="block text-xs font-semibold text-slate-500 mb-1.5">Type</label>
+            <div role="radiogroup" aria-label="Expense group" className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+              {PRESET_GROUPS.map(g => (
+                <button key={g} type="button" role="radio" aria-checked={group === g} onClick={() => pickGroup(g)}
+                  className={`px-2 py-2 text-xs font-semibold rounded-xl border transition-colors ${
+                    group === g ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300'}`}>
+                  {g}
+                </button>
+              ))}
+            </div>
+            {group && (
+              <select value={typeValue} onChange={e => pickType(e.target.value)} className={`${inputCls} mt-2`}>
+                <option value="">Select {group.toLowerCase()} type…</option>
+                {EXPENSE_PRESETS.filter(p => p.group === group).map(p => <option key={p.label} value={p.label}>{p.label}</option>)}
+                {group === 'Production' && form.project_id && !expense && <option value={SHIPPING}>Shipping</option>}
+              </select>
+            )}
           </div>
 
           {/* ── Shipping — agent and shipment on this project ── */}
@@ -443,7 +466,7 @@ export function ExpenseModal({ expense, categories, projects = [], defaultProjec
                 Title * <span className="font-normal text-slate-400 ml-1">or type your own</span>
               </label>
               <input type="text" value={form.title} onChange={e => set('title', e.target.value)} required
-                placeholder="e.g. October Rent, Electricity Bill" className={inputCls} />
+                placeholder="e.g. October rent, electricity bill, sales tax" className={inputCls} />
             </div>
           )}
 
