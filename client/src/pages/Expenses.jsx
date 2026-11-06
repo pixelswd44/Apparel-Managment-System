@@ -187,7 +187,7 @@ function ExpenseShell({ page, expense, onClose, children }) {
 // defaultType pre-picks a Type (e.g. from Expenses → Production → Add payment).
 export function ExpenseModal({ expense, categories, projects = [], defaultProjectId = '', defaultType = '', onClose, onSave, page = false }) {
   const blank = {
-    title: '', expense_category_id: '', amount: '', paid_by: '', paid_to: '',
+    title: '', expense_type: '', expense_category_id: '', amount: '', paid_by: '', paid_to: '',
     project_id: defaultProjectId ? String(defaultProjectId) : '', employee_id: '', agent_id: '',
     expense_date: today(), payment_method: 'bank transfer', notes: '', receipt_url: '',
     // Shipping only — saved on the project's shipment, not as an expense
@@ -199,6 +199,8 @@ export function ExpenseModal({ expense, categories, projects = [], defaultProjec
         project_id: expense.project_id ? String(expense.project_id) : '',
         employee_id: expense.employee_id ? String(expense.employee_id) : '',
         agent_id: expense.agent_id ? String(expense.agent_id) : '',
+        // Older expenses have no saved type — it's worked out from the title
+        expense_type: expense.expense_type || presetFor(expense.title)?.label || '',
         paid_to: expense.paid_to || '' }
     : blank);
   // Only active projects — except the one this expense is already on, so editing
@@ -215,14 +217,16 @@ export function ExpenseModal({ expense, categories, projects = [], defaultProjec
   useEffect(() => {
     api.get('/employees').then(r => setEmployees((Array.isArray(r.data) ? r.data : []).filter(e => e.status !== 'inactive' || String(e.id) === String(expense?.employee_id)))).catch(() => {});
   }, []);
-  const isEmpType = EMPLOYEE_TYPES.includes(form.title);
+  // The Type is saved on its own, so the title can be anything
+  const type = form.expense_type;
+  const isEmpType = EMPLOYEE_TYPES.includes(type);
   function pickEmployee(id) {
     const emp = employees.find(e => String(e.id) === String(id));
     setForm(f => ({ ...f, employee_id: id, paid_to: emp ? emp.name : f.paid_to }));
   }
 
   // Production payments (embroidery, belts…) go to a person on that job's list
-  const prodKind = PRODUCTION_KINDS.find(k => k.label === form.title);
+  const prodKind = PRODUCTION_KINDS.find(k => k.label === type);
   const [prodAgents, setProdAgents] = useState([]);
   useEffect(() => {
     if (!prodKind) return;
@@ -232,7 +236,7 @@ export function ExpenseModal({ expense, categories, projects = [], defaultProjec
 
   // Shipping (new entries on a project only) is saved as a payment on the
   // project's shipment for the chosen agent, so it shows on its Shipping tab.
-  const isShipping = !expense && !!form.project_id && form.title === SHIPPING;
+  const isShipping = !expense && !!form.project_id && type === SHIPPING;
   const [shipAgents, setShipAgents] = useState([]);
   const [shipments, setShipments] = useState([]);
   useEffect(() => {
@@ -248,29 +252,33 @@ export function ExpenseModal({ expense, categories, projects = [], defaultProjec
 
   function pickProject(id) {
     // Shipping needs a project — without one the type is cleared
-    setForm(f => ({ ...f, project_id: id, ...(!id && f.title === SHIPPING ? { title: '' } : {}), shipment_id: '', ship_agent_id: '' }));
+    setForm(f => ({ ...f, project_id: id, ...(!id && f.expense_type === SHIPPING ? { expense_type: '', title: '' } : {}), shipment_id: '', ship_agent_id: '' }));
   }
 
-  // Picking a type fills the title and category; the category is created on first use.
+  // Picking a type sets the category (created on first use) and fills the title —
+  // unless a title of your own is already typed, which is kept.
+  const isAutoTitle = t => !t || t === SHIPPING || !!presetFor(t);
   const [cats, setCats] = useState(categories);
   useEffect(() => { setCats(categories); }, [categories]);
 
   async function applyPreset(preset) {
     let cat = cats.find(c => c.name.toLowerCase() === preset.category.toLowerCase());
-    setForm(f => ({ ...f, title: preset.label, agent_id: '', new_name: '', ...(cat ? { expense_category_id: String(cat.id) } : {}) }));
+    setForm(f => ({ ...f, expense_type: preset.label, title: isAutoTitle(f.title) ? preset.label : f.title,
+      agent_id: '', new_name: '', ...(cat ? { expense_category_id: String(cat.id) } : {}) }));
     if (!cat) {
       try {
         const { data } = await api.post('/expenses/categories', { name: preset.category, color: preset.color });
         setCats(c => [...c, data]);
-        setForm(f => (f.title === preset.label ? { ...f, expense_category_id: String(data.id) } : f));
+        setForm(f => (f.expense_type === preset.label ? { ...f, expense_category_id: String(data.id) } : f));
       } catch {}
     }
   }
 
   function pickType(label) {
-    if (label === SHIPPING) { setForm(f => ({ ...f, title: SHIPPING, agent_id: '', new_name: '' })); return; }
+    if (label === SHIPPING) { setForm(f => ({ ...f, expense_type: SHIPPING, title: isAutoTitle(f.title) ? SHIPPING : f.title, agent_id: '', new_name: '' })); return; }
     const p = EXPENSE_PRESETS.find(x => x.label === label);
     if (p) applyPreset(p);
+    else clearType();
   }
 
   // A link like ?type=Belts opens the form with that type picked (once categories are in)
@@ -330,18 +338,21 @@ export function ExpenseModal({ expense, categories, projects = [], defaultProjec
   }
 
   const inputCls = 'w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20';
-  const typeValue = isShipping ? SHIPPING : (presetFor(form.title)?.label || '');
+  const typeValue = isShipping ? SHIPPING : (EXPENSE_PRESETS.find(p => p.label === type)?.label || '');
 
   // Type is picked in two steps: a group (radio buttons), then a type in that group.
   // The group follows the type when one is already set (editing, ?type= links).
   const [pickedGroup, setPickedGroup] = useState('');
-  const group = (isShipping ? 'Production' : presetFor(form.title)?.group) || pickedGroup;
+  const group = (isShipping ? 'Production' : EXPENSE_PRESETS.find(p => p.label === type)?.group) || pickedGroup;
+  // Clearing the type clears its category too (not shown to fix by hand); a title
+  // of your own stays
+  function clearType() {
+    setForm(f => ({ ...f, expense_type: '', title: isAutoTitle(f.title) ? '' : f.title, expense_category_id: '', agent_id: '', new_name: '' }));
+  }
   function pickGroup(g) {
     if (g === group) return;
     setPickedGroup(g);
-    // A type from another group is cleared with its category (no longer shown to
-    // fix by hand); a hand-typed title stays
-    if (typeValue) setForm(f => ({ ...f, title: '', expense_category_id: '', agent_id: '', new_name: '' }));
+    if (typeValue) clearType(); // a type from another group
   }
 
   return (
@@ -464,7 +475,7 @@ export function ExpenseModal({ expense, categories, projects = [], defaultProjec
           {!isShipping && (
             <div>
               <label className="block text-xs font-semibold text-slate-500 mb-1">
-                Title * <span className="font-normal text-slate-400 ml-1">or type your own</span>
+                Title * <span className="font-normal text-slate-400 ml-1">{type ? `change it if you like — stays under ${type}` : 'or type your own'}</span>
               </label>
               <input type="text" value={form.title} onChange={e => set('title', e.target.value)} required
                 placeholder="e.g. October rent, electricity bill, sales tax" className={inputCls} />

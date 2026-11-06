@@ -783,6 +783,8 @@ const migrations = [
     updated_at TEXT DEFAULT (datetime('now'))
   )`,
   `ALTER TABLE expenses ADD COLUMN agent_id INTEGER REFERENCES production_agents(id) ON DELETE SET NULL`,
+  // The picked Type (Embroidery, Salary…) — kept apart from the title so a custom title keeps it
+  `ALTER TABLE expenses ADD COLUMN expense_type TEXT DEFAULT ''`,
   // Tasks can belong to a project (client_id already links a client)
   `ALTER TABLE reminders ADD COLUMN project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL`,
   // Web Push: one row per browser/device that turned on reminder notifications.

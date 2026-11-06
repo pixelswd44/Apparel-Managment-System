@@ -114,7 +114,7 @@ function expenseFields(body) {
     title, category = '', expense_category_id = null, amount = 0,
     paid_by = '', paid_to = '', project_id = null, expense_date = null, notes = '',
     payment_method = 'cash', receipt_url = '', recurring = 0, recurring_period = 'monthly',
-    employee_id = null, agent_id = null,
+    employee_id = null, agent_id = null, expense_type = '',
   } = body;
   const pid = project_id ? parseInt(project_id) : null;
   const eid = employee_id ? parseInt(employee_id) : null;
@@ -123,7 +123,7 @@ function expenseFields(body) {
     employee_id: eid && db.prepare('SELECT 1 FROM employees WHERE id = ?').get(eid) ? eid : null,
     // A production agent (embroidery, belts…) is the payee — keep their name in paid_to
     agent_id: agent ? agent.id : null,
-    title, category, expense_category_id: expense_category_id || null, amount: parseFloat(amount) || 0,
+    title, expense_type: String(expense_type || '').trim(), category, expense_category_id: expense_category_id || null, amount: parseFloat(amount) || 0,
     paid_by, paid_to: agent ? agent.name : (paid_to || '').trim(), project_id: pid && db.prepare('SELECT 1 FROM projects WHERE id = ?').get(pid) ? pid : null,
     expense_date, notes, payment_method, receipt_url, recurring: recurring ? 1 : 0, recurring_period,
   };
@@ -133,7 +133,9 @@ function expenseFields(body) {
 // Employees (linked by expense_id) so balances and repayments work there. The
 // ledger skips linked advances — the expense itself is already in it.
 function syncAdvance(expenseId, f) {
-  const isAdv = f.employee_id && (f.title || '').trim().toLowerCase() === 'advance';
+  // The Type decides; old rows without one fall back to the title
+  const type = (f.expense_type || '').trim() || (f.title || '').trim();
+  const isAdv = f.employee_id && type.toLowerCase() === 'advance';
   const linked = db.prepare('SELECT id FROM employee_advances WHERE expense_id = ?').get(expenseId);
   const date = f.expense_date || new Date().toISOString().split('T')[0];
   if (isAdv) {
@@ -153,7 +155,7 @@ function syncAdvance(expenseId, f) {
 
 // One-off catch-up for Advance expenses saved before this link existed
 try {
-  const pending = db.prepare(`SELECT * FROM expenses e WHERE e.employee_id IS NOT NULL AND LOWER(TRIM(e.title)) = 'advance'
+  const pending = db.prepare(`SELECT * FROM expenses e WHERE e.employee_id IS NOT NULL AND LOWER(TRIM(COALESCE(NULLIF(TRIM(e.expense_type),''), e.title))) = 'advance'
                               AND NOT EXISTS (SELECT 1 FROM employee_advances a WHERE a.expense_id = e.id)`).all();
   for (const e of pending) syncAdvance(e.id, e);
 } catch {}
@@ -181,10 +183,10 @@ router.post('/', (req, res) => {
   const result = db.prepare(`
     INSERT INTO expenses
       (title, category, expense_category_id, amount, paid_by, paid_to, project_id, expense_date, notes,
-       payment_method, receipt_url, recurring, recurring_period, employee_id, agent_id)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       payment_method, receipt_url, recurring, recurring_period, employee_id, agent_id, expense_type)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(f.title.trim(), f.category, f.expense_category_id, f.amount, f.paid_by, f.paid_to, f.project_id,
-         f.expense_date || today, f.notes, f.payment_method, f.receipt_url, f.recurring, f.recurring_period, f.employee_id, f.agent_id);
+         f.expense_date || today, f.notes, f.payment_method, f.receipt_url, f.recurring, f.recurring_period, f.employee_id, f.agent_id, f.expense_type);
   syncAdvance(result.lastInsertRowid, f);
   res.json(db.prepare(SELECT_ONE).get(result.lastInsertRowid));
 });
@@ -196,10 +198,10 @@ router.put('/:id', (req, res) => {
   db.prepare(`
     UPDATE expenses SET
       title=?, category=?, expense_category_id=?, amount=?, paid_by=?, paid_to=?, project_id=?, expense_date=?, notes=?,
-      payment_method=?, receipt_url=?, recurring=?, recurring_period=?, employee_id=?, agent_id=?
+      payment_method=?, receipt_url=?, recurring=?, recurring_period=?, employee_id=?, agent_id=?, expense_type=?
     WHERE id=?
   `).run(f.title.trim(), f.category, f.expense_category_id, f.amount, f.paid_by, f.paid_to, f.project_id,
-         f.expense_date, f.notes, f.payment_method, f.receipt_url, f.recurring, f.recurring_period, f.employee_id, f.agent_id,
+         f.expense_date, f.notes, f.payment_method, f.receipt_url, f.recurring, f.recurring_period, f.employee_id, f.agent_id, f.expense_type,
          req.params.id);
   const exp = db.prepare(SELECT_ONE).get(req.params.id);
   if (!exp) return res.status(404).json({ error: 'Not found' });
